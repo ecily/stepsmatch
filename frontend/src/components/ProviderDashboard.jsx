@@ -7,12 +7,17 @@ import {
   XCircle,
   Ruler,
 } from "lucide-react";
+import { GoogleMap, Circle, useJsApiLoader } from "@react-google-maps/api";
 
 const ProviderDashboard = () => {
   const navigate = useNavigate();
   const [offers, setOffers] = useState([]);
   const [error, setError] = useState("");
   const [providerId, setProviderId] = useState("");
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+  });
 
   useEffect(() => {
     const userId = localStorage.getItem("userId");
@@ -24,15 +29,11 @@ const ProviderDashboard = () => {
 
     const fetchProviderAndOffers = async () => {
       try {
-        const providerRes = await axios.get(
-          `http://localhost:5000/api/providers/user/${userId}`
-        );
+        const providerRes = await axios.get(`http://localhost:5000/api/providers/user/${userId}`);
         const provider = providerRes.data;
         setProviderId(provider._id);
 
-        const offersRes = await axios.get(
-          `http://localhost:5000/api/offers/provider/${provider._id}`
-        );
+        const offersRes = await axios.get(`http://localhost:5000/api/offers/provider/${provider._id}`);
         setOffers(offersRes.data);
       } catch (err) {
         console.error(err);
@@ -124,6 +125,10 @@ const ProviderDashboard = () => {
         <div className="space-y-4">
           {offers.map((offer) => {
             const status = getStatusInfo(offer);
+            const [lng, lat] = offer.location.coordinates;
+            const center = { lat, lng };
+            const radiusWithBuffer = offer.radius + 10;
+
             return (
               <div
                 key={offer._id}
@@ -182,9 +187,41 @@ const ProviderDashboard = () => {
                   </div>
                 </div>
 
-                <div className="text-sm text-right flex-shrink-0 flex items-center gap-1">
-                  {status.icon}
-                  <span className="text-gray-700">{status.text}</span>
+                <div className="flex flex-col gap-2 items-end">
+                  <div className="flex items-center text-sm text-right">
+                    {status.icon}
+                    <span className="text-gray-700 ml-1">{status.text}</span>
+                  </div>
+
+                  {isLoaded && (
+                    <GoogleMap
+                      mapContainerStyle={{ width: "220px", height: "140px", borderRadius: "8px" }}
+                      center={center}
+                      zoom={15}
+                      options={{ disableDefaultUI: true }}
+                      onLoad={(map) => {
+                        const bounds = new window.google.maps.LatLngBounds();
+                        const circle = new window.google.maps.Circle({
+                          center,
+                          radius: radiusWithBuffer,
+                        });
+                        bounds.union(circle.getBounds());
+                        map.fitBounds(bounds);
+                      }}
+                    >
+                      <Circle
+                        center={center}
+                        radius={offer.radius}
+                        options={{
+                          fillColor: "#3b82f6",
+                          fillOpacity: 0.2,
+                          strokeColor: "#2563eb",
+                          strokeOpacity: 0.8,
+                          strokeWeight: 2,
+                        }}
+                      />
+                    </GoogleMap>
+                  )}
                 </div>
               </div>
             );
@@ -196,4 +233,3 @@ const ProviderDashboard = () => {
 };
 
 export default ProviderDashboard;
-
