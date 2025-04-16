@@ -7,6 +7,7 @@ import connectDB from './config/db.js';
 import offerRoutes from './routes/offers.js';
 import providerRoutes from './routes/providers.js';
 import authRoutes from './routes/auth.js';
+import categoryRoutes from './routes/categories.js'; // Importiere die Kategorie-Routen
 
 dotenv.config();
 const app = express();
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
+app.use('/api/categories', categoryRoutes);  // Füge die Kategorie-Route hinzu
 
 // ✅ DB-Verbindung + Serverstart
 connectDB().then(() => {
