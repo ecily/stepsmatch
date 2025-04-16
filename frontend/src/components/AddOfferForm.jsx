@@ -18,6 +18,8 @@ const AddOfferForm = () => {
 
   const providerId = paramId || localStorage.getItem('providerId');
 
+  const today = new Date().toISOString().split('T')[0];
+
   const [providerLocation, setProviderLocation] = useState(null);
   const [formData, setFormData] = useState({
     provider: providerId,
@@ -26,10 +28,10 @@ const AddOfferForm = () => {
     description: '',
     radius: 100,
     validDays: [],
-    validTimes: { start: '', end: '' },
-    validDates: { from: '', to: '' },
+    validTimes: { start: '00:00', end: '23:59' }, // Default-Zeit
+    validDates: { from: today, to: today },       // Default-Datum
     contact: '',
-    images: [], // neu
+    images: [],
   });
 
   const [success, setSuccess] = useState(false);

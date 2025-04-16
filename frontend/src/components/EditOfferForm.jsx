@@ -23,10 +23,11 @@ const EditOfferForm = () => {
     radius: 100,
     validDays: [],
     validTimes: { start: '', end: '' },
+    validDates: { from: '', to: '' },
     contact: '',
     images: [],
     provider: '',
-    languages: [], // 🧠 noch vorhanden, aber nicht mehr sichtbar
+    languages: [],
   });
 
   const [success, setSuccess] = useState(false);
@@ -35,6 +36,15 @@ const EditOfferForm = () => {
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
+
+  const formatDateInput = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   useEffect(() => {
     const fetchOffer = async () => {
@@ -49,6 +59,10 @@ const EditOfferForm = () => {
           radius: data.radius || 100,
           validDays: data.validDays || [],
           validTimes: data.validTimes || { start: '', end: '' },
+          validDates: {
+            from: formatDateInput(data.validDates?.from),
+            to: formatDateInput(data.validDates?.to),
+          },
           contact: data.contact || '',
           images: Array.isArray(data.images)
             ? data.images
@@ -179,6 +193,30 @@ const EditOfferForm = () => {
             />
           </GoogleMap>
         )}
+
+        {/* 📅 Neue Datumsfelder */}
+        <div className="flex gap-4">
+          <div className="w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
+            <input
+              type="date"
+              name="validDates.from"
+              value={formData.validDates.from}
+              onChange={handleChange}
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          <div className="w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gültig bis</label>
+            <input
+              type="date"
+              name="validDates.to"
+              value={formData.validDates.to}
+              onChange={handleChange}
+              className="w-full p-2 border rounded"
+            />
+          </div>
+        </div>
 
         <div className="flex gap-4">
           <input type="time" name="validTimes.start" value={formData.validTimes.start} onChange={handleChange} className="p-2 border rounded w-full" />
