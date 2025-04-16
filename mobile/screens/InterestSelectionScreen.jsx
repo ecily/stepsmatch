@@ -1,12 +1,11 @@
 // stepsmatch/mobile/screens/InterestSelectionScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, Button, StyleSheet, ScrollView } from "react-native";
+import { View, Text, Button, StyleSheet } from "react-native";
 import axios from "axios";
 
 const InterestSelectionScreen = ({ onFinish }) => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState([]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -24,16 +23,7 @@ const InterestSelectionScreen = ({ onFinish }) => {
     fetchCategories();
   }, []);
 
-  // Handle Category Selection
-  const handleSelection = (categoryName) => {
-    setSelectedCategories((prev) =>
-      prev.includes(categoryName)
-        ? prev.filter((item) => item !== categoryName)  // Entfernen, wenn bereits ausgewählt
-        : [...prev, categoryName]  // Hinzufügen, wenn noch nicht ausgewählt
-    );
-  };
-
-  const handleFinish = () => {
+  const handleSelection = (selectedCategories) => {
     onFinish(selectedCategories);  // Überträgt die ausgewählten Kategorien
   };
 
@@ -43,18 +33,14 @@ const InterestSelectionScreen = ({ onFinish }) => {
       {loading ? (
         <Text>Lade Kategorien...</Text>
       ) : (
-        <ScrollView contentContainerStyle={styles.buttonsContainer}>
-          {categories.map((category) => (
-            <Button
-              key={category._id}
-              title={category.name}
-              onPress={() => handleSelection(category.name)}  // Toggle Auswahl
-              color={selectedCategories.includes(category.name) ? 'green' : 'blue'}  // Auswahl anzeigen
-            />
-          ))}
-        </ScrollView>
+        categories.map((category) => (
+          <Button
+            key={category._id}
+            title={category}
+            onPress={() => handleSelection([category])}  // Beispiel: Auswahl einer Kategorie
+          />
+        ))
       )}
-      <Button title="Fertig" onPress={handleFinish} />
     </View>
   );
 };
@@ -69,14 +55,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 18,
     fontWeight: "bold",
-    marginBottom: 20,
   },
-  buttonsContainer: {
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 20,
-  }
 });
 
 export default InterestSelectionScreen;
