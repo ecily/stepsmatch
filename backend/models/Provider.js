@@ -1,32 +1,37 @@
-// backend/models/Provider.js
 import mongoose from 'mongoose';
 
 const providerSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  category: { type: String, required: true },
-  description: { type: String },
-  contact: { type: String },
-  address: { type: String },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  name: {
+    type: String,
+    required: true,
+  },
+  category: String,
+  description: String,
+  contact: String,
+  address: String,
   location: {
     type: {
       type: String,
       enum: ['Point'],
-      required: true
+      default: 'Point',
     },
     coordinates: {
-      type: [Number],
-      required: true
-    }
+      type: [Number], // [lng, lat]
+      required: true,
+    },
   },
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  }
-}, { timestamps: true });
+  languages: {
+    type: [String],
+    default: [],
+  },
+});
 
-providerSchema.index({ location: '2dsphere' });
+export default mongoose.model('Provider', providerSchema);
 
-const Provider = mongoose.model('Provider', providerSchema);
-export default Provider;
+
 

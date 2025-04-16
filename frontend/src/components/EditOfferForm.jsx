@@ -21,12 +21,12 @@ const EditOfferForm = () => {
     category: '',
     description: '',
     radius: 100,
-    languages: [],
     validDays: [],
     validTimes: { start: '', end: '' },
     contact: '',
-    imageUrl: '',
+    images: [],
     provider: '',
+    languages: [], // 🧠 noch vorhanden, aber nicht mehr sichtbar
   });
 
   const [success, setSuccess] = useState(false);
@@ -47,15 +47,19 @@ const EditOfferForm = () => {
           category: data.category || '',
           description: data.description || '',
           radius: data.radius || 100,
-          languages: data.languages || [],
           validDays: data.validDays || [],
           validTimes: data.validTimes || { start: '', end: '' },
           contact: data.contact || '',
-          imageUrl: data.imageUrl || '',
+          images: Array.isArray(data.images)
+            ? data.images
+            : data.imageUrl
+            ? [data.imageUrl]
+            : [],
           provider: data.provider || '',
+          languages: data.languages || [],
         });
 
-        setProviderLocation(data.location.coordinates); // [lng, lat]
+        setProviderLocation(data.location.coordinates);
       } catch (err) {
         console.error(err);
         setError('Angebot konnte nicht geladen werden.');
@@ -84,6 +88,35 @@ const EditOfferForm = () => {
       [field]: prev[field].includes(value)
         ? prev[field].filter((v) => v !== value)
         : [...prev[field], value]
+    }));
+  };
+
+  const handleImageChange = (e) => {
+    const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
+
+    Promise.all(
+      files.map(file => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      })
+    ).then(base64Images => {
+      setFormData((prev) => ({
+        ...prev,
+        images: [...prev.images, ...base64Images],
+      }));
+    }).catch(err => {
+      console.error("Fehler beim Konvertieren der Bilder:", err);
+    });
+  };
+
+  const removeImage = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index),
     }));
   };
 
@@ -153,22 +186,29 @@ const EditOfferForm = () => {
         </div>
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
-        <input name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="Bild-URL (optional)" className="w-full p-2 border rounded" />
 
+        {/* 📷 Bilder */}
         <div>
-          <label className="block font-medium text-gray-700 mb-1">Sprachen:</label>
-          <div className="flex flex-wrap gap-2">
-            {['de', 'en', 'fr', 'es', 'it'].map((lang) => (
-              <button type="button"
-                key={lang}
-                onClick={() => toggleArrayItem('languages', lang)}
-                className={`px-3 py-1 rounded border ${
-                  formData.languages.includes(lang) ? 'bg-blue-500 text-white' : 'bg-gray-100'
-                }`}>{lang.toUpperCase()}</button>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
+          <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
+          <div className="flex flex-wrap mt-2 gap-2">
+            {formData.images.map((img, idx) => (
+              <div key={idx} className="relative group">
+                <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(idx)}
+                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center"
+                  title="Bild entfernen"
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
+        {/* Gültige Tage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">
@@ -176,9 +216,9 @@ const EditOfferForm = () => {
               <button type="button"
                 key={day}
                 onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${
-                  formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'
-                }`}>{day.slice(0, 2)}</button>
+                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}>
+                {day.slice(0, 2)}
+              </button>
             ))}
           </div>
         </div>

@@ -1,4 +1,3 @@
-// src/components/AddOfferForm.jsx
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -17,7 +16,6 @@ const AddOfferForm = () => {
   const { providerId: paramId } = useParams();
   const navigate = useNavigate();
 
-  // 🧠 Sicherer Fallback: entweder aus URL oder aus localStorage
   const providerId = paramId || localStorage.getItem('providerId');
 
   const [providerLocation, setProviderLocation] = useState(null);
@@ -27,11 +25,11 @@ const AddOfferForm = () => {
     category: '',
     description: '',
     radius: 100,
-    languages: [],
     validDays: [],
     validTimes: { start: '', end: '' },
+    validDates: { from: '', to: '' },
     contact: '',
-    imageUrl: '',
+    images: [], // neu
   });
 
   const [success, setSuccess] = useState(false);
@@ -50,7 +48,7 @@ const AddOfferForm = () => {
 
       try {
         const res = await axios.get(`http://localhost:5000/api/providers/${providerId}`);
-        setProviderLocation(res.data.location.coordinates); // [lng, lat]
+        setProviderLocation(res.data.location.coordinates);
       } catch (err) {
         console.error(err);
         setError('Anbieter nicht gefunden');
@@ -78,6 +76,35 @@ const AddOfferForm = () => {
       [field]: prev[field].includes(value)
         ? prev[field].filter((v) => v !== value)
         : [...prev[field], value]
+    }));
+  };
+
+  const handleImageChange = (e) => {
+    const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
+
+    Promise.all(
+      files.map(file => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      })
+    ).then(base64Images => {
+      setFormData((prev) => ({
+        ...prev,
+        images: [...prev.images, ...base64Images],
+      }));
+    }).catch(err => {
+      console.error("Fehler beim Konvertieren der Bilder:", err);
+    });
+  };
+
+  const removeImage = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index),
     }));
   };
 
@@ -148,28 +175,59 @@ const AddOfferForm = () => {
           </GoogleMap>
         )}
 
+        {/* Gültigkeit von/bis */}
+        <div className="flex gap-4">
+          <div className="w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
+            <input
+              type="date"
+              name="validDates.from"
+              value={formData.validDates.from}
+              onChange={handleChange}
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          <div className="w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gültig bis</label>
+            <input
+              type="date"
+              name="validDates.to"
+              value={formData.validDates.to}
+              onChange={handleChange}
+              className="w-full p-2 border rounded"
+            />
+          </div>
+        </div>
+
         <div className="flex gap-4">
           <input type="time" name="validTimes.start" value={formData.validTimes.start} onChange={handleChange} className="p-2 border rounded w-full" />
           <input type="time" name="validTimes.end" value={formData.validTimes.end} onChange={handleChange} className="p-2 border rounded w-full" />
         </div>
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
-        <input name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="Bild-URL (optional)" className="w-full p-2 border rounded" />
 
+        {/* 📷 Bild-Upload */}
         <div>
-          <label className="block font-medium text-gray-700 mb-1">Sprachen:</label>
-          <div className="flex flex-wrap gap-2">
-            {['de', 'en', 'fr', 'es', 'it'].map((lang) => (
-              <button type="button"
-                key={lang}
-                onClick={() => toggleArrayItem('languages', lang)}
-                className={`px-3 py-1 rounded border ${formData.languages.includes(lang) ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
-                {lang.toUpperCase()}
-              </button>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
+          <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
+          <div className="flex flex-wrap mt-2 gap-2">
+            {formData.images.map((img, idx) => (
+              <div key={idx} className="relative group">
+                <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(idx)}
+                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center"
+                  title="Bild entfernen"
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
+        {/* Tage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">

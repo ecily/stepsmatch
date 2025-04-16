@@ -21,8 +21,12 @@ const offerSchema = new mongoose.Schema({
     start: String,
     end: String,
   },
+  validDates: {
+    from: Date,
+    to: Date,
+  },
   contact: String,
-  imageUrl: String,
+  images: [String], // ✅ Neues Feld für mehrere Bilder (Base64 oder URLs)
 });
 
 offerSchema.index({ location: "2dsphere" });
