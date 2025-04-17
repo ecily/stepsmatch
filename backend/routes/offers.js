@@ -1,12 +1,13 @@
 import express from 'express';
 import Offer from '../models/Offer.js';
+import haversine from 'haversine-distance'; // <-- Neu für Distanzberechnung
 
 const router = express.Router();
 
 // ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zurück (zur Überprüfung der Verbindung zur DB)
 router.get('/test-offers', async (req, res) => {
   try {
-    const offers = await Offer.find().limit(3); // max 3 zum Test
+    const offers = await Offer.find().limit(3);
     res.json({ success: true, offers });
   } catch (error) {
     console.error('Fehler beim Abrufen:', error.message);
@@ -14,7 +15,7 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// GEO-Abfrage für Angebote im Umkreis (muss VOR der :id-Route stehen!)
+// ✅ GEO-Abfrage mit echter Distanzberechnung & Angebotsfilter
 router.get('/nearby', async (req, res) => {
   const { lat, lng, radius } = req.query;
 
@@ -23,17 +24,36 @@ router.get('/nearby', async (req, res) => {
       return res.status(400).json({ error: 'Fehlende Parameter: lat, lng oder radius' });
     }
 
+    const userLocation = {
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+    };
+
     const radiusInRadians = parseFloat(radius) / 3963.2;
 
-    const offers = await Offer.find({
+    const roughOffers = await Offer.find({
       location: {
         $geoWithin: {
-          $centerSphere: [[parseFloat(lng), parseFloat(lat)], radiusInRadians],
+          $centerSphere: [[userLocation.lng, userLocation.lat], radiusInRadians],
         },
       },
+    }).populate('provider');
+
+    // Filter: tatsächliche Entfernung + Angebots-Radius
+    const filteredOffers = roughOffers.filter((offer) => {
+      const offerCoords = {
+        lat: offer.location.coordinates[1],
+        lng: offer.location.coordinates[0],
+      };
+
+      const distance = haversine(userLocation, offerCoords); // in Metern
+      const maxUserDistance = parseFloat(radius);
+      const maxOfferDistance = offer.radius;
+
+      return distance <= maxUserDistance && distance <= maxOfferDistance;
     });
 
-    res.json(offers);
+    res.json(filteredOffers);
   } catch (err) {
     console.error('Fehler beim Abrufen der Angebote:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
@@ -72,7 +92,7 @@ router.get('/provider/:providerId', async (req, res) => {
   }
 });
 
-// GET ein bestimmtes Angebot nach ID (muss nach allen spezifischeren Routen stehen!)
+// GET ein bestimmtes Angebot nach ID
 router.get('/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);

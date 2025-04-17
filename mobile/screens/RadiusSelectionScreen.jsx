@@ -1,6 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Dimensions,
+} from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import axios from 'axios';
+import * as Location from 'expo-location';
+import haversine from 'haversine-distance';
 
 const radiusOptions = [
   { label: 'bis 100 m', value: 100 },
@@ -9,46 +20,81 @@ const radiusOptions = [
   { label: 'bis 3 km', value: 3000 },
 ];
 
+const categoryIcons = {
+  herberge: '🛏️',
+  supermarkt: '🛒',
+  restaurant: '🍽️',
+  apotheke: '💊',
+  default: '🧭',
+};
+
+const screenWidth = Dimensions.get('window').width;
+
 export default function RadiusSelectionScreen() {
   const [selectedRadius, setSelectedRadius] = useState(null);
-  const [providerCount, setProviderCount] = useState(null);
+  const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
 
-  // Benutzer-Standort simulieren oder abfragen
-  const userLocation = {
-    lat: 47.0707,  // Beispiel Koordinaten (ändern, falls notwendig)
-    lng: 15.4395,
-  };
+  const API_URL = 'http://10.0.0.34:5000/api/offers/nearby';
+
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Standortberechtigung wurde nicht erteilt');
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      setUserLocation({
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+      });
+    })();
+  }, []);
 
   const handleRadiusSelect = async (radius) => {
+    if (!userLocation) {
+      alert('Standortdaten noch nicht verfügbar');
+      return;
+    }
+
     setSelectedRadius(radius);
     setLoading(true);
+    setOffers([]);
 
     try {
-      // Anfrage an die API mit den Benutzerkoordinaten und dem Radius
-      const res = await axios.get(`http://localhost:5000/api/offers/nearby`, {
+      const res = await axios.get(API_URL, {
         params: {
           lat: userLocation.lat,
           lng: userLocation.lng,
           radius: radius,
         },
       });
-      console.log(res)
 
-      // Die Anzahl der Anbieter im angegebenen Radius
-      const count = res.data.length;
-      setProviderCount(count);
+      const offersWithDistance = res.data.map((offer) => {
+        const offerLocation = {
+          lat: offer.location.coordinates[1],
+          lng: offer.location.coordinates[0],
+        };
+        const distance = haversine(userLocation, offerLocation); // in Metern
+        return { ...offer, distance: Math.round(distance) };
+      });
+
+      setOffers(offersWithDistance);
     } catch (err) {
-      console.error('Fehler beim Abrufen der Angebote:', err);
-      setProviderCount('Fehler');
+      console.error('❌ Fehler beim Abrufen der Angebote:', err.message);
+      setOffers([{ error: true }]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Wie weit bist du bereit für ein Angebot zu gehen?</Text>
+
       {radiusOptions.map((opt) => (
         <TouchableOpacity
           key={opt.value}
@@ -56,7 +102,7 @@ export default function RadiusSelectionScreen() {
           onPress={() => handleRadiusSelect(opt.value)}
         >
           <Text
-            style={[ 
+            style={[
               styles.optionText,
               selectedRadius === opt.value && styles.selectedOptionText,
             ]}
@@ -68,21 +114,69 @@ export default function RadiusSelectionScreen() {
 
       {loading && <ActivityIndicator style={{ marginTop: 16 }} size="large" color="#00796b" />}
 
-      {providerCount !== null && !loading && (
-        <Text style={styles.info}>
-          Toll! Momentan, wären {providerCount} Angebote in deiner Reichweite.
-        </Text>
+      {!loading && selectedRadius && (
+        <>
+          {offers.length === 0 && (
+            <Text style={styles.info}>Keine Angebote im ausgewählten Radius gefunden.</Text>
+          )}
+
+          {offers[0]?.error && (
+            <Text style={styles.info}>Es ist ein Fehler aufgetreten 😕</Text>
+          )}
+
+          {offers.length > 0 && !offers[0]?.error && (
+            <>
+              <Text style={styles.info}>
+                Toll! Es gibt aktuell {offers.length} Angebot(e) in deiner Reichweite:
+              </Text>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                {offers.map((offer, index) => {
+                  const icon = categoryIcons[offer.category?.toLowerCase()] || categoryIcons.default;
+                  const lat = offer.location.coordinates[1];
+                  const lng = offer.location.coordinates[0];
+
+                  return (
+                    <View key={index} style={styles.offerCard}>
+                      <Text style={styles.offerTitle}>
+                        {icon} {offer.name}
+                      </Text>
+                      <Text style={styles.offerAddress}>
+                        {offer.provider?.address || 'Keine Adresse vorhanden'}
+                      </Text>
+                      <Text style={styles.offerDistance}>Entfernung: {offer.distance} m</Text>
+
+                      <MapView
+                        style={styles.miniMap}
+                        initialRegion={{
+                          latitude: lat,
+                          longitude: lng,
+                          latitudeDelta: 0.002,
+                          longitudeDelta: 0.002,
+                        }}
+                        scrollEnabled={false}
+                        zoomEnabled={false}
+                      >
+                        <Marker coordinate={{ latitude: lat, longitude: lng }} />
+                      </MapView>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </>
+          )}
+        </>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     backgroundColor: '#e0f7fa',
     padding: 24,
-    justifyContent: 'center',
+    paddingBottom: 60,
+    alignItems: 'stretch',
   },
   title: {
     fontSize: 20,
@@ -113,5 +207,36 @@ const styles = StyleSheet.create({
     marginTop: 24,
     textAlign: 'center',
     color: '#00796b',
+  },
+  horizontalScroll: {
+    marginTop: 12,
+  },
+  offerCard: {
+    width: Dimensions.get('window').width * 0.8,
+    marginRight: 16,
+    backgroundColor: '#ffffff',
+    padding: 14,
+    borderRadius: 8,
+    borderColor: '#ccc',
+    borderWidth: 1,
+  },
+  offerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#004d40',
+  },
+  offerAddress: {
+    marginTop: 4,
+    color: '#333',
+  },
+  offerDistance: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#555',
+  },
+  miniMap: {
+    height: 150,
+    marginTop: 10,
+    borderRadius: 8,
   },
 });

@@ -1,12 +1,11 @@
 import React from 'react';
 import { SafeAreaView } from 'react-native';
-import NearbyTest from './components/NearbyTest';
+import RadiusSelectionScreen from './screens/RadiusSelectionScreen';
 
 export default function App() {
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <NearbyTest />
+      <RadiusSelectionScreen />
     </SafeAreaView>
   );
 }
-
