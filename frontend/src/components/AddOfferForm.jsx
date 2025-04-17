@@ -28,8 +28,8 @@ const AddOfferForm = () => {
     description: '',
     radius: 100,
     validDays: [],
-    validTimes: { start: '00:00', end: '23:59' }, // Default-Zeit
-    validDates: { from: today, to: today },       // Default-Datum
+    validTimes: { start: '00:00', end: '23:59' },
+    validDates: { from: today, to: today },
     contact: '',
     images: [],
   });
@@ -120,6 +120,7 @@ const AddOfferForm = () => {
       return;
     }
 
+    // Bereite die Daten vor, die gesendet werden
     const payload = {
       ...formData,
       provider: providerId,
@@ -130,7 +131,8 @@ const AddOfferForm = () => {
     };
 
     try {
-      await axios.post('http://localhost:5000/api/offers', payload);
+      // Sende die Anfrage an das Backend mit der Live-URL
+      const res = await axios.post('http://localhost:5000/api/offers', payload);
       setSuccess(true);
       navigate(`/dashboard/${providerId}`);
     } catch (err) {
@@ -237,7 +239,7 @@ const AddOfferForm = () => {
               <button type="button"
                 key={day}
                 onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}>
+                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`} >
                 {day.slice(0, 2)}
               </button>
             ))}
@@ -255,3 +257,4 @@ const AddOfferForm = () => {
 };
 
 export default AddOfferForm;
+
