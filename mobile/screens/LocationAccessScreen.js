@@ -28,7 +28,7 @@ const LocationAccessScreen = ({ selectedCategories }) => {
     if (location && selectedCategories.length > 0) {
       setLoading(true);
       axios
-        .get("https://lobster-app-ie9a5.ondigitalocean.app/api/offers", {
+        .get("https://http://localhost:5000/api/offers", {
           params: { categories: selectedCategories, lat: location.latitude, lng: location.longitude },
         })
         .then((response) => {

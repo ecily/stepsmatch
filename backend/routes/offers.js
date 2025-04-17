@@ -3,6 +3,43 @@ import Offer from '../models/Offer.js';
 
 const router = express.Router();
 
+// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zurück (zur Überprüfung der Verbindung zur DB)
+router.get('/test-offers', async (req, res) => {
+  try {
+    const offers = await Offer.find().limit(3); // max 3 zum Test
+    res.json({ success: true, offers });
+  } catch (error) {
+    console.error('Fehler beim Abrufen:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GEO-Abfrage für Angebote im Umkreis (muss VOR der :id-Route stehen!)
+router.get('/nearby', async (req, res) => {
+  const { lat, lng, radius } = req.query;
+
+  try {
+    if (!lat || !lng || !radius) {
+      return res.status(400).json({ error: 'Fehlende Parameter: lat, lng oder radius' });
+    }
+
+    const radiusInRadians = parseFloat(radius) / 3963.2;
+
+    const offers = await Offer.find({
+      location: {
+        $geoWithin: {
+          $centerSphere: [[parseFloat(lng), parseFloat(lat)], radiusInRadians],
+        },
+      },
+    });
+
+    res.json(offers);
+  } catch (err) {
+    console.error('Fehler beim Abrufen der Angebote:', err);
+    res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
+  }
+});
+
 // Neues Angebot speichern
 router.post('/', async (req, res) => {
   try {
@@ -25,7 +62,6 @@ router.get('/', async (req, res) => {
 });
 
 // Alle Angebote eines Providers
-// GET /api/offers/provider/:providerId
 router.get('/provider/:providerId', async (req, res) => {
   try {
     const offers = await Offer.find({ provider: req.params.providerId });
@@ -36,7 +72,7 @@ router.get('/provider/:providerId', async (req, res) => {
   }
 });
 
-// GET ein bestimmtes Angebot nach ID
+// GET ein bestimmtes Angebot nach ID (muss nach allen spezifischeren Routen stehen!)
 router.get('/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);
@@ -82,7 +118,5 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Serverfehler beim Löschen' });
   }
 });
-
-
 
 export default router;

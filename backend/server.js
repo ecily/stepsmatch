@@ -20,7 +20,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));  // Auch für UR
 
 // Middleware für CORS und Parsing
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: ['http://localhost:5173', 'http://localhost:19006', 'http://localhost:8081'], // React dev und Expo
   credentials: true
 }));
 

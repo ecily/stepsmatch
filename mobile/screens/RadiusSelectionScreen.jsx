@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import axios from 'axios';
 
@@ -14,12 +14,28 @@ export default function RadiusSelectionScreen() {
   const [providerCount, setProviderCount] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Benutzer-Standort simulieren oder abfragen
+  const userLocation = {
+    lat: 47.0707,  // Beispiel Koordinaten (ändern, falls notwendig)
+    lng: 15.4395,
+  };
+
   const handleRadiusSelect = async (radius) => {
     setSelectedRadius(radius);
     setLoading(true);
 
     try {
-      const res = await axios.get('https://shark-app-f9zq9.ondigitalocean.app/api/offers');
+      // Anfrage an die API mit den Benutzerkoordinaten und dem Radius
+      const res = await axios.get(`http://localhost:5000/api/offers/nearby`, {
+        params: {
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          radius: radius,
+        },
+      });
+      console.log(res)
+
+      // Die Anzahl der Anbieter im angegebenen Radius
       const count = res.data.length;
       setProviderCount(count);
     } catch (err) {
@@ -36,14 +52,11 @@ export default function RadiusSelectionScreen() {
       {radiusOptions.map((opt) => (
         <TouchableOpacity
           key={opt.value}
-          style={[
-            styles.option,
-            selectedRadius === opt.value && styles.selectedOption,
-          ]}
+          style={[styles.option, selectedRadius === opt.value && styles.selectedOption]}
           onPress={() => handleRadiusSelect(opt.value)}
         >
           <Text
-            style={[
+            style={[ 
               styles.optionText,
               selectedRadius === opt.value && styles.selectedOptionText,
             ]}
@@ -56,7 +69,9 @@ export default function RadiusSelectionScreen() {
       {loading && <ActivityIndicator style={{ marginTop: 16 }} size="large" color="#00796b" />}
 
       {providerCount !== null && !loading && (
-        <Text style={styles.info}>{providerCount} Anbieter wurden gelesen.</Text>
+        <Text style={styles.info}>
+          Toll! Momentan, wären {providerCount} Angebote in deiner Reichweite.
+        </Text>
       )}
     </View>
   );

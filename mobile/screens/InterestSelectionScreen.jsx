@@ -11,7 +11,7 @@ const InterestSelectionScreen = ({ onFinish }) => {
     const fetchCategories = async () => {
       setLoading(true);
       try {
-        const response = await axios.get('https://lobster-app-ie9a5.ondigitalocean.app/api/categories');
+        const response = await axios.get('http://localhost:5000/api/categories');
         setCategories(response.data);  // Speichert die Kategorien aus der DB
       } catch (error) {
         console.error("Fehler beim Laden der Kategorien:", error);
