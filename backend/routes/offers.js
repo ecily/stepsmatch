@@ -15,14 +15,14 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage ohne Standortfilter, sortiert nach Distanz
+// ✅ GEO-Abfrage ohne Filter, zeigt alle Angebote an
 router.get('/nearby', async (req, res) => {
   const { lat, lng } = req.query;  // Keine Filter mehr für Kategorien oder Subkategorien
 
   try {
     // Überprüfung, ob lat und lng übergeben wurden
     if (!lat || !lng) {
-      return res.status(400).json({ error: 'Fehlende Parameter: lat oder lng' });  // Nur lat und lng benötigt
+      return res.status(400).json({ error: 'Fehlende Parameter: lat oder lng' });
     }
 
     const userLocation = {
@@ -36,7 +36,7 @@ router.get('/nearby', async (req, res) => {
     const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
     const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
 
-    // MongoDB-Suche ohne Filter für Kategorien/Subkategorien
+    // MongoDB-Suche ohne Filter
     const roughOffers = await Offer.find({}).populate('provider');  // Keine Filter mehr
 
     console.log('🎯 Roh-Angebote:', roughOffers.length); // Log zum Überprüfen der Angebote
@@ -63,7 +63,7 @@ router.get('/nearby', async (req, res) => {
           (!validTimes.from || !validTimes.to) ||
           (currentTime >= validTimes.from && currentTime <= validTimes.to);
 
-        const isDistanceValid = distance <= offer.radius;  // Nur die Distanz des Angebots wird hier verwendet
+        const isDistanceValid = distance <= offer.radius;
 
         const isValid = isInDateRange && isValidDay && isValidTime && isDistanceValid;
 
@@ -73,7 +73,7 @@ router.get('/nearby', async (req, res) => {
       .sort((a, b) => a.distance - b.distance)  // Sortiere nach Distanz
       .map((entry) => entry.offer);
 
-    console.log('🎯 Gefilterte und sortierte Angebote:', filtered.length);  // Log zum Überprüfen der endgültigen gefilterten Ergebnisse
+    console.log('🎯 Gefilterte und sortierte Angebote:', filtered.length);  // Log zum Überprüfen der Ergebnisse
 
     res.json(filtered);
   } catch (err) {

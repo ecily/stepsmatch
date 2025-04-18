@@ -9,25 +9,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import axiosInstance from '../api/axios';
 
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
   const [location, setLocation] = useState(null);
-  const [interests, setInterests] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // 📦 Interessen laden
-  useEffect(() => {
-    const fetchInterests = async () => {
-      const saved = await AsyncStorage.getItem('userInterests');
-      const parsed = saved ? JSON.parse(saved) : [];
-      console.log('🎯 Interessen geladen:', parsed);
-      setInterests(parsed);
-    };
-    fetchInterests();
-  }, []);
 
   // 📍 Standort ermitteln
   useEffect(() => {
@@ -44,34 +31,29 @@ export default function HomeScreen({ navigation }) {
     getLocation();
   }, []);
 
-  // 🔄 Sobald Standort & Interessen da sind: Angebote holen
+  // 🔄 Sobald Standort da ist: Angebote holen
   useEffect(() => {
-    if (location && interests.length > 0) {
+    if (location) {
       fetchOffers();
     }
-  }, [location, interests]);
+  }, [location]);
 
   const fetchOffers = async () => {
     setLoading(true);
     try {
-      console.log('📡 API-Aufruf mit:', {
-        lat: location.latitude,
-        lng: location.longitude,
-        subcategories: interests,  // Ändere dies zu 'subcategories'
-      });
+      console.log('📡 API-Aufruf ohne Filter');
 
       const response = await axiosInstance.get('/offers/nearby', {
         params: {
           lat: location.latitude,
           lng: location.longitude,
-          subcategories: interests,  // Verwende 'subcategories'
         },
       });
 
       console.log('✅ Angebote erhalten:', response.data);
 
       if (response.data.length === 0) {
-        console.log('Keine Angebote gefunden, überprüfen Sie die Kategorien.');
+        console.log('Keine Angebote gefunden.');
       }
 
       setOffers(response.data);
@@ -140,5 +122,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 40,
   },
-  
 });
