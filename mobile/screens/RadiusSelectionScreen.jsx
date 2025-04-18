@@ -12,6 +12,7 @@ import MapView, { Marker } from 'react-native-maps';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import haversine from 'haversine-distance';
+import moment from 'moment';
 
 const radiusOptions = [
   { label: 'bis 100 m', value: 100 },
@@ -21,11 +22,11 @@ const radiusOptions = [
 ];
 
 const categoryIcons = {
-  herberge: '🛏️',
-  supermarkt: '🛒',
+  herberge: '🎥️',
+  supermarkt: '🛒️',
   restaurant: '🍽️',
   apotheke: '💊',
-  default: '🧭',
+  default: '🫽',
 };
 
 const screenWidth = Dimensions.get('window').width;
@@ -54,6 +55,56 @@ export default function RadiusSelectionScreen() {
     })();
   }, []);
 
+  const isOfferCurrentlyValid = (offer) => {
+    const now = moment();
+    const fromDate = moment(offer.validDates?.from);
+    const toDate = moment(offer.validDates?.to);
+
+    const [startHour, startMin] = offer.validTimes?.start?.split(':') || ["00", "00"];
+    const [endHour, endMin] = offer.validTimes?.end?.split(':') || ["23", "59"];
+
+    const validFrom = moment(fromDate).hour(startHour).minute(startMin);
+    const validTo = moment(toDate).hour(endHour).minute(endMin);
+
+    if (!now.isBetween(validFrom, validTo, null, '[]')) return false;
+
+    const today = now.format('dddd');
+    if (
+      offer.validDays &&
+      !offer.validDays.map((d) => d.toLowerCase()).includes(today.toLowerCase())
+    ) {
+      return false;
+    }
+
+    return true;
+  };
+
+  const getTimeMessage = (offer) => {
+    const now = moment();
+    const toDate = moment(offer.validDates?.to);
+    const [endHour, endMin] = offer.validTimes?.end?.split(':') || ["23", "59"];
+    const validTo = moment(toDate).hour(endHour).minute(endMin);
+
+    const [startHour, startMin] = offer.validTimes?.start?.split(':') || ["00", "00"];
+    const startToday = moment().hour(startHour).minute(startMin);
+
+    if (isOfferCurrentlyValid(offer)) {
+      const diff = moment.duration(validTo.diff(now));
+      const days = Math.floor(diff.asDays());
+      const hours = diff.hours();
+      const minutes = diff.minutes();
+      return `✅ Gültig! Noch ${days > 0 ? days + 'd ' : ''}${hours > 0 ? hours + 'h ' : ''}${minutes}min`;
+    } else if (
+      now.isBefore(startToday) &&
+      startToday.diff(now, 'minutes') <= 60
+    ) {
+      const minutesLeft = startToday.diff(now, 'minutes');
+      return `⏳ Gültig in ${minutesLeft}min`;
+    } else {
+      return null;
+    }
+  };
+
   const handleRadiusSelect = async (radius) => {
     if (!userLocation) {
       alert('Standortdaten noch nicht verfügbar');
@@ -73,16 +124,24 @@ export default function RadiusSelectionScreen() {
         },
       });
 
-      const offersWithDistance = res.data.map((offer) => {
-        const offerLocation = {
-          lat: offer.location.coordinates[1],
-          lng: offer.location.coordinates[0],
-        };
-        const distance = haversine(userLocation, offerLocation); // in Metern
-        return { ...offer, distance: Math.round(distance) };
-      });
+      const offersWithMeta = res.data
+        .map((offer) => {
+          const offerLocation = {
+            lat: offer.location.coordinates[1],
+            lng: offer.location.coordinates[0],
+          };
+          const distance = haversine(userLocation, offerLocation);
+          const isValid = isOfferCurrentlyValid(offer);
+          return {
+            ...offer,
+            distance: Math.round(distance),
+            timeStatus: isValid ? getTimeMessage(offer) : null,
+            isValid,
+          };
+        })
+        .filter((o) => o.isValid);
 
-      setOffers(offersWithDistance);
+      setOffers(offersWithMeta);
     } catch (err) {
       console.error('❌ Fehler beim Abrufen der Angebote:', err.message);
       setOffers([{ error: true }]);
@@ -101,12 +160,7 @@ export default function RadiusSelectionScreen() {
           style={[styles.option, selectedRadius === opt.value && styles.selectedOption]}
           onPress={() => handleRadiusSelect(opt.value)}
         >
-          <Text
-            style={[
-              styles.optionText,
-              selectedRadius === opt.value && styles.selectedOptionText,
-            ]}
-          >
+          <Text style={[styles.optionText, selectedRadius === opt.value && styles.selectedOptionText]}>
             {opt.label}
           </Text>
         </TouchableOpacity>
@@ -117,24 +171,30 @@ export default function RadiusSelectionScreen() {
       {!loading && selectedRadius && (
         <>
           {offers.length === 0 && (
-            <Text style={styles.info}>Keine Angebote im ausgewählten Radius gefunden.</Text>
+            <Text style={styles.info}>Keine aktuell gültigen Angebote gefunden.</Text>
           )}
 
-          {offers[0]?.error && (
-            <Text style={styles.info}>Es ist ein Fehler aufgetreten 😕</Text>
-          )}
-
-          {offers.length > 0 && !offers[0]?.error && (
+          {offers.length > 0 && (
             <>
-              <Text style={styles.info}>
-                Toll! Es gibt aktuell {offers.length} Angebot(e) in deiner Reichweite:
-              </Text>
+              <Text style={styles.info}>Toll! Es gibt {offers.length} gültige Angebot(e):</Text>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
                 {offers.map((offer, index) => {
                   const icon = categoryIcons[offer.category?.toLowerCase()] || categoryIcons.default;
                   const lat = offer.location.coordinates[1];
                   const lng = offer.location.coordinates[0];
+
+                  const [startHour, startMin] = offer.validTimes?.start?.split(':') || ["00", "00"];
+                  const [endHour, endMin] = offer.validTimes?.end?.split(':') || ["23", "59"];
+
+                  const validFrom = moment(offer.validDates?.from)
+                    .hour(startHour)
+                    .minute(startMin)
+                    .format('DD.MM.YYYY, HH:mm');
+                  const validTo = moment(offer.validDates?.to)
+                    .hour(endHour)
+                    .minute(endMin)
+                    .format('DD.MM.YYYY, HH:mm');
 
                   return (
                     <View key={index} style={styles.offerCard}>
@@ -144,7 +204,10 @@ export default function RadiusSelectionScreen() {
                       <Text style={styles.offerAddress}>
                         {offer.provider?.address || 'Keine Adresse vorhanden'}
                       </Text>
-                      <Text style={styles.offerDistance}>Entfernung: {offer.distance} m</Text>
+                      <Text style={styles.offerDistance}>📏 {offer.distance} m</Text>
+                      <Text style={{ marginTop: 6 }}>{offer.timeStatus}</Text>
+                      <Text style={{ marginTop: 4, fontSize: 12 }}>🕒 Gültig von: {validFrom}</Text>
+                      <Text style={{ fontSize: 12 }}>Gültig bis: {validTo}</Text>
 
                       <MapView
                         style={styles.miniMap}
