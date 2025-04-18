@@ -17,11 +17,11 @@ router.get('/test-offers', async (req, res) => {
 
 // ✅ GEO-Abfrage mit Subkategorie- und Zeitfilter, sortiert nach Distanz
 router.get('/nearby', async (req, res) => {
-  const { lat, lng, radius, categories } = req.query;
+  const { lat, lng, categories } = req.query;  // Kein "radius" mehr hier
 
   try {
-    if (!lat || !lng || !radius) {
-      return res.status(400).json({ error: 'Fehlende Parameter: lat, lng oder radius' });
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Fehlende Parameter: lat oder lng' });  // Nur lat und lng benötigt
     }
 
     const userLocation = {
@@ -29,14 +29,12 @@ router.get('/nearby', async (req, res) => {
       lng: parseFloat(lng),
     };
 
-    const radiusInRadians = parseFloat(radius) / 3963.2;
-
     // 🔧 Kategorien-Filter: immer als Array behandeln
     let filterCategories = [];
-    if (req.query.categories) {
-      filterCategories = Array.isArray(req.query.categories)
-        ? req.query.categories
-        : [req.query.categories];
+    if (categories) {
+      filterCategories = Array.isArray(categories)
+        ? categories
+        : [categories];
     }
 
     console.log('🎯 Abfrage: Kategorien (Filter):', filterCategories);  // Log zum Überprüfen der Kategorien
@@ -45,11 +43,10 @@ router.get('/nearby', async (req, res) => {
     const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
     const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
 
-    // MongoDB-Suche (Ort + optional Subkategorie)
     const roughOffers = await Offer.find({
       location: {
         $geoWithin: {
-          $centerSphere: [[userLocation.lng, userLocation.lat], radiusInRadians],
+          $centerSphere: [[userLocation.lng, userLocation.lat], 3963.2],  // Radius wird nicht mehr verwendet
         },
       },
       ...(filterCategories.length > 0 && { subcategory: { $in: filterCategories } }),  // Filter
@@ -64,7 +61,7 @@ router.get('/nearby', async (req, res) => {
           lat: offer.location.coordinates[1],
           lng: offer.location.coordinates[0],
         };
-        const distance = haversine(userLocation, coords);
+        const distance = haversine(userLocation, coords);  // Berechnet die Distanz zu jedem Angebot
 
         const validDates = offer.validDates || {};
         const validTimes = offer.validTimes || {};
@@ -79,7 +76,7 @@ router.get('/nearby', async (req, res) => {
           (!validTimes.from || !validTimes.to) ||
           (currentTime >= validTimes.from && currentTime <= validTimes.to);
 
-        const isDistanceValid = distance <= parseFloat(radius) && distance <= offer.radius;
+        const isDistanceValid = distance <= offer.radius;  // Nur die Distanz des Angebots wird hier verwendet
 
         const isValid = isInDateRange && isValidDay && isValidTime && isDistanceValid;
 
@@ -96,7 +93,6 @@ router.get('/nearby', async (req, res) => {
     console.error('Fehler beim Abrufen der Angebote:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
   }
-
 });
 
 // Neues Angebot speichern
