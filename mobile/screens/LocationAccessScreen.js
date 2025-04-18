@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Button, Alert, StyleSheet } from 'react-native';
+// mobile/screens/LocationAccessScreen.jsx
+import React from 'react';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import * as Location from 'expo-location';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
@@ -8,50 +9,34 @@ const LocationAccessScreen = () => {
   const route = useRoute();
   const { userId } = route.params;
 
-  const [permissionGranted, setPermissionGranted] = useState(false);
-
-  useEffect(() => {
-    requestPermission();
-  }, []);
-
-  const requestPermission = async () => {
+  const handleGrantAccess = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
-      setPermissionGranted(true);
-    } else {
+    if (status !== 'granted') {
       Alert.alert(
-        'Standort erforderlich',
-        'Bitte erlaube den Zugriff auf deinen Standort, um passende Angebote zu sehen.'
+        'Standort benötigt',
+        'Bitte erlaube den Standortzugriff, um passende Angebote in deiner Nähe zu erhalten.'
       );
+      return;
     }
-  };
 
-  const handleNext = () => {
+    // ✅ Optional: aktuelle Position abrufen, z. B. für spätere Mongo-Abfrage
+    // const location = await Location.getCurrentPositionAsync({});
+
+    // ➡️ Weiter zum Interessen-Screen
     navigation.navigate('InterestSelection', { userId });
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.headline}>Standortzugriff</Text>
+      <Text style={styles.headline}>Standortzugriff erlauben</Text>
       <Text style={styles.text}>
-        Wir benötigen deinen Standort, um dir passende Angebote in deiner Nähe zeigen zu können.
+        Damit wir dir passende Angebote in deiner Nähe anzeigen können, benötigen wir Zugriff auf
+        deinen aktuellen Standort.
       </Text>
 
-      <Button
-        title="Zugriff erneut anfragen"
-        onPress={requestPermission}
-        color="#2563eb"
-      />
-
-      {permissionGranted && (
-        <View style={{ marginTop: 24 }}>
-          <Button
-            title="Weiter"
-            onPress={handleNext}
-            color="#10b981"
-          />
-        </View>
-      )}
+      <TouchableOpacity onPress={handleGrantAccess} style={styles.button}>
+        <Text style={styles.buttonText}>Zugriff erlauben & weiter</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -67,13 +52,24 @@ const styles = StyleSheet.create({
   },
   headline: {
     fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
+    fontWeight: '700',
     color: '#111827',
+    marginBottom: 16,
   },
   text: {
     fontSize: 16,
-    marginBottom: 32,
     color: '#4b5563',
+    marginBottom: 32,
+  },
+  button: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

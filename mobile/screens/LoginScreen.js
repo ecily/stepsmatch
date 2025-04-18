@@ -15,7 +15,7 @@ const LoginScreen = ({ navigation }) => {
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Kein Benutzer gefunden.');
 
-      Alert.alert('Erfolg', 'Login erfolgreich!');
+      // Kein Alert bei Erfolg
       navigation.navigate('LocationAccess', { userId }); // 🧭 weiter zu LocationAccess
     } catch (err) {
       console.error(err);

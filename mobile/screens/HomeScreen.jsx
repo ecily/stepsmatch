@@ -1,59 +1,139 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axiosInstance from '../api/axios';
 
-const HomeScreen = () => {
-  const navigation = useNavigation();
+export default function HomeScreen({ navigation }) {
+  const [offers, setOffers] = useState([]);
+  const [location, setLocation] = useState(null);
+  const [interests, setInterests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // 📦 Interessen laden
+  useEffect(() => {
+    const fetchInterests = async () => {
+      const saved = await AsyncStorage.getItem('userInterests');
+      const parsed = saved ? JSON.parse(saved) : [];
+      console.log('🎯 Interessen geladen:', parsed);
+      setInterests(parsed);
+    };
+    fetchInterests();
+  }, []);
+
+  // 📍 Standort ermitteln
+  useEffect(() => {
+    const getLocation = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('❌ Standort-Zugriff verweigert');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({});
+      console.log('📍 Standort geladen:', loc.coords);
+      setLocation(loc.coords);
+    };
+    getLocation();
+  }, []);
+
+  // 🔄 Sobald Standort & Interessen da sind: Angebote holen
+  useEffect(() => {
+    if (location && interests.length > 0) {
+      fetchOffers();
+    }
+  }, [location, interests]);
+
+  const fetchOffers = async () => {
+    setLoading(true);
+    try {
+      console.log('📡 API-Aufruf mit:', {
+        lat: location.latitude,
+        lng: location.longitude,
+        categories: interests,
+      });
+
+      const response = await axiosInstance.get('/offers/nearby', {
+        params: {
+          lat: location.latitude,
+          lng: location.longitude,
+          categories: interests,
+          radius: 10000, // wird im Backend ignoriert
+        },
+      });
+
+      console.log('✅ Angebote erhalten:', response.data.length);
+      setOffers(response.data);
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Angebote:', error.message);
+      console.log('Fehler-Details:', error.toJSON?.() || error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderOfferCard = ({ item }) => (
+    <TouchableOpacity style={styles.card}>
+      {item.images && item.images.length > 0 && (
+        <Image source={{ uri: item.images[0] }} style={styles.image} />
+      )}
+      <View style={styles.cardContent}>
+        <Text style={styles.title}>{item.name}</Text>
+        <Text style={styles.category}>{item.subcategory}</Text>
+        <Text style={styles.description} numberOfLines={3}>
+          {item.description}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.welcome}>🎉 Willkommen bei StepsMatch!</Text>
-      <Text style={styles.info}>
-        Du hast das Onboarding abgeschlossen. In Kürze siehst du hier passende Angebote aus deiner Umgebung.
-      </Text>
+      <Text style={styles.heading}>Angebote in deiner Nähe</Text>
 
-      <TouchableOpacity
-        onPress={() => navigation.navigate('Login')}
-        style={styles.button}
-      >
-        <Text style={styles.buttonText}>Zurück zum Login</Text>
-      </TouchableOpacity>
+      {loading ? (
+        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
+      ) : offers.length === 0 ? (
+        <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
+      ) : (
+        <FlatList
+          data={offers}
+          keyExtractor={(item) => item._id}
+          renderItem={renderOfferCard}
+          contentContainerStyle={styles.list}
+        />
+      )}
     </View>
   );
-};
-
-export default HomeScreen;
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    padding: 24,
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
+  heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
+  list: { paddingHorizontal: 16 },
+  card: {
+    backgroundColor: '#f8f8f8',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 3,
   },
-  welcome: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  info: {
+  image: { width: '100%', height: 180 },
+  cardContent: { padding: 12 },
+  title: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  category: { fontSize: 14, color: '#777', marginBottom: 6 },
+  description: { fontSize: 14, color: '#333' },
+  noResults: {
     fontSize: 16,
-    color: '#4b5563',
-    marginBottom: 32,
+    color: '#6b7280',
     textAlign: 'center',
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: 40,
   },
 });

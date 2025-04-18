@@ -1,10 +1,10 @@
 import express from 'express';
 import Offer from '../models/Offer.js';
-import haversine from 'haversine-distance'; // <-- Neu für Distanzberechnung
+import haversine from 'haversine-distance';
 
 const router = express.Router();
 
-// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zurück (zur Überprüfung der Verbindung zur DB)
+// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zurück
 router.get('/test-offers', async (req, res) => {
   try {
     const offers = await Offer.find().limit(3);
@@ -15,9 +15,9 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage mit echter Distanzberechnung & Angebotsfilter
+// ✅ GEO-Abfrage mit Subkategorie- und Zeitfilter, sortiert nach Distanz
 router.get('/nearby', async (req, res) => {
-  const { lat, lng, radius } = req.query;
+  const { lat, lng, radius, categories } = req.query;
 
   try {
     if (!lat || !lng || !radius) {
@@ -31,29 +31,67 @@ router.get('/nearby', async (req, res) => {
 
     const radiusInRadians = parseFloat(radius) / 3963.2;
 
+    // 🔧 Kategorien-Filter: immer als Array behandeln
+    let filterCategories = [];
+    if (req.query.categories) {
+      filterCategories = Array.isArray(req.query.categories)
+        ? req.query.categories
+        : [req.query.categories];
+    }
+
+    console.log('🎯 Abfrage: Kategorien (Filter):', filterCategories);  // Log zum Überprüfen der Kategorien
+
+    const now = new Date();
+    const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
+    const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
+
+    // MongoDB-Suche (Ort + optional Subkategorie)
     const roughOffers = await Offer.find({
       location: {
         $geoWithin: {
           $centerSphere: [[userLocation.lng, userLocation.lat], radiusInRadians],
         },
       },
+      ...(filterCategories.length > 0 && { subcategory: { $in: filterCategories } }),  // Filter
     }).populate('provider');
 
-    // Filter: tatsächliche Entfernung + Angebots-Radius
-    const filteredOffers = roughOffers.filter((offer) => {
-      const offerCoords = {
-        lat: offer.location.coordinates[1],
-        lng: offer.location.coordinates[0],
-      };
+    console.log('🎯 Roh-Angebote nach Subkategorie-Filter:', roughOffers.length); // Log zum Überprüfen der gefilterten Angebote
 
-      const distance = haversine(userLocation, offerCoords); // in Metern
-      const maxUserDistance = parseFloat(radius);
-      const maxOfferDistance = offer.radius;
+    // Zusätzliche Prüfungen: Distanz, Zeit und Gültigkeit
+    const filtered = roughOffers
+      .map((offer) => {
+        const coords = {
+          lat: offer.location.coordinates[1],
+          lng: offer.location.coordinates[0],
+        };
+        const distance = haversine(userLocation, coords);
 
-      return distance <= maxUserDistance && distance <= maxOfferDistance;
-    });
+        const validDates = offer.validDates || {};
+        const validTimes = offer.validTimes || {};
+        const validDays = offer.validDays || [];
 
-    res.json(filteredOffers);
+        const fromDate = new Date(validDates.from);
+        const toDate = new Date(validDates.to);
+        const isInDateRange = now >= fromDate && now <= toDate;
+
+        const isValidDay = validDays.includes(currentDay);
+        const isValidTime =
+          (!validTimes.from || !validTimes.to) ||
+          (currentTime >= validTimes.from && currentTime <= validTimes.to);
+
+        const isDistanceValid = distance <= parseFloat(radius) && distance <= offer.radius;
+
+        const isValid = isInDateRange && isValidDay && isValidTime && isDistanceValid;
+
+        return isValid ? { offer, distance } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distance - b.distance)  // Sortiere nach Distanz
+      .map((entry) => entry.offer);
+
+    console.log('🎯 Gefilterte und sortierte Angebote:', filtered.length);  // Log zum Überprüfen der endgültigen gefilterten Ergebnisse
+
+    res.json(filtered);
   } catch (err) {
     console.error('Fehler beim Abrufen der Angebote:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });

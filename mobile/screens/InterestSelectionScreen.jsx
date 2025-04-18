@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import axiosInstance from '../api/axios';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const colors = [
   '#93c5fd', // blue-300
@@ -24,6 +25,7 @@ const InterestSelectionScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { userId } = route.params;
+
   const [categories, setCategories] = useState([]);
   const [selectedInterests, setSelectedInterests] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,11 +55,17 @@ const InterestSelectionScreen = () => {
     if (selectedInterests.length === 0) return;
     setLoading(true);
     try {
+      // 🛰️ Server speichern
       await axiosInstance.put(`/auth/preferences/${userId}`, {
         interests: selectedInterests,
         preferredRadius: 1000, // 🔧 später dynamisch ersetzen
       });
-      navigation.navigate('Home'); // ❗ Später Home-Screen definieren
+
+      // 💾 Lokal speichern für HomeScreen
+      await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
+
+      // ➡️ Weiter zur Startseite
+      navigation.navigate('Home');
     } catch (error) {
       console.error('Fehler beim Speichern der Präferenzen:', error);
     } finally {
