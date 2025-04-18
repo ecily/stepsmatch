@@ -15,11 +15,12 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage ohne Subkategorie-Filter, sortiert nach Distanz
+// ✅ GEO-Abfrage ohne Standortfilter, sortiert nach Distanz
 router.get('/nearby', async (req, res) => {
   const { lat, lng } = req.query;  // Keine Filter mehr für Kategorien oder Subkategorien
 
   try {
+    // Überprüfung, ob lat und lng übergeben wurden
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Fehlende Parameter: lat oder lng' });  // Nur lat und lng benötigt
     }
