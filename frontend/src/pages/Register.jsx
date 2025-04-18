@@ -1,6 +1,7 @@
+// src/pages/Register.jsx
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../api/axios';
 
 const Register = ({ onRegisterSuccess }) => {
   const [formData, setFormData] = useState({
@@ -19,7 +20,7 @@ const Register = ({ onRegisterSuccess }) => {
     e.preventDefault();
     setError('');
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/register', formData);
+      const res = await axiosInstance.post('/auth/register', formData);
 
       const userId = res.data.provider._id;
       localStorage.setItem('userId', userId);
@@ -91,4 +92,3 @@ const Register = ({ onRegisterSuccess }) => {
 };
 
 export default Register;
-

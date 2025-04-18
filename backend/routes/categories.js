@@ -1,35 +1,62 @@
 // backend/routes/categories.js
 import express from 'express';
-import Offer from '../models/Offer.js';  // Stelle sicher, dass das Offer-Modell importiert wird
 
 const router = express.Router();
 
-// Route, um alle Kategorien aus der Datenbank zu holen
-router.get('/', async (req, res) => {
-  try {
-    // Verwenden von MongoDB Aggregate, um alle Kategorien zu extrahieren und Duplikate zu eliminieren
-    const categories = await Offer.aggregate([
-      {
-        $group: {
-          _id: null,
-          categories: { $addToSet: "$category" }  // Fügt alle einzigartigen Kategorien in einem Array hinzu
-        }
-      },
-      {
-        $project: { _id: 0, categories: 1 }  // Entfernt die _id aus der Antwort
-      }
-    ]);
-
-    if (!categories || categories.length === 0) {
-      return res.status(404).json({ message: "Keine Kategorien gefunden" });
-    }
-
-    // Gibt die konsolidierte Liste der Kategorien zurück
-    res.json(categories[0].categories);
-  } catch (error) {
-    console.error("Fehler beim Abrufen der Kategorien:", error);
-    res.status(500).json({ message: "Fehler beim Abrufen der Kategorien" });
+// 🔒 Statisch definierte Kategorienstruktur mit Subkategorien
+const categories = [
+  {
+    category: "🏨 Beherbergung",
+    subcategories: [
+      "Hotel", "Boutique-Hotel", "Wellness-Hotel", "Pension", "Gästehaus",
+      "Privatzimmer", "AirBnB", "Hostel", "Tiny House", "Hausboot", "Kloster"
+    ]
+  },
+  {
+    category: "🍽️ Essen & Trinken",
+    subcategories: [
+      "Restaurant (Vegan)", "Restaurant (Vegetarisch)", "Restaurant (Italienisch)", "Restaurant (Asiatisch)",
+      "Café", "Bar", "Pub", "Imbiss", "Street Food", "Bäckerei"
+    ]
+  },
+  {
+    category: "🛍️ Shopping & Services",
+    subcategories: [
+      "Mode (Damen)", "Mode (Herren)", "Schuhe", "Second Hand",
+      "Friseur", "Kosmetik", "Massage", "Reparatur", "Reinigung", "Copyshop", "Drogerie", "Apotheke"
+    ]
+  },
+  {
+    category: "🎭 Kultur & Freizeit",
+    subcategories: [
+      "Museum", "Galerie", "Sehenswürdigkeit", "Führung", "Konzert",
+      "Markt", "Vortrag", "Meetup", "Park", "Spielplatz"
+    ]
+  },
+  {
+    category: "👨‍👩‍👧 Familie & Kinder",
+    subcategories: [
+      "Kinderlokale", "Indoor-Spielplatz", "Flohmarkt", "Second-Hand", "Familienfreundliche Orte"
+    ]
+  },
+  {
+    category: "ℹ️ Info & Hilfe",
+    subcategories: [
+      "Stadtinfo", "Öffentliche Toiletten", "Trinkwasserstelle", "WLAN",
+      "Wärmestube", "Caritas", "Notruf", "Beratung"
+    ]
+  },
+  {
+    category: "🎯 Sonderaktionen",
+    subcategories: [
+      "Aktionen", "Rabatte", "Pop-Ups", "Tagesangebote", "Restposten"
+    ]
   }
+];
+
+// GET /api/categories – gibt alle Kategorien + Subkategorien zurück
+router.get('/', (req, res) => {
+  res.json(categories);
 });
 
 export default router;

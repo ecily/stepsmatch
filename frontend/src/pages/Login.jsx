@@ -1,6 +1,7 @@
+// src/pages/Login.jsx
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../api/axios';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ const Login = () => {
     setError('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', formData);
+      const res = await axiosInstance.post('/auth/login', formData);
 
       const userId = res.data.provider._id;
       if (!userId) throw new Error('userId fehlt in der Login-Antwort');
@@ -27,7 +28,7 @@ const Login = () => {
       localStorage.setItem('userId', userId);
 
       // ➕ Hole zugehörigen Anbieter (per userId)
-      const providerRes = await axios.get(`http://localhost:5000/api/providers/user/${userId}`);
+      const providerRes = await axiosInstance.get(`/providers/user/${userId}`);
       const providerId = providerRes.data._id;
 
       // ✅ Weiterleitung zum richtigen Dashboard
@@ -73,5 +74,4 @@ const Login = () => {
 };
 
 export default Login;
-
 

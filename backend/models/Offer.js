@@ -1,36 +1,65 @@
+// backend/models/Offer.js
+
 import mongoose from 'mongoose';
 
-const offerSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    description: { type: String, required: true },
-    category: { type: String, required: true },
-    radius: { type: Number, default: 100 },
-    validDays: { type: [String], default: [] }, // Array of valid days (e.g., ["Monday", "Tuesday"])
-    validTimes: {
-      start: { type: String, default: '00:00' },
-      end: { type: String, default: '23:59' },
-    },
-    validDates: {
-      from: { type: Date, required: true },
-      to: { type: Date, required: true },
-    },
-    contact: { type: String },
-    images: { type: [String], default: [] }, // Array of image URLs (base64)
-    location: {
-      type: { type: String, default: 'Point' }, // GeoJSON Point
-      coordinates: { type: [Number], index: '2dsphere' }, // [longitude, latitude]
-    },
-    provider: { type: mongoose.Schema.Types.ObjectId, ref: 'Provider', required: true },
+const OfferSchema = new mongoose.Schema({
+  provider: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Provider',
+    required: true
   },
-  {
-    timestamps: true, // Automatically add createdAt and updatedAt timestamps
+  name: {
+    type: String,
+    required: true
+  },
+  category: {
+    type: String,
+    required: true
+  },
+  subcategory: {
+    type: String  // 👈 Subkategorie hinzugefügt
+  },
+  description: {
+    type: String,
+    maxlength: 250
+  },
+  radius: {
+    type: Number,
+    default: 100
+  },
+  validDays: {
+    type: [String]
+  },
+  validTimes: {
+    start: String,
+    end: String
+  },
+  validDates: {
+    from: Date,
+    to: Date
+  },
+  contact: {
+    type: String
+  },
+  images: {
+    type: [String]
+  },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      required: true
+    },
+    coordinates: {
+      type: [Number],
+      required: true
+    }
+  },
+  languages: {
+    type: [String]
   }
-);
+}, {
+  timestamps: true
+});
 
-// Create a 2dsphere index on the coordinates for geospatial queries
-offerSchema.index({ location: '2dsphere' });
-
-const Offer = mongoose.model('Offer', offerSchema);
-
-export default Offer;
+export default mongoose.model('Offer', OfferSchema);

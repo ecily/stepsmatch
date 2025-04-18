@@ -1,11 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import {
-  GoogleMap,
-  Circle,
-  useLoadScript,
-} from '@react-google-maps/api';
+import axiosInstance from '../api/axios';
+import { GoogleMap, Circle, useLoadScript } from '@react-google-maps/api';
 
 const mapContainerStyle = {
   width: '100%',
@@ -15,19 +11,21 @@ const mapContainerStyle = {
 const AddOfferForm = () => {
   const { providerId: paramId } = useParams();
   const navigate = useNavigate();
-
   const providerId = paramId || localStorage.getItem('providerId');
-
   const today = new Date().toISOString().split('T')[0];
 
   const [providerLocation, setProviderLocation] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
+
   const [formData, setFormData] = useState({
     provider: providerId,
     name: '',
     category: '',
+    subcategory: '',
     description: '',
     radius: 100,
-    validDays: [],
+    validDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
     validTimes: { start: '00:00', end: '23:59' },
     validDates: { from: today, to: today },
     contact: '',
@@ -42,22 +40,40 @@ const AddOfferForm = () => {
   });
 
   useEffect(() => {
-    const fetchProvider = async () => {
-      if (!providerId) {
-        setError('Kein Anbieter gefunden.');
-        return;
-      }
+    axiosInstance.get('/categories')
+      .then((res) => {
+        if (Array.isArray(res.data)) {
+          setCategories(res.data);
+        } else {
+          console.warn('⚠️ Unerwartetes Format bei Kategorien:', res.data);
+        }
+      })
+      .catch((err) => {
+        console.error('Fehler beim Laden der Kategorien', err);
+      });
+  }, []);
 
-      try {
-        const res = await axios.get(`http://localhost:5000/api/providers/${providerId}`);
+  useEffect(() => {
+    if (!providerId) {
+      setError('Kein Anbieter gefunden.');
+      return;
+    }
+
+    axiosInstance.get(`/providers/${providerId}`)
+      .then((res) => {
         setProviderLocation(res.data.location.coordinates);
-      } catch (err) {
+      })
+      .catch((err) => {
         console.error(err);
         setError('Anbieter nicht gefunden');
-      }
-    };
-    fetchProvider();
+      });
   }, [providerId]);
+
+  useEffect(() => {
+    const selected = categories.find(c => c.category === formData.category);
+    setSubcategories(selected?.subcategories || []);
+    setFormData(prev => ({ ...prev, subcategory: '' }));
+  }, [formData.category, categories]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -85,14 +101,12 @@ const AddOfferForm = () => {
     const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
 
     Promise.all(
-      files.map(file => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      })
+      files.map(file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      }))
     ).then(base64Images => {
       setFormData((prev) => ({
         ...prev,
@@ -120,7 +134,16 @@ const AddOfferForm = () => {
       return;
     }
 
-    // Bereite die Daten vor, die gesendet werden
+    if (!formData.category || !formData.subcategory) {
+      setError('Kategorie und Subkategorie müssen gewählt werden.');
+      return;
+    }
+
+    if (formData.description.length > 250) {
+      setError('Beschreibung darf maximal 250 Zeichen haben.');
+      return;
+    }
+
     const payload = {
       ...formData,
       provider: providerId,
@@ -131,8 +154,7 @@ const AddOfferForm = () => {
     };
 
     try {
-      // Sende die Anfrage an das Backend mit der Live-URL
-      const res = await axios.post('http://localhost:5000/api/offers', payload);
+      await axiosInstance.post('/offers', payload);
       setSuccess(true);
       navigate(`/dashboard/${providerId}`);
     } catch (err) {
@@ -151,8 +173,30 @@ const AddOfferForm = () => {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <input name="name" value={formData.name} onChange={handleChange} placeholder="Name" required className="w-full p-2 border rounded" />
-        <input name="category" value={formData.category} onChange={handleChange} placeholder="Kategorie" required className="w-full p-2 border rounded" />
-        <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Beschreibung" rows={3} className="w-full p-2 border rounded" />
+
+        <select name="category" value={formData.category} onChange={handleChange} required className="w-full p-2 border rounded">
+          <option value="">Kategorie wählen</option>
+          {categories.map((cat, idx) => (
+            <option key={idx} value={cat.category}>{cat.category}</option>
+          ))}
+        </select>
+
+        <select name="subcategory" value={formData.subcategory} onChange={handleChange} required className="w-full p-2 border rounded">
+          <option value="">Subkategorie wählen</option>
+          {subcategories.map((sub, idx) => (
+            <option key={idx} value={sub}>{sub}</option>
+          ))}
+        </select>
+
+        <textarea
+          name="description"
+          value={formData.description}
+          onChange={handleChange}
+          placeholder="Beschreibung"
+          maxLength={250}
+          rows={3}
+          className="w-full p-2 border rounded"
+        />
 
         <input type="number" name="radius" value={formData.radius} onChange={handleChange} placeholder="Radius (in m)" className="w-full p-2 border rounded" />
 
@@ -160,10 +204,7 @@ const AddOfferForm = () => {
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             zoom={14}
-            center={{
-              lat: providerLocation[1],
-              lng: providerLocation[0],
-            }}
+            center={{ lat: providerLocation[1], lng: providerLocation[0] }}
           >
             <Circle
               center={{ lat: providerLocation[1], lng: providerLocation[0] }}
@@ -179,27 +220,15 @@ const AddOfferForm = () => {
           </GoogleMap>
         )}
 
-        {/* Gültigkeit von/bis */}
+        {/* Datum & Zeit */}
         <div className="flex gap-4">
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
-            <input
-              type="date"
-              name="validDates.from"
-              value={formData.validDates.from}
-              onChange={handleChange}
-              className="w-full p-2 border rounded"
-            />
+            <input type="date" name="validDates.from" value={formData.validDates.from} onChange={handleChange} className="w-full p-2 border rounded" />
           </div>
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig bis</label>
-            <input
-              type="date"
-              name="validDates.to"
-              value={formData.validDates.to}
-              onChange={handleChange}
-              className="w-full p-2 border rounded"
-            />
+            <input type="date" name="validDates.to" value={formData.validDates.to} onChange={handleChange} className="w-full p-2 border rounded" />
           </div>
         </div>
 
@@ -210,7 +239,6 @@ const AddOfferForm = () => {
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
 
-        {/* 📷 Bild-Upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
           <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
@@ -218,12 +246,7 @@ const AddOfferForm = () => {
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
                 <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center"
-                  title="Bild entfernen"
-                >
+                <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center" title="Bild entfernen">
                   ✕
                 </button>
               </div>
@@ -231,15 +254,16 @@ const AddOfferForm = () => {
           </div>
         </div>
 
-        {/* Tage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">
             {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-              <button type="button"
+              <button
+                type="button"
                 key={day}
                 onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`} >
+                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}
+              >
                 {day.slice(0, 2)}
               </button>
             ))}
@@ -247,14 +271,10 @@ const AddOfferForm = () => {
         </div>
 
         {success && <p className="text-green-600">✅ Angebot erfolgreich gespeichert!</p>}
-
-        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-          Angebot speichern
-        </button>
+        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Angebot speichern</button>
       </form>
     </div>
   );
 };
 
 export default AddOfferForm;
-

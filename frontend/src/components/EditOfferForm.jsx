@@ -1,11 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import {
-  GoogleMap,
-  Circle,
-  useLoadScript,
-} from '@react-google-maps/api';
+import axiosInstance from '../api/axios';
+import { GoogleMap, Circle, useLoadScript } from '@react-google-maps/api';
 
 const mapContainerStyle = {
   width: '100%',
@@ -16,9 +12,13 @@ const EditOfferForm = () => {
   const { offerId } = useParams();
   const navigate = useNavigate();
   const [providerLocation, setProviderLocation] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
+
   const [formData, setFormData] = useState({
     name: '',
     category: '',
+    subcategory: '',
     description: '',
     radius: 100,
     validDays: [],
@@ -27,7 +27,6 @@ const EditOfferForm = () => {
     contact: '',
     images: [],
     provider: '',
-    languages: [],
   });
 
   const [success, setSuccess] = useState(false);
@@ -47,14 +46,24 @@ const EditOfferForm = () => {
   };
 
   useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await axiosInstance.get('/categories');
+        setCategories(res.data);
+      } catch (err) {
+        console.error('Fehler beim Laden der Kategorien:', err);
+      }
+    };
+
     const fetchOffer = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/offers/${offerId}`);
+        const res = await axiosInstance.get(`/offers/${offerId}`);
         const data = res.data;
 
         setFormData({
           name: data.name || '',
           category: data.category || '',
+          subcategory: data.subcategory || '',
           description: data.description || '',
           radius: data.radius || 100,
           validDays: data.validDays || [],
@@ -64,13 +73,8 @@ const EditOfferForm = () => {
             to: formatDateInput(data.validDates?.to),
           },
           contact: data.contact || '',
-          images: Array.isArray(data.images)
-            ? data.images
-            : data.imageUrl
-            ? [data.imageUrl]
-            : [],
+          images: Array.isArray(data.images) ? data.images : [],
           provider: data.provider || '',
-          languages: data.languages || [],
         });
 
         setProviderLocation(data.location.coordinates);
@@ -80,8 +84,14 @@ const EditOfferForm = () => {
       }
     };
 
+    fetchCategories();
     fetchOffer();
   }, [offerId]);
+
+  useEffect(() => {
+    const selected = categories.find(c => c.category === formData.category);
+    setSubcategories(selected?.subcategories || []);
+  }, [formData.category, categories]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -109,14 +119,12 @@ const EditOfferForm = () => {
     const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
 
     Promise.all(
-      files.map(file => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      })
+      files.map(file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      }))
     ).then(base64Images => {
       setFormData((prev) => ({
         ...prev,
@@ -137,6 +145,17 @@ const EditOfferForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.category || !formData.subcategory) {
+      setError('Kategorie und Subkategorie müssen gewählt werden.');
+      return;
+    }
+
+    if (formData.description.length > 250) {
+      setError('Beschreibung darf maximal 250 Zeichen haben.');
+      return;
+    }
+
     try {
       const payload = {
         ...formData,
@@ -145,7 +164,7 @@ const EditOfferForm = () => {
           coordinates: providerLocation
         }
       };
-      await axios.put(`http://localhost:5000/api/offers/${offerId}`, payload);
+      await axiosInstance.put(`/offers/${offerId}`, payload);
       setSuccess(true);
       setTimeout(() => {
         navigate(`/dashboard/${formData.provider}`);
@@ -166,8 +185,30 @@ const EditOfferForm = () => {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <input name="name" value={formData.name} onChange={handleChange} placeholder="Name" required className="w-full p-2 border rounded" />
-        <input name="category" value={formData.category} onChange={handleChange} placeholder="Kategorie" required className="w-full p-2 border rounded" />
-        <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Beschreibung" rows={3} className="w-full p-2 border rounded" />
+
+        <select name="category" value={formData.category} onChange={handleChange} required className="w-full p-2 border rounded">
+          <option value="">Kategorie wählen</option>
+          {categories.map((cat, idx) => (
+            <option key={idx} value={cat.category}>{cat.category}</option>
+          ))}
+        </select>
+
+        <select name="subcategory" value={formData.subcategory} onChange={handleChange} required className="w-full p-2 border rounded">
+          <option value="">Subkategorie wählen</option>
+          {subcategories.map((sub, idx) => (
+            <option key={idx} value={sub}>{sub}</option>
+          ))}
+        </select>
+
+        <textarea
+          name="description"
+          value={formData.description}
+          onChange={handleChange}
+          placeholder="Beschreibung"
+          maxLength={250}
+          rows={3}
+          className="w-full p-2 border rounded"
+        />
 
         <input type="number" name="radius" value={formData.radius} onChange={handleChange} placeholder="Radius (in m)" className="w-full p-2 border rounded" />
 
@@ -175,10 +216,7 @@ const EditOfferForm = () => {
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             zoom={14}
-            center={{
-              lat: providerLocation[1],
-              lng: providerLocation[0],
-            }}
+            center={{ lat: providerLocation[1], lng: providerLocation[0] }}
           >
             <Circle
               center={{ lat: providerLocation[1], lng: providerLocation[0] }}
@@ -194,27 +232,14 @@ const EditOfferForm = () => {
           </GoogleMap>
         )}
 
-        {/* 📅 Neue Datumsfelder */}
         <div className="flex gap-4">
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
-            <input
-              type="date"
-              name="validDates.from"
-              value={formData.validDates.from}
-              onChange={handleChange}
-              className="w-full p-2 border rounded"
-            />
+            <input type="date" name="validDates.from" value={formData.validDates.from} onChange={handleChange} className="w-full p-2 border rounded" />
           </div>
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig bis</label>
-            <input
-              type="date"
-              name="validDates.to"
-              value={formData.validDates.to}
-              onChange={handleChange}
-              className="w-full p-2 border rounded"
-            />
+            <input type="date" name="validDates.to" value={formData.validDates.to} onChange={handleChange} className="w-full p-2 border rounded" />
           </div>
         </div>
 
@@ -225,7 +250,6 @@ const EditOfferForm = () => {
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
 
-        {/* 📷 Bilder */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
           <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
@@ -233,12 +257,7 @@ const EditOfferForm = () => {
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
                 <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center"
-                  title="Bild entfernen"
-                >
+                <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center" title="Bild entfernen">
                   ✕
                 </button>
               </div>
@@ -246,15 +265,16 @@ const EditOfferForm = () => {
           </div>
         </div>
 
-        {/* Gültige Tage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">
             {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-              <button type="button"
+              <button
+                type="button"
                 key={day}
                 onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}>
+                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}
+              >
                 {day.slice(0, 2)}
               </button>
             ))}
@@ -262,10 +282,7 @@ const EditOfferForm = () => {
         </div>
 
         {success && <p className="text-green-600">✅ Angebot aktualisiert!</p>}
-
-        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-          Änderungen speichern
-        </button>
+        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Änderungen speichern</button>
       </form>
     </div>
   );

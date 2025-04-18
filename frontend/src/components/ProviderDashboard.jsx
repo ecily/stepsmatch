@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import axios from "axios";
+import axiosInstance from "../api/axios";
 import {
   CheckCircle,
   Clock,
@@ -29,11 +29,11 @@ const ProviderDashboard = () => {
 
     const fetchProviderAndOffers = async () => {
       try {
-        const providerRes = await axios.get(`http://localhost:5000/api/providers/user/${userId}`);
+        const providerRes = await axiosInstance.get(`/providers/user/${userId}`);
         const provider = providerRes.data;
         setProviderId(provider._id);
 
-        const offersRes = await axios.get(`http://localhost:5000/api/offers/provider/${provider._id}`);
+        const offersRes = await axiosInstance.get(`/offers/provider/${provider._id}`);
         setOffers(offersRes.data);
       } catch (err) {
         console.error(err);
@@ -46,7 +46,7 @@ const ProviderDashboard = () => {
 
   const handleDelete = async (offerId) => {
     try {
-      await axios.delete(`http://localhost:5000/api/offers/${offerId}`);
+      await axiosInstance.delete(`/offers/${offerId}`);
       setOffers(offers.filter((o) => o._id !== offerId));
     } catch (err) {
       console.error(err);
@@ -100,12 +100,20 @@ const ProviderDashboard = () => {
     <div className="max-w-4xl mx-auto mt-8 p-6 bg-white rounded shadow-lg">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-semibold text-gray-800">Deine Angebote</h2>
-        <button
-          onClick={handleLogout}
-          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-        >
-          Logout
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate("/add-provider")}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
+          >
+            Stammdaten
+          </button>
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       {providerId && (
@@ -147,6 +155,9 @@ const ProviderDashboard = () => {
                     <h3 className="text-lg font-bold">{offer.name}</h3>
                     <p className="text-sm text-gray-600">{offer.description}</p>
                     <p className="text-sm italic text-gray-500">{offer.category}</p>
+                    {offer.subcategory && (
+                      <p className="text-sm italic text-gray-400">{offer.subcategory}</p>
+                    )}
 
                     <div className="flex gap-2 mt-2 text-sm">
                       {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(

@@ -1,3 +1,4 @@
+// src/App.jsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
@@ -11,6 +12,9 @@ import Login from './pages/Login';
 import LandingPage from './pages/LandingPage';
 
 const App = () => {
+  // Debug-Log zur aktiven API-Umgebung
+  console.log('🌐 Aktive API Base URL:', import.meta.env.VITE_API_BASE_URL);
+
   const handleLogin = (providerId) => {
     localStorage.setItem('providerId', providerId);
   };
@@ -25,7 +29,6 @@ const App = () => {
         <Route path="/add-offer/:providerId" element={<AddOfferForm />} />
         <Route path="/edit-offer/:offerId" element={<EditOfferForm />} />
         <Route path="/dashboard/:providerId" element={<ProviderDashboard />} />
-        {/* Optional: Fallback für nicht gefundene Seiten */}
         <Route path="*" element={<p className="p-8 text-center text-red-500">404 – Seite nicht gefunden</p>} />
       </Routes>
     </Router>
@@ -33,9 +36,3 @@ const App = () => {
 };
 
 export default App;
-
-
-
-
-
-

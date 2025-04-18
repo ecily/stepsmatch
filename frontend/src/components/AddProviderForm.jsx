@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
 import {
   GoogleMap,
   Marker,
@@ -7,6 +6,7 @@ import {
   Autocomplete,
 } from '@react-google-maps/api';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../api/axios';
 
 const mapContainerStyle = {
   width: '100%',
@@ -95,12 +95,11 @@ const AddProviderForm = () => {
         },
       };
 
-      const res = await axios.post('http://localhost:5000/api/providers', payload);
+      const res = await axiosInstance.post('/providers', payload);
 
-      const providerId = res.data._id; // ✅ richtige ID
+      const providerId = res.data._id;
       setSuccess(true);
       navigate(`/dashboard/${providerId}`);
-
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Fehler beim Speichern');
