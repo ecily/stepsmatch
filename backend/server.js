@@ -9,6 +9,8 @@ import offerRoutes from './routes/offers.js';
 import providerRoutes from './routes/providers.js';
 import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js'; // ✅ Kategorien-Routen importieren
+import userAuthRoutes from './routes/userAuth.js';
+
 
 dotenv.config();
 const app = express();
@@ -33,6 +35,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes); // 🆕 Kategorien-Routen verfügbar
+app.use('/api/users', userAuthRoutes); // 🆕 Mobile App Auth (User)
+
 
 // ✅ MongoDB-Verbindung & Serverstart
 connectDB().then(() => {

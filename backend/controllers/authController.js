@@ -1,34 +1,26 @@
-// backend/routes/auth.js
-import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-
-const router = express.Router();
+import bcrypt from 'bcrypt';
 
 // Registrierung
-router.post('/register', async (req, res) => {
+export const register = async (req, res) => {
   try {
-    console.log('📥 POST /register payload:', req.body);
-
     const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
-      console.log('⛔ Fehlende Felder:', { name, email, password });
       return res.status(400).json({ error: 'Alle Felder sind erforderlich.' });
     }
 
     const exists = await User.findOne({ email });
     if (exists) {
-      console.log('⚠️ E-Mail bereits registriert:', email);
       return res.status(400).json({ error: 'E-Mail bereits registriert' });
     }
 
     const newUser = new User({ name, email, password }); // Hashing erfolgt im Schema
     await newUser.save();
-    console.log('✅ Benutzer gespeichert:', newUser._id);
 
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d'
+      expiresIn: '7d',
     });
 
     res.status(201).json({
@@ -36,35 +28,32 @@ router.post('/register', async (req, res) => {
       provider: {
         _id: newUser._id,
         name: newUser.name,
-        email: newUser.email
-      }
+        email: newUser.email,
+      },
     });
   } catch (error) {
     console.error('❌ Fehler bei Registrierung:', error);
     res.status(500).json({ error: 'Serverfehler bei Registrierung' });
   }
-});
+};
 
 // Login
-router.post('/login', async (req, res) => {
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
     if (!user) {
-      console.log('❌ Login fehlgeschlagen: E-Mail nicht gefunden');
       return res.status(400).json({ error: 'E-Mail nicht gefunden' });
     }
 
-    const bcrypt = await import('bcrypt');
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      console.log('❌ Login fehlgeschlagen: Falsches Passwort');
       return res.status(400).json({ error: 'Falsches Passwort' });
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d'
+      expiresIn: '7d',
     });
 
     res.json({
@@ -72,23 +61,25 @@ router.post('/login', async (req, res) => {
       provider: {
         _id: user._id,
         name: user.name,
-        email: user.email
-      }
+        email: user.email,
+      },
     });
   } catch (error) {
     console.error('❌ Fehler beim Login:', error);
     res.status(500).json({ error: 'Serverfehler beim Login' });
   }
-});
+};
 
-// 🆕 Onboarding-Präferenzen speichern
-router.put('/preferences/:userId', async (req, res) => {
+// Onboarding-Präferenzen speichern
+export const savePreferences = async (req, res) => {
   try {
     const { userId } = req.params;
     const { preferredRadius, interests } = req.body;
 
     if (!preferredRadius || !interests) {
-      return res.status(400).json({ error: 'Radius und Interessen sind erforderlich.' });
+      return res
+        .status(400)
+        .json({ error: 'Radius und Interessen sind erforderlich.' });
     }
 
     const updated = await User.findByIdAndUpdate(
@@ -104,8 +95,8 @@ router.put('/preferences/:userId', async (req, res) => {
     res.json({ message: 'Präferenzen erfolgreich gespeichert', user: updated });
   } catch (error) {
     console.error('❌ Fehler beim Speichern der Präferenzen:', error);
-    res.status(500).json({ error: 'Serverfehler beim Speichern der Präferenzen' });
+    res
+      .status(500)
+      .json({ error: 'Serverfehler beim Speichern der Präferenzen' });
   }
-});
-
-export default router;
+};

@@ -1,75 +1,79 @@
-// stepsmatch/mobile/screens/LocationAccessScreen.js
-import React, { useEffect, useState } from "react";
-import { View, Text, Button, StyleSheet } from "react-native";
-import axios from "axios";
-import * as Location from "expo-location";
+import React, { useState, useEffect } from 'react';
+import { View, Text, Button, Alert, StyleSheet } from 'react-native';
+import * as Location from 'expo-location';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-const LocationAccessScreen = ({ selectedCategories }) => {
-  const [location, setLocation] = useState(null);
-  const [offers, setOffers] = useState([]);
-  const [loading, setLoading] = useState(false);
+const LocationAccessScreen = () => {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { userId } = route.params;
+
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
   useEffect(() => {
-    const getLocation = async () => {
-      let { status } = await Location.requestPermissionsAsync();
-      if (status !== "granted") {
-        alert("Zugriff auf den Standort wurde verweigert.");
-        return;
-      }
-
-      let location = await Location.getCurrentPositionAsync({});
-      setLocation(location.coords);
-    };
-
-    getLocation();
+    requestPermission();
   }, []);
 
-  useEffect(() => {
-    if (location && selectedCategories.length > 0) {
-      setLoading(true);
-      axios
-        .get("https://http://localhost:5000/api/offers", {
-          params: { categories: selectedCategories, lat: location.latitude, lng: location.longitude },
-        })
-        .then((response) => {
-          setOffers(response.data);
-        })
-        .catch((error) => {
-          console.error("Fehler beim Abrufen der Angebote:", error);
-        })
-        .finally(() => setLoading(false));
+  const requestPermission = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status === 'granted') {
+      setPermissionGranted(true);
+    } else {
+      Alert.alert(
+        'Standort erforderlich',
+        'Bitte erlaube den Zugriff auf deinen Standort, um passende Angebote zu sehen.'
+      );
     }
-  }, [location, selectedCategories]);
+  };
+
+  const handleNext = () => {
+    navigation.navigate('InterestSelection', { userId });
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Angebote in deiner Nähe:</Text>
-      {loading ? (
-        <Text>Lade Angebote...</Text>
-      ) : (
-        offers.map((offer) => (
-          <View key={offer._id}>
-            <Text>{offer.name}</Text>
-            <Text>{offer.description}</Text>
-            <Button title="Zum Angebot" onPress={() => {}} />
-          </View>
-        ))
+      <Text style={styles.headline}>Standortzugriff</Text>
+      <Text style={styles.text}>
+        Wir benötigen deinen Standort, um dir passende Angebote in deiner Nähe zeigen zu können.
+      </Text>
+
+      <Button
+        title="Zugriff erneut anfragen"
+        onPress={requestPermission}
+        color="#2563eb"
+      />
+
+      {permissionGranted && (
+        <View style={{ marginTop: 24 }}>
+          <Button
+            title="Weiter"
+            onPress={handleNext}
+            color="#10b981"
+          />
+        </View>
       )}
     </View>
   );
 };
 
+export default LocationAccessScreen;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+    padding: 24,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+  },
+  headline: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#111827',
   },
   text: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    marginBottom: 32,
+    color: '#4b5563',
   },
 });
-
-export default LocationAccessScreen;
