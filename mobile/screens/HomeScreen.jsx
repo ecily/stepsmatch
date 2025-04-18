@@ -57,19 +57,23 @@ export default function HomeScreen({ navigation }) {
       console.log('📡 API-Aufruf mit:', {
         lat: location.latitude,
         lng: location.longitude,
-        categories: interests,
+        subcategories: interests,  // Ändere dies zu 'subcategories'
       });
 
       const response = await axiosInstance.get('/offers/nearby', {
         params: {
           lat: location.latitude,
           lng: location.longitude,
-          categories: interests,
-          radius: 10000, // wird im Backend ignoriert
+          subcategories: interests,  // Verwende 'subcategories'
         },
       });
 
-      console.log('✅ Angebote erhalten:', response.data.length);
+      console.log('✅ Angebote erhalten:', response.data);
+
+      if (response.data.length === 0) {
+        console.log('Keine Angebote gefunden, überprüfen Sie die Kategorien.');
+      }
+
       setOffers(response.data);
     } catch (error) {
       console.error('❌ Fehler beim Laden der Angebote:', error.message);
@@ -136,4 +140,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 40,
   },
+  
 });

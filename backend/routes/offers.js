@@ -43,13 +43,14 @@ router.get('/nearby', async (req, res) => {
     const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
     const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
 
+    // MongoDB-Suche (Ort + optional Subkategorie)
     const roughOffers = await Offer.find({
       location: {
         $geoWithin: {
           $centerSphere: [[userLocation.lng, userLocation.lat], 3963.2],  // Radius wird nicht mehr verwendet
         },
       },
-      ...(filterCategories.length > 0 && { subcategory: { $in: filterCategories } }),  // Filter
+      ...(filterCategories.length > 0 && { subcategory: { $in: filterCategories } }),  // Filter auf 'subcategory'
     }).populate('provider');
 
     console.log('🎯 Roh-Angebote nach Subkategorie-Filter:', roughOffers.length); // Log zum Überprüfen der gefilterten Angebote
