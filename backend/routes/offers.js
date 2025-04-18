@@ -96,6 +96,7 @@ router.get('/nearby', async (req, res) => {
     console.error('Fehler beim Abrufen der Angebote:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
   }
+
 });
 
 // Neues Angebot speichern
