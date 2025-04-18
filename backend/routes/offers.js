@@ -17,7 +17,7 @@ router.get('/test-offers', async (req, res) => {
 
 // ✅ GEO-Abfrage ohne Subkategorie-Filter, sortiert nach Distanz
 router.get('/nearby', async (req, res) => {
-  const { lat, lng, categories } = req.query;  // Kein "radius" mehr hier
+  const { lat, lng } = req.query;  // Keine Filter mehr für Kategorien oder Subkategorien
 
   try {
     if (!lat || !lng) {
@@ -29,30 +29,16 @@ router.get('/nearby', async (req, res) => {
       lng: parseFloat(lng),
     };
 
-    // 🔧 Kategorien-Filter: immer als Array behandeln
-    let filterCategories = [];
-    if (categories) {
-      filterCategories = Array.isArray(categories)
-        ? categories
-        : [categories];
-    }
-
-    console.log('🎯 Abfrage: Kategorien (Filter):', filterCategories);  // Log zum Überprüfen der Kategorien
+    console.log('🎯 Abfrage: Standort:', userLocation);  // Log zum Überprüfen des Standorts
 
     const now = new Date();
     const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
     const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
 
-    // MongoDB-Suche (Ort ohne Subkategorie)
-    const roughOffers = await Offer.find({
-      location: {
-        $geoWithin: {
-          $centerSphere: [[userLocation.lng, userLocation.lat], 3963.2],  // Radius wird nicht mehr verwendet
-        },
-      },
-    }).populate('provider');
+    // MongoDB-Suche ohne Filter für Kategorien/Subkategorien
+    const roughOffers = await Offer.find({}).populate('provider');  // Keine Filter mehr
 
-    console.log('🎯 Roh-Angebote:', roughOffers.length); // Log zum Überprüfen der gefilterten Angebote
+    console.log('🎯 Roh-Angebote:', roughOffers.length); // Log zum Überprüfen der Angebote
 
     // Zusätzliche Prüfungen: Distanz, Zeit und Gültigkeit
     const filtered = roughOffers
