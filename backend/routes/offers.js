@@ -15,67 +15,16 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage ohne Filter, zeigt alle Angebote an
+// ✅ GEO-Abfrage ohne Standortfilter, zeigt alle Angebote an
 router.get('/nearby', async (req, res) => {
-  const { lat, lng } = req.query;  // Keine Filter mehr für Kategorien oder Subkategorien
-
   try {
-    // Überprüfung, ob lat und lng übergeben wurden
-    if (!lat || !lng) {
-      return res.status(400).json({ error: 'Fehlende Parameter: lat oder lng' });
-    }
+    // Alle Angebote ohne Filter zurückgeben
+    const offers = await Offer.find().populate('provider');
+    
+    console.log('🎯 Alle Angebote:', offers.length);
 
-    const userLocation = {
-      lat: parseFloat(lat),
-      lng: parseFloat(lng),
-    };
-
-    console.log('🎯 Abfrage: Standort:', userLocation);  // Log zum Überprüfen des Standorts
-
-    const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5); // z. B. "14:30"
-    const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' }); // z. B. "Montag"
-
-    // MongoDB-Suche ohne Filter
-    const roughOffers = await Offer.find({}).populate('provider');  // Keine Filter mehr
-
-    console.log('🎯 Roh-Angebote:', roughOffers.length); // Log zum Überprüfen der Angebote
-
-    // Zusätzliche Prüfungen: Distanz, Zeit und Gültigkeit
-    const filtered = roughOffers
-      .map((offer) => {
-        const coords = {
-          lat: offer.location.coordinates[1],
-          lng: offer.location.coordinates[0],
-        };
-        const distance = haversine(userLocation, coords);  // Berechnet die Distanz zu jedem Angebot
-
-        const validDates = offer.validDates || {};
-        const validTimes = offer.validTimes || {};
-        const validDays = offer.validDays || [];
-
-        const fromDate = new Date(validDates.from);
-        const toDate = new Date(validDates.to);
-        const isInDateRange = now >= fromDate && now <= toDate;
-
-        const isValidDay = validDays.includes(currentDay);
-        const isValidTime =
-          (!validTimes.from || !validTimes.to) ||
-          (currentTime >= validTimes.from && currentTime <= validTimes.to);
-
-        const isDistanceValid = distance <= offer.radius;
-
-        const isValid = isInDateRange && isValidDay && isValidTime && isDistanceValid;
-
-        return isValid ? { offer, distance } : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.distance - b.distance)  // Sortiere nach Distanz
-      .map((entry) => entry.offer);
-
-    console.log('🎯 Gefilterte und sortierte Angebote:', filtered.length);  // Log zum Überprüfen der Ergebnisse
-
-    res.json(filtered);
+    // Gibt alle Angebote zurück, ohne weitere Filter anzuwenden
+    res.json(offers);
   } catch (err) {
     console.error('Fehler beim Abrufen der Angebote:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
