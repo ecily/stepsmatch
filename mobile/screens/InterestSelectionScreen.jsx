@@ -6,19 +6,15 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import axiosInstance from '../api/axios';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const colors = [
-  '#93c5fd', // blue-300
-  '#fcd34d', // yellow-300
-  '#86efac', // green-300
-  '#fda4af', // pink-300
-  '#f9a8d4', // rose-300
-  '#ddd6fe', // violet-300
-  '#fdba74', // orange-300
+  '#93c5fd', '#fcd34d', '#86efac', '#fda4af',
+  '#f9a8d4', '#ddd6fe', '#fdba74',
 ];
 
 const InterestSelectionScreen = () => {
@@ -37,17 +33,15 @@ const InterestSelectionScreen = () => {
           axiosInstance.get('/categories'),
           AsyncStorage.getItem('userInterests'),
         ]);
-
         setCategories(res.data);
-
         if (storedInterests) {
           setSelectedInterests(JSON.parse(storedInterests));
         }
       } catch (error) {
         console.error('Fehler beim Laden der Kategorien oder Interessen:', error);
+        Alert.alert('Fehler', 'Kategorien konnten nicht geladen werden.');
       }
     };
-
     fetchData();
   }, []);
 
@@ -63,16 +57,21 @@ const InterestSelectionScreen = () => {
     if (selectedInterests.length === 0) return;
     setLoading(true);
     try {
+      // Erhöhen des Timeout auf 30 Sekunden
       await axiosInstance.put(`/auth/preferences/${userId}`, {
         interests: selectedInterests,
-        preferredRadius: 1000, // 🔧 später dynamisch ersetzen
+        preferredRadius: 2000,
+      }, {
+        timeout: 30000 // Timeout auf 30 Sekunden erhöht
       });
 
       await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
 
-      navigation.navigate('Home');
+      // 🔁 Kein Cache löschen – HomeScreen filtert lokal neu
+      setTimeout(() => navigation.navigate('Home'), 200);
     } catch (error) {
-      console.error('Fehler beim Speichern der Präferenzen:', error);
+      console.error('Fehler beim Speichern der Präferenzen:', error.response || error.message || error);
+      Alert.alert('Fehler', 'Präferenzen konnten nicht gespeichert werden. \nBitte versuche es erneut.');
     } finally {
       setLoading(false);
     }

@@ -2,8 +2,8 @@
 import axios from 'axios';
 
 const baseURL = __DEV__
-  ? 'http://localhost:5000/api' // local dev
-  : 'https://dein-live-backend/api'; // später live backend
+  ? 'http://10.0.0.34:5000/api' // Lokale IP deines PCs im WLAN
+  : 'https://dein-live-backend/api'; // später Live-Backend
 
 const axiosInstance = axios.create({
   baseURL,

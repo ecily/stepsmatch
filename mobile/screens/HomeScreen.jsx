@@ -1,10 +1,10 @@
-// HomeScreen.jsx
-import React, { useEffect, useState } from 'react';
+// mobile/src/screens/HomeScreen.js
+
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   FlatList,
-  Image,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -16,22 +16,22 @@ import axiosInstance from '../api/axios';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const RADIUS = 2000;
+const CACHE_KEY = 'cachedOffers';
+const CACHE_DURATION = 5 * 60 * 1000;
+
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
   const [location, setLocation] = useState(null);
-  const [lastLocation, setLastLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('standard');
   const [userInterests, setUserInterests] = useState([]);
+  const reloadTimer = useRef(null);
 
   useEffect(() => {
     const loadInterests = async () => {
       const stored = await AsyncStorage.getItem('userInterests');
-      if (stored) {
-        setUserInterests(JSON.parse(stored));
-      } else {
-        setUserInterests([]);
-      }
+      setUserInterests(stored ? JSON.parse(stored) : []);
     };
     loadInterests();
   }, []);
@@ -39,60 +39,63 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.warn('❌ Standort-Zugriff verweigert');
-        return;
-      }
-
-      const locationSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 10000,
-          distanceInterval: 1,
-        },
-        (newLocation) => {
-          if (lastLocation) {
-            const distance = getDistance(lastLocation, newLocation.coords);
-            if (distance > 50) {
-              setLocation(newLocation.coords);
-              setLastLocation(newLocation.coords);
-            }
-          } else {
-            setLocation(newLocation.coords);
-            setLastLocation(newLocation.coords);
-          }
-        }
-      );
-
-      return () => {
-        locationSubscription.remove();
-      };
+      if (status !== 'granted') return;
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setLocation(loc.coords);
     };
-
     getLocation();
-  }, [lastLocation]);
+  }, []);
 
   useEffect(() => {
-    if (location && userInterests.length > 0) {
+    if (!location || userInterests.length === 0) return;
+
+    const refresh = async () => {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const filtered = parsed?.data?.filter((o) =>
+          isValidOffer(o, location, userInterests)
+        ) || [];
+        setOffers(filtered);
+        setLoading(false);
+      } else {
+        await fetchAndFilterOffers();
+      }
+    };
+
+    refresh();
+
+    if (reloadTimer.current) clearInterval(reloadTimer.current);
+    reloadTimer.current = setInterval(() => {
+      console.log('🔄 Automatischer Reload nach 5 Minuten');
       fetchAndFilterOffers();
-    }
+    }, CACHE_DURATION);
+
+    return () => clearInterval(reloadTimer.current);
   }, [location, userInterests]);
 
   const fetchAndFilterOffers = async () => {
     setLoading(true);
     try {
-      const response = await axiosInstance.post('/offers/nearby', {
+      const res = await axiosInstance.post('/offers/nearby', {
         lat: location.latitude,
         lng: location.longitude,
         interests: userInterests,
       });
 
-      const filtered = response.data.filter((offer) =>
+      const filtered = res.data.filter((offer) =>
         isValidOffer(offer, location, userInterests)
       );
+
       setOffers(filtered);
-    } catch (error) {
-      console.error('❌ Fehler beim Laden der Angebote:', error.message);
+
+      const cacheData = res.data.map((o) => ({ ...o, images: [] }));
+      await AsyncStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ timestamp: Date.now(), data: cacheData })
+      );
+    } catch (err) {
+      console.error('❌ Fehler beim Laden der Angebote:', err.message);
       alert('Netzwerkfehler beim Laden der Angebote');
     } finally {
       setLoading(false);
@@ -101,28 +104,21 @@ export default function HomeScreen({ navigation }) {
 
   const isValidOffer = (offer, userLoc, interests) => {
     const now = new Date();
-    const fromDate = new Date(offer.validDates?.from);
-    const toDate = new Date(offer.validDates?.to);
-    toDate.setHours(23, 59, 59, 999); // ✅ wichtig für Gültigkeit am gleichen Tag
-
-    if (isNaN(fromDate) || isNaN(toDate)) return false;
-    if (now < fromDate || now > toDate) return false;
+    const from = new Date(offer.validDates?.from);
+    const to = new Date(offer.validDates?.to);
+    if (isNaN(from) || isNaN(to)) return false;
+    to.setHours(23, 59, 59, 999);
+    if (now < from || now > to) return false;
 
     const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
-    const days = offer.validDays || [];
-    if (!days.includes(weekday)) return false;
+    if (!offer.validDays?.includes(weekday)) return false;
 
-    const fromTime = offer.validTimes?.start;
-    const toTime = offer.validTimes?.end;
-    if (!fromTime || !toTime) return false;
-
-    const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
-    const [toHours, toMinutes] = toTime.split(':').map(Number);
-
-    const start = new Date();
-    start.setHours(fromHours, fromMinutes, 0, 0);
-    const end = new Date();
-    end.setHours(toHours, toMinutes, 0, 0);
+    const [startH, startM] = offer.validTimes?.start?.split(':').map(Number);
+    const [endH, endM] = offer.validTimes?.end?.split(':').map(Number);
+    const start = new Date(now);
+    const end = new Date(now);
+    start.setHours(startH, startM, 0, 0);
+    end.setHours(endH, endM, 0, 0);
     if (now < start || now > end) return false;
 
     const distance = getDistance(userLoc, {
@@ -130,57 +126,51 @@ export default function HomeScreen({ navigation }) {
       longitude: offer.location.coordinates[0],
     });
 
-    return distance <= offer.radius && interests.includes(offer.subcategory);
+    return distance <= Math.min(RADIUS, offer.radius) && interests.includes(offer.subcategory);
+  };
+
+  const getDistance = (a, b) => {
+    const R = 6371;
+    const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+    const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+    const lat1 = (a.latitude * Math.PI) / 180;
+    const lat2 = (b.latitude * Math.PI) / 180;
+    const x =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    return Math.round(R * c * 1000);
   };
 
   const getValidityText = (offer) => {
     const now = new Date();
-    const endDate = new Date(offer.validDates?.to);
-    const [endHours, endMinutes] = offer.validTimes?.end?.split(':')?.map(Number) || [23, 59];
-    endDate.setHours(endHours, endMinutes, 0, 0);
-
-    const totalMs = endDate - now;
-    if (totalMs <= 0) return '';
-
-    const totalMinutes = Math.floor(totalMs / 60000);
-    const days = Math.floor(totalMinutes / 1440);
-    const hours = Math.floor((totalMinutes % 1440) / 60);
-    const minutes = totalMinutes % 60;
-
-    let parts = [];
-    if (days > 0) parts.push(`${days} Tage`);
-    if (hours > 0) parts.push(`${hours} Std.`);
-    if (minutes > 0) parts.push(`${minutes} Min.`);
-
-    return `Jetzt gültig • noch ${parts.join(', ')}`;
+    const end = new Date(offer.validDates?.to);
+    const [h, m] = offer.validTimes?.end?.split(':')?.map(Number) || [23, 59];
+    end.setHours(h, m, 0);
+    const diff = end - now;
+    if (diff <= 0) return '';
+    const min = Math.floor(diff / 60000);
+    const days = Math.floor(min / 1440);
+    const hrs = Math.floor((min % 1440) / 60);
+    const mins = min % 60;
+    return `Jetzt gültig • noch ${days ? days + ' Tage, ' : ''}${hrs ? hrs + ' Std., ' : ''}${mins} Min.`;
   };
 
-  const getDistance = (coords1, coords2) => {
-    const R = 6371;
-    const dLat = (coords2.latitude - coords1.latitude) * Math.PI / 180;
-    const dLon = (coords2.longitude - coords1.longitude) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(coords1.latitude * Math.PI / 180) *
-        Math.cos(coords2.latitude * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round(R * c * 1000);
-  };
+  const groupedOffers = offers.reduce((acc, offer) => {
+    const cat = offer.category || 'Sonstiges';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(offer);
+    return acc;
+  }, {});
 
   const renderOfferCard = ({ item }) => {
-    const distance = location
-      ? getDistance(location, {
-          latitude: item.location.coordinates[1],
-          longitude: item.location.coordinates[0],
-        })
-      : null;
+    const dist = getDistance(location, {
+      latitude: item.location.coordinates[1],
+      longitude: item.location.coordinates[0],
+    });
 
     return (
       <TouchableOpacity style={styles.card}>
-        {item.images && item.images.length > 0 && (
-          <Image source={{ uri: item.images[0] }} style={styles.imageSmall} />
-        )}
         <View style={styles.cardContent}>
           <Text style={styles.title}>{item.name}</Text>
           <Text style={styles.category}>{item.subcategory}</Text>
@@ -188,20 +178,11 @@ export default function HomeScreen({ navigation }) {
             {item.description}
           </Text>
           <Text style={styles.validity}>{getValidityText(item)}</Text>
-          {distance !== null && (
-            <Text style={styles.distance}>Entfernung: {distance} m</Text>
-          )}
+          <Text style={styles.distance}>Entfernung: {dist} m</Text>
         </View>
       </TouchableOpacity>
     );
   };
-
-  const groupedOffers = offers.reduce((acc, offer) => {
-    const key = offer.category || 'Sonstiges';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(offer);
-    return acc;
-  }, {});
 
   return (
     <ScrollView style={styles.container}>
@@ -211,12 +192,6 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.mapCard}>
           <MapView
             style={styles.map}
-            initialRegion={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.002,
-              longitudeDelta: 0.002,
-            }}
             region={{
               latitude: location.latitude,
               longitude: location.longitude,
@@ -225,24 +200,15 @@ export default function HomeScreen({ navigation }) {
             }}
             mapType={mapType}
           >
-            <Marker
-              coordinate={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-              }}
-            />
+            <Marker coordinate={location} />
           </MapView>
         </View>
       )}
 
       <View style={styles.buttonContainer}>
         <Button
-          title={`Wechsel zu ${
-            mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'
-          }`}
-          onPress={() =>
-            setMapType(mapType === 'standard' ? 'satellite' : 'standard')
-          }
+          title={`Wechsel zu ${mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'}`}
+          onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
         />
         <View style={{ marginTop: 10 }}>
           <Button title="Neu laden" onPress={fetchAndFilterOffers} color="#10b981" />
@@ -251,8 +217,6 @@ export default function HomeScreen({ navigation }) {
 
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
-      ) : userInterests.length === 0 ? (
-        <Text style={styles.noResults}>Bitte wähle zuerst deine Interessen aus.</Text>
       ) : offers.length === 0 ? (
         <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
       ) : (
@@ -278,7 +242,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
   heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
   sectionTitle: { fontSize: 20, fontWeight: '600', paddingHorizontal: 16, marginBottom: 8 },
-  list: { paddingHorizontal: 16 },
   card: {
     backgroundColor: '#f8f8f8',
     borderRadius: 12,
@@ -287,7 +250,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 3,
   },
-  imageSmall: { width: '100%', height: 100 },
   cardContent: { padding: 12 },
   title: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
   category: { fontSize: 13, color: '#777', marginBottom: 4 },
@@ -301,12 +263,15 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   mapCard: {
-    width: '100%',
     height: 250,
     marginBottom: 20,
+    marginHorizontal: 16,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   map: {
-    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   buttonContainer: {
     marginVertical: 10,
