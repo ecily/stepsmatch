@@ -12,15 +12,28 @@ import {
 import * as Location from 'expo-location';
 import axiosInstance from '../api/axios';
 import MapView, { Marker } from 'react-native-maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
   const [location, setLocation] = useState(null);
-  const [lastLocation, setLastLocation] = useState(null); // Track the last location to check distance
+  const [lastLocation, setLastLocation] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [mapType, setMapType] = useState('standard'); // State für den Kartentyp
+  const [mapType, setMapType] = useState('standard');
+  const [userInterests, setUserInterests] = useState([]);
 
-  // 📍 Standort ermitteln und nur bei signifikanten Änderungen (50m) Angebote holen
+  useEffect(() => {
+    const loadInterests = async () => {
+      const stored = await AsyncStorage.getItem('userInterests');
+      if (stored) {
+        setUserInterests(JSON.parse(stored));
+      } else {
+        setUserInterests([]);
+      }
+    };
+    loadInterests();
+  }, []);
+
   useEffect(() => {
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -29,64 +42,55 @@ export default function HomeScreen({ navigation }) {
         return;
       }
 
-      // Setze den Watcher für den Standort, der alle 10 Sekunden oder bei jeder Bewegung aktualisiert wird
       const locationSubscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High, // Hohe Genauigkeit
-          timeInterval: 10000, // Alle 10 Sekunden aktualisieren
-          distanceInterval: 1, // Aktualisierung bei jeder Bewegung
+          accuracy: Location.Accuracy.High,
+          timeInterval: 10000,
+          distanceInterval: 1,
         },
         (newLocation) => {
           console.log('📍 Neue Standortdaten:', newLocation.coords);
-          
+
           if (lastLocation) {
             const distance = getDistance(lastLocation, newLocation.coords);
-            if (distance > 50) { // Nur wenn der Standort um mehr als 50m geändert wurde
+            if (distance > 50) {
               setLocation(newLocation.coords);
-              setLastLocation(newLocation.coords); // Update last location
+              setLastLocation(newLocation.coords);
             }
           } else {
             setLocation(newLocation.coords);
-            setLastLocation(newLocation.coords); // Setze die initiale Position
+            setLastLocation(newLocation.coords);
           }
         }
       );
 
-      // Aufräumen, wenn der Effekt nicht mehr benötigt wird
       return () => {
         locationSubscription.remove();
       };
     };
 
     getLocation();
-  }, [lastLocation]); // Nur bei Änderungen an der letzten Position
+  }, [lastLocation]);
 
-  // 🔄 Sobald der Standort gesetzt ist: Angebote holen
   useEffect(() => {
-    if (location) {
+    if (location && userInterests.length > 0) {
       fetchOffers();
     }
-  }, [location]); // Nur wenn der Standort sich geändert hat
+  }, [location, userInterests]);
 
   const fetchOffers = async () => {
     setLoading(true);
     try {
-      console.log('📡 API-Aufruf ohne Filter');
+      console.log('📡 API-Aufruf MIT Interessen-Filter:', userInterests);
 
-      const response = await axiosInstance.get('/offers/nearby', {
-        params: {
-          lat: location.latitude,
-          lng: location.longitude,
-        },
+      const response = await axiosInstance.post('/offers/nearby', {
+        lat: location.latitude,
+        lng: location.longitude,
+        interests: userInterests,
       });
 
-      console.log('✅ Angebote erhalten:', response.data);
-
-      if (response.data.length === 0) {
-        console.log('Keine Angebote gefunden.');
-      }
-
-      setOffers(response.data);
+      const filtered = response.data.filter((offer) => isValidNowOrSoon(offer));
+      setOffers(filtered);
     } catch (error) {
       console.error('❌ Fehler beim Laden der Angebote:', error.message);
       console.log('Fehler-Details:', error.toJSON?.() || error);
@@ -95,40 +99,96 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const renderOfferCard = ({ item }) => (
-    <TouchableOpacity style={styles.card}>
-      {item.images && item.images.length > 0 && (
-        <Image source={{ uri: item.images[0] }} style={styles.image} />
-      )}
-      <View style={styles.cardContent}>
-        <Text style={styles.title}>{item.name}</Text>
-        <Text style={styles.category}>{item.subcategory}</Text>
-        <Text style={styles.description} numberOfLines={3}>
-          {item.description}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const isValidNowOrSoon = (offer) => {
+    const now = new Date();
+    const fromDate = new Date(offer.validDates?.from);
+    const toDate = new Date(offer.validDates?.to);
+    if (isNaN(fromDate) || isNaN(toDate) || now < fromDate || now > toDate) return false;
 
-  // Berechnet die Distanz zwischen zwei Punkten (in Metern)
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const days = offer.validDays || [];
+    if (!days.includes(weekday)) return false;
+
+    const fromTime = offer.validTimes?.start;
+    const toTime = offer.validTimes?.end;
+    if (!fromTime || !toTime) return false;
+
+    const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
+    const [toHours, toMinutes] = toTime.split(':').map(Number);
+
+    const start = new Date(now);
+    start.setHours(fromHours, fromMinutes, 0, 0);
+    const end = new Date(now);
+    end.setHours(toHours, toMinutes, 0, 0);
+
+    if (now >= start && now <= end) return true;
+
+    const minutesUntilStart = (start - now) / 60000;
+    return minutesUntilStart > 0 && minutesUntilStart <= 60;
+  };
+
+  const getValidityText = (offer) => {
+    const now = new Date();
+    const [fromHours, fromMinutes] = offer.validTimes?.start?.split(':')?.map(Number) || [0, 0];
+    const [toHours, toMinutes] = offer.validTimes?.end?.split(':')?.map(Number) || [0, 0];
+
+    const start = new Date(now);
+    start.setHours(fromHours, fromMinutes, 0, 0);
+    const end = new Date(now);
+    end.setHours(toHours, toMinutes, 0, 0);
+
+    if (now >= start && now <= end) {
+      const minutesLeft = Math.floor((end - now) / 60000);
+      if (minutesLeft < 60) return `Jetzt gültig • noch ${minutesLeft} Min.`;
+      if (minutesLeft < 1440) return `Jetzt gültig • noch ${Math.floor(minutesLeft / 60)} Std.`;
+      return `Jetzt gültig • noch ${Math.floor(minutesLeft / 1440)} Tage`;
+    } else {
+      const minutesUntil = Math.floor((start - now) / 60000);
+      return `Bald gültig in ${minutesUntil} Min.`;
+    }
+  };
+
   const getDistance = (coords1, coords2) => {
-    const R = 6371; // Erdradius in Kilometern
+    const R = 6371;
     const dLat = (coords2.latitude - coords1.latitude) * Math.PI / 180;
     const dLon = (coords2.longitude - coords1.longitude) * Math.PI / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(coords1.latitude * Math.PI / 180) * Math.cos(coords2.latitude * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos(coords1.latitude * Math.PI / 180) *
+        Math.cos(coords2.latitude * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c * 1000; // Entfernung in Metern
-    return distance;
+    return Math.round(R * c * 1000);
+  };
+
+  const renderOfferCard = ({ item }) => {
+    const distance = location ? getDistance(location, {
+      latitude: item.location.coordinates[1],
+      longitude: item.location.coordinates[0],
+    }) : null;
+
+    return (
+      <TouchableOpacity style={styles.card}>
+        {item.images && item.images.length > 0 && (
+          <Image source={{ uri: item.images[0] }} style={styles.imageSmall} />
+        )}
+        <View style={styles.cardContent}>
+          <Text style={styles.title}>{item.name}</Text>
+          <Text style={styles.category}>{item.subcategory}</Text>
+          <Text style={styles.description} numberOfLines={3}>
+            {item.description}
+          </Text>
+          <Text style={styles.validity}>{getValidityText(item)}</Text>
+          {distance !== null && <Text style={styles.distance}>Entfernung: {distance} m</Text>}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Angebote in deiner Nähe</Text>
 
-      {/* Google Map Karte oben */}
       {location && (
         <View style={styles.mapCard}>
           <MapView
@@ -136,8 +196,8 @@ export default function HomeScreen({ navigation }) {
             initialRegion={{
               latitude: location.latitude,
               longitude: location.longitude,
-              latitudeDelta: 0.002, // Zoom-Level für ca. 1 km Radius
-              longitudeDelta: 0.002, // Zoom-Level für ca. 1 km Radius
+              latitudeDelta: 0.002,
+              longitudeDelta: 0.002,
             }}
             region={{
               latitude: location.latitude,
@@ -145,14 +205,13 @@ export default function HomeScreen({ navigation }) {
               latitudeDelta: 0.002,
               longitudeDelta: 0.002,
             }}
-            mapType={mapType} // Verwende den Kartentyp aus dem State
+            mapType={mapType}
           >
             <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }} />
           </MapView>
         </View>
       )}
 
-      {/* Button für den Wechsel der Kartenansicht */}
       <View style={styles.buttonContainer}>
         <Button
           title={`Wechsel zu ${mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'}`}
@@ -162,6 +221,8 @@ export default function HomeScreen({ navigation }) {
 
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
+      ) : userInterests.length === 0 ? (
+        <Text style={styles.noResults}>Bitte wähle zuerst deine Interessen aus.</Text>
       ) : offers.length === 0 ? (
         <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
       ) : (
@@ -187,11 +248,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 3,
   },
-  image: { width: '100%', height: 180 },
+  imageSmall: { width: '100%', height: 120 },
   cardContent: { padding: 12 },
   title: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
   category: { fontSize: 14, color: '#777', marginBottom: 6 },
   description: { fontSize: 14, color: '#333' },
+  validity: { fontSize: 14, color: '#059669', marginTop: 6 },
+  distance: { fontSize: 14, color: '#1d4ed8', marginTop: 2 },
   noResults: {
     fontSize: 16,
     color: '#6b7280',
@@ -200,7 +263,7 @@ const styles = StyleSheet.create({
   },
   mapCard: {
     width: '100%',
-    height: 250, // Höhe der Map-Karte
+    height: 250,
     marginBottom: 20,
   },
   map: {

@@ -27,20 +27,24 @@ router.post('/nearby', async (req, res) => {
     const allOffers = await Offer.find().populate('provider');
 
     const userLocation = { lat, lng };
+    const normalizedInterests = interests.map((i) => i.toLowerCase().trim());
 
     const filtered = allOffers.filter((offer) => {
-      if (!offer.location?.coordinates || !offer.subcategory) return false;
+      const coords = offer.location?.coordinates;
+      const subcategory = offer.subcategory;
+
+      if (!coords || coords.length !== 2 || !subcategory || !offer.radius) return false;
 
       const offerLocation = {
-        lat: offer.location.coordinates[1],
-        lng: offer.location.coordinates[0],
+        lat: coords[1],
+        lng: coords[0],
       };
 
       const distance = haversine(userLocation, offerLocation); // in Metern
 
       return (
         distance <= offer.radius &&
-        interests.includes(offer.subcategory)
+        normalizedInterests.includes(subcategory.toLowerCase().trim())
       );
     });
 
@@ -49,6 +53,39 @@ router.post('/nearby', async (req, res) => {
   } catch (err) {
     console.error('Fehler bei Nearby-Abfrage:', err);
     res.status(500).json({ error: 'Serverfehler bei Nearby-Abfrage' });
+  }
+});
+
+// 🔓 Öffentliche Nearby-Route ohne Interessenfilter
+router.post('/nearby-noauth', async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Ungültige Parameter' });
+    }
+
+    const allOffers = await Offer.find().populate('provider');
+    const userLocation = { lat, lng };
+
+    const filtered = allOffers.filter((offer) => {
+      const coords = offer.location?.coordinates;
+      if (!coords || coords.length !== 2 || !offer.radius) return false;
+
+      const offerLocation = {
+        lat: coords[1],
+        lng: coords[0],
+      };
+
+      const distance = haversine(userLocation, offerLocation);
+      return distance <= offer.radius;
+    });
+
+    console.log(`🆓 Öffentliche Nearby-Angebote: ${filtered.length}`);
+    res.json(filtered);
+  } catch (err) {
+    console.error('Fehler bei Nearby-NoAuth-Abfrage:', err);
+    res.status(500).json({ error: 'Serverfehler bei Nearby-NoAuth' });
   }
 });
 

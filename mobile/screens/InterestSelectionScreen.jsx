@@ -31,16 +31,24 @@ const InterestSelectionScreen = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchData = async () => {
       try {
-        const res = await axiosInstance.get('/categories');
+        const [res, storedInterests] = await Promise.all([
+          axiosInstance.get('/categories'),
+          AsyncStorage.getItem('userInterests'),
+        ]);
+
         setCategories(res.data);
+
+        if (storedInterests) {
+          setSelectedInterests(JSON.parse(storedInterests));
+        }
       } catch (error) {
-        console.error('Fehler beim Laden der Kategorien:', error);
+        console.error('Fehler beim Laden der Kategorien oder Interessen:', error);
       }
     };
 
-    fetchCategories();
+    fetchData();
   }, []);
 
   const toggleInterest = (subcategory) => {
@@ -55,16 +63,13 @@ const InterestSelectionScreen = () => {
     if (selectedInterests.length === 0) return;
     setLoading(true);
     try {
-      // 🛰️ Server speichern
       await axiosInstance.put(`/auth/preferences/${userId}`, {
         interests: selectedInterests,
         preferredRadius: 1000, // 🔧 später dynamisch ersetzen
       });
 
-      // 💾 Lokal speichern für HomeScreen
       await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
 
-      // ➡️ Weiter zur Startseite
       navigation.navigate('Home');
     } catch (error) {
       console.error('Fehler beim Speichern der Präferenzen:', error);

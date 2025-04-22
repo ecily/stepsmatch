@@ -9,8 +9,6 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axiosInstance from '../api/axios';
 
 const LocationAccessScreen = () => {
   const navigation = useNavigation();
@@ -23,7 +21,7 @@ const LocationAccessScreen = () => {
     setLoading(true);
 
     try {
-      // 1. Standortfreigabe anfordern
+      // Standortfreigabe anfordern
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
@@ -34,35 +32,12 @@ const LocationAccessScreen = () => {
         return;
       }
 
-      // 2. Standort abrufen
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
-
-      // 3. Interessen aus AsyncStorage laden
-      const interestsRaw = await AsyncStorage.getItem('userInterests');
-      const interests = interestsRaw ? JSON.parse(interestsRaw) : [];
-
-      if (interests.length === 0) {
-        Alert.alert('Keine Interessen gefunden', 'Bitte wähle zuerst Interessen aus.');
-        setLoading(false);
-        return;
-      }
-
-      // 4. Angebote vom Server laden
-      const res = await axiosInstance.post('/offers/nearby', {
-        lat: latitude,
-        lng: longitude,
-        interests: interests,
-      });
-
-      const offers = res.data;
-
-      // 5. Weiter zur Startseite mit Angeboten
-      navigation.navigate('Home', { offers });
+      // Weiter zur InterestSelection (immer, egal ob schon gespeichert oder nicht)
+      navigation.navigate('InterestSelection', { userId });
 
     } catch (error) {
-      console.error('Fehler beim Abrufen der Angebote:', error);
-      Alert.alert('Fehler', 'Beim Abrufen der Angebote ist ein Problem aufgetreten.');
+      console.error('Fehler bei der Standortfreigabe:', error);
+      Alert.alert('Fehler', 'Beim Anfordern der Standortfreigabe ist etwas schiefgelaufen.');
     } finally {
       setLoading(false);
     }
