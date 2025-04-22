@@ -1,5 +1,3 @@
-// mobile/src/screens/HomeScreen.js
-
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -40,16 +38,32 @@ export default function HomeScreen({ navigation }) {
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      setLocation(loc.coords);
+
+      // Standort wird in Echtzeit verfolgt
+      Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 10 },  // Aktualisierung alle 10 Meter
+        (newLocation) => {
+          setLocation(newLocation.coords);
+        }
+      );
     };
     getLocation();
   }, []);
 
   useEffect(() => {
-    if (!location || userInterests.length === 0) return;
+    if (location) {
+      loadFromCacheOrFetch();
+      if (reloadTimer.current) clearInterval(reloadTimer.current);
+      reloadTimer.current = setInterval(() => {
+        console.log('🔄 Automatischer Reload nach 5 Minuten');
+        fetchAndFilterOffers();
+      }, CACHE_DURATION);
+      return () => clearInterval(reloadTimer.current);
+    }
+  }, [location, userInterests]);
 
-    const refresh = async () => {
+  const loadFromCacheOrFetch = async () => {
+    try {
       const cached = await AsyncStorage.getItem(CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -61,18 +75,11 @@ export default function HomeScreen({ navigation }) {
       } else {
         await fetchAndFilterOffers();
       }
-    };
-
-    refresh();
-
-    if (reloadTimer.current) clearInterval(reloadTimer.current);
-    reloadTimer.current = setInterval(() => {
-      console.log('🔄 Automatischer Reload nach 5 Minuten');
-      fetchAndFilterOffers();
-    }, CACHE_DURATION);
-
-    return () => clearInterval(reloadTimer.current);
-  }, [location, userInterests]);
+    } catch (err) {
+      console.error('❌ Fehler beim Laden des Caches:', err);
+      await fetchAndFilterOffers();
+    }
+  };
 
   const fetchAndFilterOffers = async () => {
     setLoading(true);
@@ -83,12 +90,14 @@ export default function HomeScreen({ navigation }) {
         interests: userInterests,
       });
 
+      // Alle Angebote im Radius speichern, nicht nur die relevanten
       const filtered = res.data.filter((offer) =>
         isValidOffer(offer, location, userInterests)
       );
 
       setOffers(filtered);
 
+      // Speichern der Angebote im Cache (alle Angebote im Radius)
       const cacheData = res.data.map((o) => ({ ...o, images: [] }));
       await AsyncStorage.setItem(
         CACHE_KEY,
