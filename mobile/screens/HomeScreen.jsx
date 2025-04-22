@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Button,
+  ScrollView,
 } from 'react-native';
 import * as Location from 'expo-location';
 import axiosInstance from '../api/axios';
@@ -49,8 +50,6 @@ export default function HomeScreen({ navigation }) {
           distanceInterval: 1,
         },
         (newLocation) => {
-          console.log('📍 Neue Standortdaten:', newLocation.coords);
-
           if (lastLocation) {
             const distance = getDistance(lastLocation, newLocation.coords);
             if (distance > 50) {
@@ -81,8 +80,6 @@ export default function HomeScreen({ navigation }) {
   const fetchOffers = async () => {
     setLoading(true);
     try {
-      console.log('📡 API-Aufruf MIT Interessen-Filter:', userInterests);
-
       const response = await axiosInstance.post('/offers/nearby', {
         lat: location.latitude,
         lng: location.longitude,
@@ -93,7 +90,7 @@ export default function HomeScreen({ navigation }) {
       setOffers(filtered);
     } catch (error) {
       console.error('❌ Fehler beim Laden der Angebote:', error.message);
-      console.log('Fehler-Details:', error.toJSON?.() || error);
+      alert('Netzwerkfehler beim Laden der Angebote');
     } finally {
       setLoading(false);
     }
@@ -103,7 +100,7 @@ export default function HomeScreen({ navigation }) {
     const now = new Date();
     const fromDate = new Date(offer.validDates?.from);
     const toDate = new Date(offer.validDates?.to);
-    if (isNaN(fromDate) || isNaN(toDate) || now < fromDate || now > toDate) return false;
+    if (isNaN(fromDate) || isNaN(toDate)) return false;
 
     const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
     const days = offer.validDays || [];
@@ -116,9 +113,10 @@ export default function HomeScreen({ navigation }) {
     const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
     const [toHours, toMinutes] = toTime.split(':').map(Number);
 
-    const start = new Date(now);
+    const start = new Date(fromDate);
     start.setHours(fromHours, fromMinutes, 0, 0);
-    const end = new Date(now);
+
+    const end = new Date(toDate);
     end.setHours(toHours, toMinutes, 0, 0);
 
     if (now >= start && now <= end) return true;
@@ -129,23 +127,24 @@ export default function HomeScreen({ navigation }) {
 
   const getValidityText = (offer) => {
     const now = new Date();
-    const [fromHours, fromMinutes] = offer.validTimes?.start?.split(':')?.map(Number) || [0, 0];
-    const [toHours, toMinutes] = offer.validTimes?.end?.split(':')?.map(Number) || [0, 0];
+    const endDate = new Date(offer.validDates?.to);
+    const [endHours, endMinutes] = offer.validTimes?.end?.split(':')?.map(Number) || [23, 59];
+    endDate.setHours(endHours, endMinutes, 0, 0);
 
-    const start = new Date(now);
-    start.setHours(fromHours, fromMinutes, 0, 0);
-    const end = new Date(now);
-    end.setHours(toHours, toMinutes, 0, 0);
+    const totalMs = endDate - now;
+    if (totalMs <= 0) return '';
 
-    if (now >= start && now <= end) {
-      const minutesLeft = Math.floor((end - now) / 60000);
-      if (minutesLeft < 60) return `Jetzt gültig • noch ${minutesLeft} Min.`;
-      if (minutesLeft < 1440) return `Jetzt gültig • noch ${Math.floor(minutesLeft / 60)} Std.`;
-      return `Jetzt gültig • noch ${Math.floor(minutesLeft / 1440)} Tage`;
-    } else {
-      const minutesUntil = Math.floor((start - now) / 60000);
-      return `Bald gültig in ${minutesUntil} Min.`;
-    }
+    const totalMinutes = Math.floor(totalMs / 60000);
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+
+    let parts = [];
+    if (days > 0) parts.push(`${days} Tage`);
+    if (hours > 0) parts.push(`${hours} Std.`);
+    if (minutes > 0) parts.push(`${minutes} Min.`);
+
+    return `Jetzt gültig • noch ${parts.join(', ')}`;
   };
 
   const getDistance = (coords1, coords2) => {
@@ -162,10 +161,12 @@ export default function HomeScreen({ navigation }) {
   };
 
   const renderOfferCard = ({ item }) => {
-    const distance = location ? getDistance(location, {
-      latitude: item.location.coordinates[1],
-      longitude: item.location.coordinates[0],
-    }) : null;
+    const distance = location
+      ? getDistance(location, {
+          latitude: item.location.coordinates[1],
+          longitude: item.location.coordinates[0],
+        })
+      : null;
 
     return (
       <TouchableOpacity style={styles.card}>
@@ -179,14 +180,23 @@ export default function HomeScreen({ navigation }) {
             {item.description}
           </Text>
           <Text style={styles.validity}>{getValidityText(item)}</Text>
-          {distance !== null && <Text style={styles.distance}>Entfernung: {distance} m</Text>}
+          {distance !== null && (
+            <Text style={styles.distance}>Entfernung: {distance} m</Text>
+          )}
         </View>
       </TouchableOpacity>
     );
   };
 
+  const groupedOffers = offers.reduce((acc, offer) => {
+    const key = offer.category || 'Sonstiges';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(offer);
+    return acc;
+  }, {});
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.heading}>Angebote in deiner Nähe</Text>
 
       {location && (
@@ -207,15 +217,24 @@ export default function HomeScreen({ navigation }) {
             }}
             mapType={mapType}
           >
-            <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }} />
+            <Marker
+              coordinate={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+              }}
+            />
           </MapView>
         </View>
       )}
 
       <View style={styles.buttonContainer}>
         <Button
-          title={`Wechsel zu ${mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'}`}
-          onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+          title={`Wechsel zu ${
+            mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'
+          }`}
+          onPress={() =>
+            setMapType(mapType === 'standard' ? 'satellite' : 'standard')
+          }
         />
       </View>
 
@@ -226,35 +245,44 @@ export default function HomeScreen({ navigation }) {
       ) : offers.length === 0 ? (
         <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
       ) : (
-        <FlatList
-          data={offers}
-          keyExtractor={(item) => item._id}
-          renderItem={renderOfferCard}
-          contentContainerStyle={styles.list}
-        />
+        Object.entries(groupedOffers).map(([category, items]) => (
+          <View key={category} style={{ marginBottom: 24 }}>
+            <Text style={styles.sectionTitle}>{category}</Text>
+            <FlatList
+              horizontal
+              data={items}
+              keyExtractor={(item) => item._id}
+              renderItem={renderOfferCard}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16 }}
+            />
+          </View>
+        ))
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
   heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
+  sectionTitle: { fontSize: 20, fontWeight: '600', paddingHorizontal: 16, marginBottom: 8 },
   list: { paddingHorizontal: 16 },
   card: {
     backgroundColor: '#f8f8f8',
     borderRadius: 12,
-    marginBottom: 16,
+    marginRight: 12,
+    width: 220,
     overflow: 'hidden',
     elevation: 3,
   },
-  imageSmall: { width: '100%', height: 120 },
+  imageSmall: { width: '100%', height: 100 },
   cardContent: { padding: 12 },
-  title: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
-  category: { fontSize: 14, color: '#777', marginBottom: 6 },
-  description: { fontSize: 14, color: '#333' },
-  validity: { fontSize: 14, color: '#059669', marginTop: 6 },
-  distance: { fontSize: 14, color: '#1d4ed8', marginTop: 2 },
+  title: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  category: { fontSize: 13, color: '#777', marginBottom: 4 },
+  description: { fontSize: 13, color: '#333' },
+  validity: { fontSize: 13, color: '#059669', marginTop: 6 },
+  distance: { fontSize: 13, color: '#1d4ed8', marginTop: 2 },
   noResults: {
     fontSize: 16,
     color: '#6b7280',
