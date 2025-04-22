@@ -1,3 +1,4 @@
+// HomeScreen.jsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -73,11 +74,11 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     if (location && userInterests.length > 0) {
-      fetchOffers();
+      fetchAndFilterOffers();
     }
   }, [location, userInterests]);
 
-  const fetchOffers = async () => {
+  const fetchAndFilterOffers = async () => {
     setLoading(true);
     try {
       const response = await axiosInstance.post('/offers/nearby', {
@@ -86,7 +87,9 @@ export default function HomeScreen({ navigation }) {
         interests: userInterests,
       });
 
-      const filtered = response.data.filter((offer) => isValidNowOrSoon(offer));
+      const filtered = response.data.filter((offer) =>
+        isValidOffer(offer, location, userInterests)
+      );
       setOffers(filtered);
     } catch (error) {
       console.error('❌ Fehler beim Laden der Angebote:', error.message);
@@ -96,11 +99,14 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const isValidNowOrSoon = (offer) => {
+  const isValidOffer = (offer, userLoc, interests) => {
     const now = new Date();
     const fromDate = new Date(offer.validDates?.from);
     const toDate = new Date(offer.validDates?.to);
+    toDate.setHours(23, 59, 59, 999); // ✅ wichtig für Gültigkeit am gleichen Tag
+
     if (isNaN(fromDate) || isNaN(toDate)) return false;
+    if (now < fromDate || now > toDate) return false;
 
     const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
     const days = offer.validDays || [];
@@ -113,16 +119,18 @@ export default function HomeScreen({ navigation }) {
     const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
     const [toHours, toMinutes] = toTime.split(':').map(Number);
 
-    const start = new Date(fromDate);
+    const start = new Date();
     start.setHours(fromHours, fromMinutes, 0, 0);
-
-    const end = new Date(toDate);
+    const end = new Date();
     end.setHours(toHours, toMinutes, 0, 0);
+    if (now < start || now > end) return false;
 
-    if (now >= start && now <= end) return true;
+    const distance = getDistance(userLoc, {
+      latitude: offer.location.coordinates[1],
+      longitude: offer.location.coordinates[0],
+    });
 
-    const minutesUntilStart = (start - now) / 60000;
-    return minutesUntilStart > 0 && minutesUntilStart <= 60;
+    return distance <= offer.radius && interests.includes(offer.subcategory);
   };
 
   const getValidityText = (offer) => {
@@ -236,6 +244,9 @@ export default function HomeScreen({ navigation }) {
             setMapType(mapType === 'standard' ? 'satellite' : 'standard')
           }
         />
+        <View style={{ marginTop: 10 }}>
+          <Button title="Neu laden" onPress={fetchAndFilterOffers} color="#10b981" />
+        </View>
       </View>
 
       {loading ? (
