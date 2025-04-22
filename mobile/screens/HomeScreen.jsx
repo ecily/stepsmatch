@@ -7,16 +7,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Button,
 } from 'react-native';
 import * as Location from 'expo-location';
 import axiosInstance from '../api/axios';
+import MapView, { Marker } from 'react-native-maps';
 
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
   const [location, setLocation] = useState(null);
+  const [lastLocation, setLastLocation] = useState(null); // Track the last location to check distance
   const [loading, setLoading] = useState(true);
+  const [mapType, setMapType] = useState('standard'); // State für den Kartentyp
 
-  // 📍 Standort ermitteln
+  // 📍 Standort ermitteln und nur bei signifikanten Änderungen (50m) Angebote holen
   useEffect(() => {
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -24,19 +28,45 @@ export default function HomeScreen({ navigation }) {
         console.warn('❌ Standort-Zugriff verweigert');
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({});
-      console.log('📍 Standort geladen:', loc.coords);
-      setLocation(loc.coords);
-    };
-    getLocation();
-  }, []);
 
-  // 🔄 Sobald Standort da ist: Angebote holen
+      // Setze den Watcher für den Standort, der alle 10 Sekunden oder bei jeder Bewegung aktualisiert wird
+      const locationSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High, // Hohe Genauigkeit
+          timeInterval: 10000, // Alle 10 Sekunden aktualisieren
+          distanceInterval: 1, // Aktualisierung bei jeder Bewegung
+        },
+        (newLocation) => {
+          console.log('📍 Neue Standortdaten:', newLocation.coords);
+          
+          if (lastLocation) {
+            const distance = getDistance(lastLocation, newLocation.coords);
+            if (distance > 50) { // Nur wenn der Standort um mehr als 50m geändert wurde
+              setLocation(newLocation.coords);
+              setLastLocation(newLocation.coords); // Update last location
+            }
+          } else {
+            setLocation(newLocation.coords);
+            setLastLocation(newLocation.coords); // Setze die initiale Position
+          }
+        }
+      );
+
+      // Aufräumen, wenn der Effekt nicht mehr benötigt wird
+      return () => {
+        locationSubscription.remove();
+      };
+    };
+
+    getLocation();
+  }, [lastLocation]); // Nur bei Änderungen an der letzten Position
+
+  // 🔄 Sobald der Standort gesetzt ist: Angebote holen
   useEffect(() => {
     if (location) {
       fetchOffers();
     }
-  }, [location]);
+  }, [location]); // Nur wenn der Standort sich geändert hat
 
   const fetchOffers = async () => {
     setLoading(true);
@@ -80,9 +110,55 @@ export default function HomeScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  // Berechnet die Distanz zwischen zwei Punkten (in Metern)
+  const getDistance = (coords1, coords2) => {
+    const R = 6371; // Erdradius in Kilometern
+    const dLat = (coords2.latitude - coords1.latitude) * Math.PI / 180;
+    const dLon = (coords2.longitude - coords1.longitude) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(coords1.latitude * Math.PI / 180) * Math.cos(coords2.latitude * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c * 1000; // Entfernung in Metern
+    return distance;
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Angebote in deiner Nähe</Text>
+
+      {/* Google Map Karte oben */}
+      {location && (
+        <View style={styles.mapCard}>
+          <MapView
+            style={styles.map}
+            initialRegion={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.002, // Zoom-Level für ca. 1 km Radius
+              longitudeDelta: 0.002, // Zoom-Level für ca. 1 km Radius
+            }}
+            region={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.002,
+              longitudeDelta: 0.002,
+            }}
+            mapType={mapType} // Verwende den Kartentyp aus dem State
+          >
+            <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }} />
+          </MapView>
+        </View>
+      )}
+
+      {/* Button für den Wechsel der Kartenansicht */}
+      <View style={styles.buttonContainer}>
+        <Button
+          title={`Wechsel zu ${mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'}`}
+          onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+        />
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
@@ -121,5 +197,17 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     marginTop: 40,
+  },
+  mapCard: {
+    width: '100%',
+    height: 250, // Höhe der Map-Karte
+    marginBottom: 20,
+  },
+  map: {
+    flex: 1,
+  },
+  buttonContainer: {
+    marginVertical: 10,
+    marginHorizontal: 16,
   },
 });

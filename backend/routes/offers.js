@@ -15,19 +15,40 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage ohne Standortfilter, zeigt alle Angebote an
-router.get('/nearby', async (req, res) => {
+// ✅ NEU: GEO-Abfrage mit Standort- und Interessenfilter
+router.post('/nearby', async (req, res) => {
   try {
-    // Alle Angebote ohne Filter zurückgeben
-    const offers = await Offer.find().populate('provider');
-    
-    console.log('🎯 Alle Angebote:', offers.length);
+    const { lat, lng, interests } = req.body;
 
-    // Gibt alle Angebote zurück, ohne weitere Filter anzuwenden
-    res.json(offers);
+    if (!lat || !lng || !interests || !Array.isArray(interests)) {
+      return res.status(400).json({ error: 'Ungültige Parameter' });
+    }
+
+    const allOffers = await Offer.find().populate('provider');
+
+    const userLocation = { lat, lng };
+
+    const filtered = allOffers.filter((offer) => {
+      if (!offer.location?.coordinates || !offer.subcategory) return false;
+
+      const offerLocation = {
+        lat: offer.location.coordinates[1],
+        lng: offer.location.coordinates[0],
+      };
+
+      const distance = haversine(userLocation, offerLocation); // in Metern
+
+      return (
+        distance <= offer.radius &&
+        interests.includes(offer.subcategory)
+      );
+    });
+
+    console.log(`📍 Gefundene Angebote: ${filtered.length}`);
+    res.json(filtered);
   } catch (err) {
-    console.error('Fehler beim Abrufen der Angebote:', err);
-    res.status(500).json({ error: 'Fehler beim Abrufen der Angebote' });
+    console.error('Fehler bei Nearby-Abfrage:', err);
+    res.status(500).json({ error: 'Serverfehler bei Nearby-Abfrage' });
   }
 });
 

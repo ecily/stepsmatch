@@ -12,13 +12,18 @@ const LandingPage = () => {
         className="relative bg-cover bg-center text-white"
         style={{ backgroundImage: `url(${heroBg})` }}
       >
-        <div className="absolute inset-0 bg-black bg-opacity-50"></div>
-        <div className="relative z-10 max-w-4xl mx-auto px-6 py-24 text-center">
-          <img src={logo} alt="StepsMatch Logo" className="w-32 h-32 mx-auto mb-6" />
-          <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-4">
+        <div className="absolute inset-0 bg-black bg-opacity-70"></div> {/* Erhöhte Opazität für das Hintergrundbild */}
+        <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 text-center"> {/* Noch kleinere Hero Section */}
+          <img
+            src={logo}
+            alt="StepsMatch Logo"
+            className="w-72 h-72 mx-auto mb-4"  // Logo noch kleiner (288x288px)
+          />
+          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-2"> {/* Kleinere Schriftgröße */}
+            <span className="block text-3xl font-semibold text-gray-100 mb-2">stepsmatch.com</span>
             Finden. Nicht suchen.
           </h1>
-          <p className="text-lg md:text-xl mb-6 text-gray-200">
+          <p className="text-md md:text-lg mb-4 text-gray-200"> {/* Kleinere Beschreibung */}
             Deine Umgebung, deine Bedürfnisse – stepsmatch zeigt dir, was du brauchst, genau dann, wenn du es brauchst.
           </p>
           <Link
@@ -75,7 +80,7 @@ const LandingPage = () => {
 
       {/* Footer */}
       <footer className="mt-auto bg-gray-100 py-6 text-center text-sm text-gray-600">
-        &copy; {new Date().getFullYear()} stepsmatch.com – Kein Suchen. Nur Finden.
+        &copy; {new Date().getFullYear()} stepsmatch.com – ein Projekt von ecily/Webentwicklung
       </footer>
     </div>
   );
