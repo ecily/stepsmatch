@@ -77,23 +77,33 @@ const InterestSelectionScreen = () => {
 
     setLoading(true);
     try {
-      await axiosInstance.put(
-        `/auth/preferences/${userId}`,
-        {
-          interests: selectedInterests,
-          preferredRadius: 2000,
-        },
-        {
-          timeout: 30000,
-        }
-      );
+      const url = `/auth/preferences/${userId}`;
+      const payload = {
+        interests: selectedInterests,
+        preferredRadius: 2000,
+      };
 
-      await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
+      console.log('📤 Sende Präferenzen an:', url);
+      console.log('📦 Payload:', payload);
+
+      const res = await axiosInstance.put(url, payload, {
+        timeout: 30000,
+      });
+
+      try {
+        await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
+      } catch (storageErr) {
+        console.warn('⚠️ Konnte userInterests nicht speichern:', storageErr);
+      }
 
       navigation.navigate('Home', { refresh: true });
     } catch (error) {
       console.error('❌ Fehler beim Speichern der Präferenzen:', JSON.stringify(error, null, 2));
-      Alert.alert('Fehler', 'Präferenzen konnten nicht gespeichert werden. Bitte versuche es erneut.');
+      Alert.alert(
+        'Fehler',
+        error?.response?.data?.error ||
+        'Präferenzen konnten nicht gespeichert werden. Bitte prüfe deine Internetverbindung und versuche es erneut.'
+      );
     } finally {
       setLoading(false);
     }

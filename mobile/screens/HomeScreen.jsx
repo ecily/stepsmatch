@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import axiosInstance from '../src/api/axios';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,43 +19,33 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const RADIUS = 2000;
 const CACHE_KEY = 'cachedOffers';
 const CACHE_DURATION = 5 * 60 * 1000;
-
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
+  const [newOffers, setNewOffers] = useState([]);
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('standard');
   const [userInterests, setUserInterests] = useState([]);
   const [userId, setUserId] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
-  const reloadTimer = useRef(null);
-  const mapRef = useRef(null); // 🧭 Ref zur Karte
 
+  const reloadTimer = useRef(null);
+  const mapRef = useRef(null);
   useEffect(() => {
-    const loadUserId = async () => {
-      const id = await AsyncStorage.getItem('userId');
-      console.log('📦 Geladene User-ID aus AsyncStorage:', id);
-      setUserId(id);
-    };
-    loadUserId();
+    AsyncStorage.getItem('userId').then(setUserId);
   }, []);
 
   useEffect(() => {
-    const loadInterests = async () => {
-      const stored = await AsyncStorage.getItem('userInterests');
-      if (!stored) {
-        console.warn('⚠️ Keine gespeicherten Interessen gefunden');
-        setInitialLoading(false);
-        return;
-      }
-      try {
-        setUserInterests(JSON.parse(stored));
-      } catch (err) {
-        console.error('❌ Fehler beim Parsen der Interessen:', err);
+    AsyncStorage.getItem('userInterests').then((stored) => {
+      if (stored) {
+        try {
+          setUserInterests(JSON.parse(stored));
+        } catch (err) {
+          console.error('Fehler beim Parsen der Interessen:', err);
+        }
       }
       setInitialLoading(false);
-    };
-    loadInterests();
+    });
   }, []);
 
   useEffect(() => {
@@ -62,20 +53,13 @@ export default function HomeScreen({ navigation }) {
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-
       unsubscribe = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 3000,
-          distanceInterval: 1,
-        },
-        (newLocation) => {
-          const coords = newLocation.coords;
-          setLocation(coords);
-          // 📍 Karte folgt der Bewegung
+        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 1 },
+        (loc) => {
+          setLocation(loc.coords);
           mapRef.current?.animateToRegion({
-            latitude: coords.latitude,
-            longitude: coords.longitude,
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
             latitudeDelta: 0.002,
             longitudeDelta: 0.002,
           }, 500);
@@ -83,73 +67,34 @@ export default function HomeScreen({ navigation }) {
       );
     };
     getLocation();
-    return () => {
-      if (unsubscribe) unsubscribe.remove();
-    };
+    return () => unsubscribe && unsubscribe.remove();
   }, []);
-
   useEffect(() => {
-    if (location) {
-      loadFromCacheOrFetch();
-      if (reloadTimer.current) clearInterval(reloadTimer.current);
-      reloadTimer.current = setInterval(() => {
-        console.log('🔄 Automatischer Reload nach 5 Minuten');
-        fetchAllValidOffers();
-      }, CACHE_DURATION);
-      return () => clearInterval(reloadTimer.current);
-    }
+    if (!location) return;
+    loadFromCacheOrFetch();
+    if (reloadTimer.current) clearInterval(reloadTimer.current);
+    reloadTimer.current = setInterval(fetchAllValidOffers, CACHE_DURATION);
+    return () => clearInterval(reloadTimer.current);
   }, [location]);
 
-  useEffect(() => {
-    if (location && userInterests.length > 0) {
-      console.log('🔁 Interessen wurden geändert → Neufilterung');
-      applyInterestFilter();
-    }
-  }, [userInterests]);
-
   const loadFromCacheOrFetch = async () => {
-    if (!location) return;
     try {
       const cached = await AsyncStorage.getItem(CACHE_KEY);
       if (cached) {
         const { timestamp, data } = JSON.parse(cached);
         const isFresh = Date.now() - timestamp < CACHE_DURATION;
-        const filtered = data?.filter((o) =>
-          isValidOffer(o, location, userInterests)
-        ) || [];
-
+        const filtered = data.filter((o) => isValidOffer(o, location, userInterests));
         setOffers(filtered);
         setLoading(false);
-
-        if (!isFresh) {
-          console.log('🕒 Cache ist alt → revalidiere im Hintergrund...');
-          fetchAllValidOffers();
-        }
+        if (!isFresh) fetchAllValidOffers();
       } else {
         await fetchAllValidOffers();
       }
-    } catch (err) {
-      console.error('❌ Fehler beim Laden des Caches:', err);
+    } catch {
       await fetchAllValidOffers();
     }
   };
-
-  const applyInterestFilter = async () => {
-    try {
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { data } = JSON.parse(cached);
-        const filtered = data?.filter((o) =>
-          isValidOffer(o, location, userInterests)
-        ) || [];
-        setOffers(filtered);
-      }
-    } catch (err) {
-      console.error('❌ Fehler bei der Neufilterung nach Interessen:', err);
-    }
-  };
-
-  const fetchAllValidOffers = async (attempt = 1) => {
+  const fetchAllValidOffers = async () => {
     if (!location) return;
     setLoading(true);
     try {
@@ -157,32 +102,23 @@ export default function HomeScreen({ navigation }) {
         lat: location.latitude,
         lng: location.longitude,
       });
-
       const cacheData = res.data.map((o) => ({ ...o, images: [] }));
-      await AsyncStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ timestamp: Date.now(), data: cacheData })
-      );
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: cacheData }));
 
-      const filtered = cacheData.filter((offer) =>
-        isValidOffer(offer, location, userInterests)
-      );
-
+      const filtered = cacheData.filter((o) => isValidOffer(o, location, userInterests));
+      const newOnes = filtered.filter((o) => !offers.some((old) => old._id === o._id));
+      if (newOnes.length > 0) {
+        setNewOffers(newOnes.map((o) => o._id));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('🎉 Neue Angebote!', `Du hast ${newOnes.length} neue Angebote erreicht.`);
+      }
       setOffers(filtered);
     } catch (err) {
-      console.error('❌ Fehler beim Laden der Angebote:', JSON.stringify(err, null, 2));
-
-      if (attempt < 2) {
-        console.log('🔁 Versuche erneut zu laden...');
-        await fetchAllValidOffers(attempt + 1);
-      } else {
-        alert('Netzwerkfehler beim Laden der Angebote');
-      }
+      console.error('Fehler beim Laden:', err.message);
     } finally {
       setLoading(false);
     }
   };
-
   const isValidOffer = (offer, userLoc, interests) => {
     const now = new Date();
     const from = new Date(offer.validDates?.from);
@@ -190,10 +126,8 @@ export default function HomeScreen({ navigation }) {
     if (isNaN(from) || isNaN(to)) return false;
     to.setHours(23, 59, 59, 999);
     if (now < from || now > to) return false;
-
     const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
     if (!offer.validDays?.includes(weekday)) return false;
-
     const [startH, startM] = offer.validTimes?.start?.split(':').map(Number);
     const [endH, endM] = offer.validTimes?.end?.split(':').map(Number);
     const start = new Date(now);
@@ -201,16 +135,12 @@ export default function HomeScreen({ navigation }) {
     start.setHours(startH, startM, 0, 0);
     end.setHours(endH, endM, 0, 0);
     if (now < start || now > end) return false;
-
-    const distance = getDistance(userLoc, {
+    const dist = getDistance(userLoc, {
       latitude: offer.location.coordinates[1],
       longitude: offer.location.coordinates[0],
     });
-
-    return (
-      distance <= Math.min(RADIUS, offer.radius) &&
-      (interests.length === 0 || interests.includes(offer.subcategory))
-    );
+    return dist <= Math.min(RADIUS, offer.radius) &&
+      (interests.length === 0 || interests.includes(offer.subcategory));
   };
 
   const getDistance = (a, b) => {
@@ -219,13 +149,10 @@ export default function HomeScreen({ navigation }) {
     const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
     const lat1 = (a.latitude * Math.PI) / 180;
     const lat2 = (b.latitude * Math.PI) / 180;
-    const x =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
     return Math.round(R * c * 1000);
   };
-
   const getValidityText = (offer) => {
     const now = new Date();
     const end = new Date(offer.validDates?.to);
@@ -252,11 +179,14 @@ export default function HomeScreen({ navigation }) {
       latitude: item.location.coordinates[1],
       longitude: item.location.coordinates[0],
     });
+    const isNew = newOffers.includes(item._id);
 
     return (
-      <TouchableOpacity style={styles.card}>
+      <TouchableOpacity style={[styles.card, isNew && styles.newCard]}>
         <View style={styles.cardContent}>
-          <Text style={styles.title}>{item.name}</Text>
+          <Text style={styles.title}>
+            {item.name} {isNew && <Text style={styles.newBadge}>NEU</Text>}
+          </Text>
           <Text style={styles.category}>{item.subcategory}</Text>
           <Text style={styles.description} numberOfLines={3}>
             {item.description}
@@ -289,7 +219,6 @@ export default function HomeScreen({ navigation }) {
             }
             navigation.navigate('InterestSelection', { userId });
           }}
-          disabled={!userId}
         >
           <Text style={styles.menuText}>🎯 Interessen</Text>
         </Pressable>
@@ -348,7 +277,6 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
@@ -361,8 +289,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 3,
   },
+  newCard: {
+    borderColor: '#2563eb',
+    borderWidth: 2,
+  },
   cardContent: { padding: 12 },
   title: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  newBadge: {
+    backgroundColor: '#2563eb',
+    color: 'white',
+    fontSize: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginLeft: 6,
+  },
   category: { fontSize: 13, color: '#777', marginBottom: 4 },
   description: { fontSize: 13, color: '#333' },
   validity: { fontSize: 13, color: '#059669', marginTop: 6 },
