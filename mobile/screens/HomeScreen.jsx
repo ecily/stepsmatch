@@ -10,7 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import * as Location from 'expo-location';
-import axiosInstance from '../api/axios';
+import axiosInstance from '../src/api/axios'; // ✅ Korrigierter Import
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -29,25 +29,37 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     const loadInterests = async () => {
       const stored = await AsyncStorage.getItem('userInterests');
-      setUserInterests(stored ? JSON.parse(stored) : []);
+      if (!stored) {
+        console.warn('⚠️ Keine gespeicherten Interessen gefunden');
+        return;
+      }
+      try {
+        setUserInterests(JSON.parse(stored));
+      } catch (err) {
+        console.error('❌ Fehler beim Parsen der Interessen:', err);
+      }
     };
     loadInterests();
   }, []);
 
   useEffect(() => {
+    let unsubscribe;
+
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
 
-      // Standort wird in Echtzeit verfolgt
-      Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10 },  // Aktualisierung alle 10 Meter
-        (newLocation) => {
-          setLocation(newLocation.coords);
-        }
+      unsubscribe = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 10 },
+        (newLocation) => setLocation(newLocation.coords)
       );
     };
+
     getLocation();
+
+    return () => {
+      if (unsubscribe) unsubscribe.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -66,12 +78,20 @@ export default function HomeScreen({ navigation }) {
     try {
       const cached = await AsyncStorage.getItem(CACHE_KEY);
       if (cached) {
-        const parsed = JSON.parse(cached);
-        const filtered = parsed?.data?.filter((o) =>
+        const { timestamp, data } = JSON.parse(cached);
+
+        const isFresh = Date.now() - timestamp < CACHE_DURATION;
+        const filtered = data?.filter((o) =>
           isValidOffer(o, location, userInterests)
         ) || [];
+
         setOffers(filtered);
         setLoading(false);
+
+        if (!isFresh) {
+          console.log('🕒 Cache ist alt → revalidiere im Hintergrund...');
+          fetchAndFilterOffers();
+        }
       } else {
         await fetchAndFilterOffers();
       }
@@ -90,14 +110,12 @@ export default function HomeScreen({ navigation }) {
         interests: userInterests,
       });
 
-      // Alle Angebote im Radius speichern, nicht nur die relevanten
       const filtered = res.data.filter((offer) =>
         isValidOffer(offer, location, userInterests)
       );
 
       setOffers(filtered);
 
-      // Speichern der Angebote im Cache (alle Angebote im Radius)
       const cacheData = res.data.map((o) => ({ ...o, images: [] }));
       await AsyncStorage.setItem(
         CACHE_KEY,

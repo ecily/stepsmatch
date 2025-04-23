@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import axiosInstance from '../api/axios';
+import axiosInstance from '../src/api/axios';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -33,13 +33,23 @@ const InterestSelectionScreen = () => {
           axiosInstance.get('/categories'),
           AsyncStorage.getItem('userInterests'),
         ]);
-        setCategories(res.data);
+        setCategories(res.data || []);
         if (storedInterests) {
           setSelectedInterests(JSON.parse(storedInterests));
         }
+        await AsyncStorage.setItem('cachedCategories', JSON.stringify(res.data)); // 📦 Caching für Fallback
       } catch (error) {
-        console.error('Fehler beim Laden der Kategorien oder Interessen:', error);
-        Alert.alert('Fehler', 'Kategorien konnten nicht geladen werden.');
+        console.error('❌ Fehler beim Laden der Kategorien oder Interessen:', error);
+        Alert.alert('Fehler', 'Kategorien konnten nicht geladen werden. Versuche es später erneut.');
+        try {
+          const cached = await AsyncStorage.getItem('cachedCategories');
+          if (cached) {
+            setCategories(JSON.parse(cached));
+            Alert.alert('Offline', 'Lade zwischengespeicherte Kategorien.');
+          }
+        } catch (cacheErr) {
+          console.error('❌ Fehler beim Laden aus dem Cache:', cacheErr);
+        }
       }
     };
     fetchData();
@@ -54,24 +64,34 @@ const InterestSelectionScreen = () => {
   };
 
   const handleSubmit = async () => {
-    if (selectedInterests.length === 0) return;
+    if (selectedInterests.length === 0) {
+      Alert.alert('Hinweis', 'Bitte wähle mindestens ein Interesse aus.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Erhöhen des Timeout auf 30 Sekunden
-      await axiosInstance.put(`/auth/preferences/${userId}`, {
-        interests: selectedInterests,
-        preferredRadius: 2000,
-      }, {
-        timeout: 30000 // Timeout auf 30 Sekunden erhöht
-      });
+      await axiosInstance.put(
+        `/auth/preferences/${userId}`,
+        {
+          interests: selectedInterests,
+          preferredRadius: 2000,
+        },
+        {
+          timeout: 30000,
+        }
+      );
 
       await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
 
-      // 🔁 Kein Cache löschen – HomeScreen filtert lokal neu
-      setTimeout(() => navigation.navigate('Home'), 200);
+      const timeout = setTimeout(() => {
+        navigation.navigate('Home');
+      }, 200);
+
+      return () => clearTimeout(timeout);
     } catch (error) {
-      console.error('Fehler beim Speichern der Präferenzen:', error.response || error.message || error);
-      Alert.alert('Fehler', 'Präferenzen konnten nicht gespeichert werden. \nBitte versuche es erneut.');
+      console.error('❌ Fehler beim Speichern der Präferenzen:', error.response || error.message || error);
+      Alert.alert('Fehler', 'Präferenzen konnten nicht gespeichert werden. Bitte versuche es erneut.');
     } finally {
       setLoading(false);
     }
@@ -84,37 +104,43 @@ const InterestSelectionScreen = () => {
         Wähle Kategorien aus, die dir wichtig sind. Du kannst sie später jederzeit ändern.
       </Text>
 
-      {categories.map((cat, index) => (
-        <View key={cat.category} style={styles.categoryBlock}>
-          <Text style={styles.categoryTitle}>{cat.category}</Text>
-          <View style={styles.bubbleContainer}>
-            {cat.subcategories.map((sub) => (
-              <TouchableOpacity
-                key={sub}
-                onPress={() => toggleInterest(sub)}
-                style={[
-                  styles.bubble,
-                  {
-                    backgroundColor: selectedInterests.includes(sub)
-                      ? colors[index % colors.length]
-                      : '#f3f4f6',
-                    borderColor: colors[index % colors.length],
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: selectedInterests.includes(sub) ? '#111827' : '#6b7280',
-                    fontWeight: '500',
-                  }}
+      {categories.length === 0 ? (
+        <Text style={{ color: '#9ca3af', marginTop: 10 }}>
+          Keine Kategorien verfügbar.
+        </Text>
+      ) : (
+        categories.map((cat, index) => (
+          <View key={cat.category} style={styles.categoryBlock}>
+            <Text style={styles.categoryTitle}>{cat.category}</Text>
+            <View style={styles.bubbleContainer}>
+              {cat.subcategories.map((sub) => (
+                <TouchableOpacity
+                  key={sub}
+                  onPress={() => toggleInterest(sub)}
+                  style={[
+                    styles.bubble,
+                    {
+                      backgroundColor: selectedInterests.includes(sub)
+                        ? colors[index % colors.length]
+                        : '#f3f4f6',
+                      borderColor: colors[index % colors.length],
+                    },
+                  ]}
                 >
-                  {sub}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={{
+                      color: selectedInterests.includes(sub) ? '#111827' : '#6b7280',
+                      fontWeight: '500',
+                    }}
+                  >
+                    {sub}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        </View>
-      ))}
+        ))
+      )}
 
       <TouchableOpacity
         onPress={handleSubmit}

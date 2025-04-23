@@ -3,6 +3,17 @@ import Provider from '../models/Provider.js';
 
 const router = express.Router();
 
+// GET /api/providers – alle Anbieter abrufen (z. B. für Expo Go Test)
+router.get('/', async (req, res) => {
+  try {
+    const providers = await Provider.find();
+    res.json(providers);
+  } catch (err) {
+    console.error('❌ Fehler beim Laden der Anbieter:', err);
+    res.status(500).json({ error: 'Serverfehler beim Abrufen der Anbieter' });
+  }
+});
+
 // Anbieter anlegen
 router.post('/', async (req, res) => {
   console.log('📥 POST /providers payload:', req.body); // Logging des Eingangs
@@ -63,5 +74,3 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 export default router;
-
-

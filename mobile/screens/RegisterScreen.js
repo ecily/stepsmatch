@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
-import axiosInstance from '../api/axios';
+import axiosInstance from '../src/api/axios'; // ✅ Nur dieser Pfad geändert
 
 const RegisterScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });

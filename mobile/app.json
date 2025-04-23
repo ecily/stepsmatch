@@ -20,7 +20,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s"
         }
-      }
+      },
+      "package": "com.ecily.stepsmatch"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -38,6 +39,11 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "de0e17e7-05bf-4a73-a61b-1edd912bd925"
+      }
     }
   }
 }

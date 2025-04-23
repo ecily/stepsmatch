@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
-import axiosInstance from '../api/axios';
+import axiosInstance from '../src/api/axios'; // ✅ Korrigierter Pfad
 
 const LoginScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -15,8 +15,7 @@ const LoginScreen = ({ navigation }) => {
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Kein Benutzer gefunden.');
 
-      // Kein Alert bei Erfolg
-      navigation.navigate('LocationAccess', { userId }); // 🧭 weiter zu LocationAccess
+      navigation.navigate('LocationAccess', { userId });
     } catch (err) {
       console.error(err);
       Alert.alert('Fehler', err.response?.data?.error || 'Login fehlgeschlagen');
