@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
+  Alert,
 } from 'react-native';
 import * as Location from 'expo-location';
 import axiosInstance from '../src/api/axios';
@@ -27,6 +28,7 @@ export default function HomeScreen({ navigation }) {
   const [userId, setUserId] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const reloadTimer = useRef(null);
+  const mapRef = useRef(null); // 🧭 Ref zur Karte
 
   useEffect(() => {
     const loadUserId = async () => {
@@ -62,8 +64,22 @@ export default function HomeScreen({ navigation }) {
       if (status !== 'granted') return;
 
       unsubscribe = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10 },
-        (newLocation) => setLocation(newLocation.coords)
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 3000,
+          distanceInterval: 1,
+        },
+        (newLocation) => {
+          const coords = newLocation.coords;
+          setLocation(coords);
+          // 📍 Karte folgt der Bewegung
+          mapRef.current?.animateToRegion({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            latitudeDelta: 0.002,
+            longitudeDelta: 0.002,
+          }, 500);
+        }
       );
     };
     getLocation();
@@ -133,7 +149,7 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const fetchAllValidOffers = async () => {
+  const fetchAllValidOffers = async (attempt = 1) => {
     if (!location) return;
     setLoading(true);
     try {
@@ -154,8 +170,14 @@ export default function HomeScreen({ navigation }) {
 
       setOffers(filtered);
     } catch (err) {
-      console.error('❌ Fehler beim Laden der Angebote:', err.message || err);
-      alert('Netzwerkfehler beim Laden der Angebote');
+      console.error('❌ Fehler beim Laden der Angebote:', JSON.stringify(err, null, 2));
+
+      if (attempt < 2) {
+        console.log('🔁 Versuche erneut zu laden...');
+        await fetchAllValidOffers(attempt + 1);
+      } else {
+        alert('Netzwerkfehler beim Laden der Angebote');
+      }
     } finally {
       setLoading(false);
     }
@@ -288,6 +310,7 @@ export default function HomeScreen({ navigation }) {
         {location && (
           <View style={styles.mapCard}>
             <MapView
+              ref={mapRef}
               style={styles.map}
               region={{
                 latitude: location.latitude,
