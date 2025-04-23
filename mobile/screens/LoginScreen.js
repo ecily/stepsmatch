@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axiosInstance from '../src/api/axios'; // ✅ Korrigierter Pfad
 
 const LoginScreen = ({ navigation }) => {
@@ -14,6 +15,9 @@ const LoginScreen = ({ navigation }) => {
       const res = await axiosInstance.post('/auth/login', formData);
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Kein Benutzer gefunden.');
+
+      // 🟢 Speichere userId im AsyncStorage
+      await AsyncStorage.setItem('userId', userId);
 
       navigation.navigate('LocationAccess', { userId });
     } catch (err) {

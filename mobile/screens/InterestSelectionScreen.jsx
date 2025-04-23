@@ -20,13 +20,19 @@ const colors = [
 const InterestSelectionScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { userId } = route.params;
+  const userId = route.params?.userId;
 
   const [categories, setCategories] = useState([]);
   const [selectedInterests, setSelectedInterests] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!userId) {
+      Alert.alert('Fehler', 'User-ID fehlt – du wirst zurück zur Startseite geleitet.');
+      navigation.navigate('Home');
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const [res, storedInterests] = await Promise.all([
@@ -37,7 +43,7 @@ const InterestSelectionScreen = () => {
         if (storedInterests) {
           setSelectedInterests(JSON.parse(storedInterests));
         }
-        await AsyncStorage.setItem('cachedCategories', JSON.stringify(res.data)); // 📦 Caching für Fallback
+        await AsyncStorage.setItem('cachedCategories', JSON.stringify(res.data));
       } catch (error) {
         console.error('❌ Fehler beim Laden der Kategorien oder Interessen:', error);
         Alert.alert('Fehler', 'Kategorien konnten nicht geladen werden. Versuche es später erneut.');
@@ -84,13 +90,9 @@ const InterestSelectionScreen = () => {
 
       await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
 
-      const timeout = setTimeout(() => {
-        navigation.navigate('Home');
-      }, 200);
-
-      return () => clearTimeout(timeout);
+      navigation.navigate('Home', { refresh: true });
     } catch (error) {
-      console.error('❌ Fehler beim Speichern der Präferenzen:', error.response || error.message || error);
+      console.error('❌ Fehler beim Speichern der Präferenzen:', JSON.stringify(error, null, 2));
       Alert.alert('Fehler', 'Präferenzen konnten nicht gespeichert werden. Bitte versuche es erneut.');
     } finally {
       setLoading(false);

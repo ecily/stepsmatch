@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LocationAccessScreen = () => {
   const navigation = useNavigation();
@@ -21,6 +22,15 @@ const LocationAccessScreen = () => {
     setLoading(true);
 
     try {
+      // Speichere die userId dauerhaft
+      if (userId) {
+        await AsyncStorage.setItem('userId', userId);
+      } else {
+        Alert.alert('Fehler', 'User-ID fehlt. Bitte erneut einloggen.');
+        setLoading(false);
+        return;
+      }
+
       // Standortfreigabe anfordern
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {

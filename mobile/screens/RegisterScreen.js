@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axiosInstance from '../src/api/axios'; // ✅ Nur dieser Pfad geändert
 
 const RegisterScreen = ({ navigation }) => {
@@ -14,6 +15,9 @@ const RegisterScreen = ({ navigation }) => {
       const res = await axiosInstance.post('/auth/register', formData);
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Registrierung fehlgeschlagen');
+
+      // 🟢 Speichere userId im AsyncStorage
+      await AsyncStorage.setItem('userId', userId);
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
       navigation.navigate('LocationAccess', { userId }); // 🧭 weiter zu LocationAccess

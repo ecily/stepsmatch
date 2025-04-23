@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Button,
   ScrollView,
+  Pressable,
 } from 'react-native';
 import * as Location from 'expo-location';
-import axiosInstance from '../src/api/axios'; // ✅ Korrigierter Import
+import axiosInstance from '../src/api/axios';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -24,13 +24,25 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('standard');
   const [userInterests, setUserInterests] = useState([]);
+  const [userId, setUserId] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const reloadTimer = useRef(null);
+
+  useEffect(() => {
+    const loadUserId = async () => {
+      const id = await AsyncStorage.getItem('userId');
+      console.log('📦 Geladene User-ID aus AsyncStorage:', id);
+      setUserId(id);
+    };
+    loadUserId();
+  }, []);
 
   useEffect(() => {
     const loadInterests = async () => {
       const stored = await AsyncStorage.getItem('userInterests');
       if (!stored) {
         console.warn('⚠️ Keine gespeicherten Interessen gefunden');
+        setInitialLoading(false);
         return;
       }
       try {
@@ -38,13 +50,13 @@ export default function HomeScreen({ navigation }) {
       } catch (err) {
         console.error('❌ Fehler beim Parsen der Interessen:', err);
       }
+      setInitialLoading(false);
     };
     loadInterests();
   }, []);
 
   useEffect(() => {
     let unsubscribe;
-
     const getLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
@@ -54,9 +66,7 @@ export default function HomeScreen({ navigation }) {
         (newLocation) => setLocation(newLocation.coords)
       );
     };
-
     getLocation();
-
     return () => {
       if (unsubscribe) unsubscribe.remove();
     };
@@ -68,18 +78,25 @@ export default function HomeScreen({ navigation }) {
       if (reloadTimer.current) clearInterval(reloadTimer.current);
       reloadTimer.current = setInterval(() => {
         console.log('🔄 Automatischer Reload nach 5 Minuten');
-        fetchAndFilterOffers();
+        fetchAllValidOffers();
       }, CACHE_DURATION);
       return () => clearInterval(reloadTimer.current);
     }
-  }, [location, userInterests]);
+  }, [location]);
+
+  useEffect(() => {
+    if (location && userInterests.length > 0) {
+      console.log('🔁 Interessen wurden geändert → Neufilterung');
+      applyInterestFilter();
+    }
+  }, [userInterests]);
 
   const loadFromCacheOrFetch = async () => {
+    if (!location) return;
     try {
       const cached = await AsyncStorage.getItem(CACHE_KEY);
       if (cached) {
         const { timestamp, data } = JSON.parse(cached);
-
         const isFresh = Date.now() - timestamp < CACHE_DURATION;
         const filtered = data?.filter((o) =>
           isValidOffer(o, location, userInterests)
@@ -90,39 +107,54 @@ export default function HomeScreen({ navigation }) {
 
         if (!isFresh) {
           console.log('🕒 Cache ist alt → revalidiere im Hintergrund...');
-          fetchAndFilterOffers();
+          fetchAllValidOffers();
         }
       } else {
-        await fetchAndFilterOffers();
+        await fetchAllValidOffers();
       }
     } catch (err) {
       console.error('❌ Fehler beim Laden des Caches:', err);
-      await fetchAndFilterOffers();
+      await fetchAllValidOffers();
     }
   };
 
-  const fetchAndFilterOffers = async () => {
+  const applyInterestFilter = async () => {
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data } = JSON.parse(cached);
+        const filtered = data?.filter((o) =>
+          isValidOffer(o, location, userInterests)
+        ) || [];
+        setOffers(filtered);
+      }
+    } catch (err) {
+      console.error('❌ Fehler bei der Neufilterung nach Interessen:', err);
+    }
+  };
+
+  const fetchAllValidOffers = async () => {
+    if (!location) return;
     setLoading(true);
     try {
-      const res = await axiosInstance.post('/offers/nearby', {
+      const res = await axiosInstance.post('/offers/nearby-noauth', {
         lat: location.latitude,
         lng: location.longitude,
-        interests: userInterests,
       });
-
-      const filtered = res.data.filter((offer) =>
-        isValidOffer(offer, location, userInterests)
-      );
-
-      setOffers(filtered);
 
       const cacheData = res.data.map((o) => ({ ...o, images: [] }));
       await AsyncStorage.setItem(
         CACHE_KEY,
         JSON.stringify({ timestamp: Date.now(), data: cacheData })
       );
+
+      const filtered = cacheData.filter((offer) =>
+        isValidOffer(offer, location, userInterests)
+      );
+
+      setOffers(filtered);
     } catch (err) {
-      console.error('❌ Fehler beim Laden der Angebote:', err.message);
+      console.error('❌ Fehler beim Laden der Angebote:', err.message || err);
       alert('Netzwerkfehler beim Laden der Angebote');
     } finally {
       setLoading(false);
@@ -153,7 +185,10 @@ export default function HomeScreen({ navigation }) {
       longitude: offer.location.coordinates[0],
     });
 
-    return distance <= Math.min(RADIUS, offer.radius) && interests.includes(offer.subcategory);
+    return (
+      distance <= Math.min(RADIUS, offer.radius) &&
+      (interests.length === 0 || interests.includes(offer.subcategory))
+    );
   };
 
   const getDistance = (a, b) => {
@@ -211,62 +246,88 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
+  if (initialLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={{ marginTop: 12 }}>Lade Einstellungen...</Text>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.heading}>Angebote in deiner Nähe</Text>
-
-      {location && (
-        <View style={styles.mapCard}>
-          <MapView
-            style={styles.map}
-            region={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.002,
-              longitudeDelta: 0.002,
-            }}
-            mapType={mapType}
-          >
-            <Marker coordinate={location} />
-          </MapView>
-        </View>
-      )}
-
-      <View style={styles.buttonContainer}>
-        <Button
-          title={`Wechsel zu ${mapType === 'standard' ? 'Satellitenansicht' : 'Standardansicht'}`}
+    <View style={{ flex: 1 }}>
+      <View style={styles.menuBar}>
+        <Pressable
+          style={styles.menuButton}
+          onPress={() => {
+            if (!userId) {
+              alert('User-ID fehlt');
+              return;
+            }
+            navigation.navigate('InterestSelection', { userId });
+          }}
+          disabled={!userId}
+        >
+          <Text style={styles.menuText}>🎯 Interessen</Text>
+        </Pressable>
+        <Pressable
+          style={styles.menuButton}
           onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-        />
-        <View style={{ marginTop: 10 }}>
-          <Button title="Neu laden" onPress={fetchAndFilterOffers} color="#10b981" />
-        </View>
+        >
+          <Text style={styles.menuText}>🗺 Karte</Text>
+        </Pressable>
+        <Pressable style={styles.menuButton} onPress={fetchAllValidOffers}>
+          <Text style={styles.menuText}>🔄 Neu</Text>
+        </Pressable>
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
-      ) : offers.length === 0 ? (
-        <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
-      ) : (
-        Object.entries(groupedOffers).map(([category, items]) => (
-          <View key={category} style={{ marginBottom: 24 }}>
-            <Text style={styles.sectionTitle}>{category}</Text>
-            <FlatList
-              horizontal
-              data={items}
-              keyExtractor={(item) => item._id}
-              renderItem={renderOfferCard}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
-            />
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: 70 }}>
+        <Text style={styles.heading}>Angebote in deiner Nähe</Text>
+
+        {location && (
+          <View style={styles.mapCard}>
+            <MapView
+              style={styles.map}
+              region={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+                latitudeDelta: 0.002,
+                longitudeDelta: 0.002,
+              }}
+              mapType={mapType}
+            >
+              <Marker coordinate={location} />
+            </MapView>
           </View>
-        ))
-      )}
-    </ScrollView>
+        )}
+
+        {loading ? (
+          <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
+        ) : offers.length === 0 ? (
+          <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
+        ) : (
+          Object.entries(groupedOffers).map(([category, items]) => (
+            <View key={category} style={{ marginBottom: 24 }}>
+              <Text style={styles.sectionTitle}>{category}</Text>
+              <FlatList
+                horizontal
+                data={items}
+                keyExtractor={(item) => item._id}
+                renderItem={renderOfferCard}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16 }}
+              />
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
+  container: { flex: 1, backgroundColor: '#fff' },
   heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
   sectionTitle: { fontSize: 20, fontWeight: '600', paddingHorizontal: 16, marginBottom: 8 },
   card: {
@@ -300,8 +361,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  buttonContainer: {
-    marginVertical: 10,
-    marginHorizontal: 16,
+  menuBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 40,
+    paddingBottom: 10,
+    backgroundColor: '#f1f5f9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  menuButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#e0e7ff',
+  },
+  menuText: {
+    fontWeight: '600',
+    color: '#1e3a8a',
   },
 });
