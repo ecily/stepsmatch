@@ -77,6 +77,7 @@ const InterestSelectionScreen = () => {
 
     setLoading(true);
     try {
+      // ✅ Korrektur: ohne doppeltes /api
       const url = `/auth/preferences/${userId}`;
       const payload = {
         interests: selectedInterests,

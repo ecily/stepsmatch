@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const baseURL = __DEV__
-  ? 'http://10.0.0.34:5000/api' // ✅ Lokales Backend
-  : 'https://shark-app-f9zq9.ondigitalocean.app/api'; // ✅ Live-Backend für APK
+  ? 'http://10.0.0.34:5000/api' // Lokales Backend für Expo Go
+  : 'https://lobster-app-ie9a5.ondigitalocean.app/api'; // ✅ Dein aktuelles Live-Backend
 
 const axiosInstance = axios.create({
   baseURL,

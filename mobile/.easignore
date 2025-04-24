@@ -1,0 +1,45 @@
+# 🧹 Node modules und Lockfiles
+node_modules/
+npm-debug.log
+yarn.lock
+package-lock.json
+
+# 🧪 Tests und lokale Umgebungsdateien
+__tests__/
+*.test.js
+.env
+.env.*
+
+# 📦 Build- und Cache-Ordner
+android/app/build/
+ios/Pods/
+build/
+dist/
+.cache/
+web-build/
+
+# 🖼️ Große oder temporäre Assets (nur wenn nicht gebraucht)
+assets/temp/
+assets/mock/
+assets/drafts/
+
+# 🧠 IDEs und Editor-Configs
+.vscode/
+.idea/
+*.iml
+
+# 🐘 Expo-Log
+expo-debug.log
+
+# 🧩 Git-Zeug
+.git/
+.gitignore
+
+# ⚠️ Lokale Metadaten
+.DS_Store
+Thumbs.db
+
+# 📦 Exportierte Dateien
+*.tar.gz
+*.apk
+*.ipa

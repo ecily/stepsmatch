@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axiosInstance from '../src/api/axios'; // ✅ Nur dieser Pfad geändert
+import axiosInstance from '../src/api/axios';
 
 const RegisterScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -12,6 +12,7 @@ const RegisterScreen = ({ navigation }) => {
 
   const handleRegister = async () => {
     try {
+      // ✅ KORRIGIERT: Kein doppeltes /api
       const res = await axiosInstance.post('/auth/register', formData);
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Registrierung fehlgeschlagen');
@@ -20,7 +21,7 @@ const RegisterScreen = ({ navigation }) => {
       await AsyncStorage.setItem('userId', userId);
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
-      navigation.navigate('LocationAccess', { userId }); // 🧭 weiter zu LocationAccess
+      navigation.navigate('LocationAccess', { userId });
     } catch (err) {
       console.error(err);
       Alert.alert('Fehler', err.response?.data?.error || 'Registrierung fehlgeschlagen');

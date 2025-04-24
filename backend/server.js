@@ -38,7 +38,7 @@ app.use('/api/users', userAuthRoutes);
 
 // ✅ MongoDB-Verbindung & Serverstart
 connectDB().then(() => {
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server läuft auf:`);
     console.log(`→ lokal: http://localhost:${PORT}`);
     console.log(`→ im Netzwerk: http://10.0.0.34:${PORT}`);

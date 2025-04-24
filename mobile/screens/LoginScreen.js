@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axiosInstance from '../src/api/axios'; // ✅ Korrigierter Pfad
+import axiosInstance from '../src/api/axios';
 
 const LoginScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -12,6 +12,7 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     try {
+      // ✅ KORRIGIERT: Kein doppeltes /api mehr
       const res = await axiosInstance.post('/auth/login', formData);
       const userId = res.data?.provider?._id;
       if (!userId) throw new Error('Kein Benutzer gefunden.');
