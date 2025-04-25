@@ -19,10 +19,19 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// ✅ CORS komplett freigeben für mobile Geräte
+// ✅ CORS für Web und Mobile Devices
 app.use(cors({
-  origin: '*', // 🔓 Testweise komplett offen
-  credentials: true
+  origin: [
+    'http://localhost:5173',    // Web-Frontend lokal
+    'http://localhost:19006',   // Expo Go
+    'http://localhost:8081',    // Android Emulator
+    'http://10.0.0.34:5173',    // Web-Frontend im Netzwerk
+    'http://10.0.0.34:19006',   // Expo Go im Netzwerk
+    'exp://10.0.0.34:19000',    // Expo Dev Client
+    'https://lobster-app-ie9a5.ondigitalocean.app', // Live-URL Mobile
+    'https://shark-app-f9zq9.ondigitalocean.app',   // Live-URL Web
+  ],
+  credentials: true,
 }));
 
 // ✅ API-Routen
@@ -31,6 +40,11 @@ app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/users', userAuthRoutes);
+
+// ✅ Neu: Ping-Route für Serverstatus
+app.get('/api/ping', (req, res) => {
+  res.status(200).send('pong');
+});
 
 // ✅ MongoDB-Verbindung & Serverstart
 connectDB().then(() => {

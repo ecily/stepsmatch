@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  ScrollView,
   Pressable,
   Alert,
 } from 'react-native';
@@ -29,20 +28,22 @@ export default function HomeScreen({ navigation }) {
   const [mapType, setMapType] = useState('standard');
   const [userInterests, setUserInterests] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [status, setStatus] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
   const reloadTimer = useRef(null);
   const mapRef = useRef(null);
 
-  // ✅ Teste Backend-Verbindung beim Start
   useEffect(() => {
     const testBackendConnection = async () => {
       try {
-        const res = await axiosInstance.get('/offers'); // oder z. B. '/offers/test' falls vorhanden
+        const res = await axiosInstance.get('/offers');
+        setStatus('✅ Server OK');
         console.log('✅ Verbindung zum Backend OK:', res.status);
       } catch (err) {
         console.error('❌ Netzwerkfehler:', err.message);
-        Alert.alert('Verbindung fehlgeschlagen', 'Die App konnte das Backend nicht erreichen.\n' + err.message);
+        setStatus('❌ Serverfehler');
+        Alert.alert('Verbindung fehlgeschlagen', 'Die App konnte das Backend nicht erreichen.');
       }
     };
     testBackendConnection();
@@ -74,12 +75,6 @@ export default function HomeScreen({ navigation }) {
         { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 1 },
         (loc) => {
           setLocation(loc.coords);
-          mapRef.current?.animateToRegion({
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: 0.002,
-            longitudeDelta: 0.002,
-          }, 500);
         }
       );
     };
@@ -121,7 +116,7 @@ export default function HomeScreen({ navigation }) {
         lat: location.latitude,
         lng: location.longitude,
       });
-      const cacheData = res.data.map((o) => ({ ...o, images: [] }));
+      const cacheData = res.data.map(({ images, ...rest }) => rest);
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: cacheData }));
 
       const filtered = cacheData.filter((o) => isValidOffer(o, location, userInterests));
@@ -185,7 +180,7 @@ export default function HomeScreen({ navigation }) {
     const days = Math.floor(min / 1440);
     const hrs = Math.floor((min % 1440) / 60);
     const mins = min % 60;
-    return `Jetzt gültig • noch ${days ? days + ' Tage, ' : ''}${hrs ? hrs + ' Std., ' : ''}${mins} Min.`;
+    return `Noch gültig: ${days ? days + ' Tage, ' : ''}${hrs ? hrs + ' Std., ' : ''}${mins} Min.`;
   };
 
   const groupedOffers = offers.reduce((acc, offer) => {
@@ -208,40 +203,20 @@ export default function HomeScreen({ navigation }) {
         onPress={() => navigation.navigate('OfferDetails', { offerId: item._id })}
       >
         <View style={styles.cardContent}>
-          <Text style={styles.title}>
-            {item.name} {isNew && <Text style={styles.newBadge}>NEU</Text>}
-          </Text>
+          {dist <= 100 && <Text style={styles.alertText}>Nur {dist} m entfernt!</Text>}
           <Text style={styles.category}>{item.subcategory}</Text>
+          <Text style={styles.title}>{item.name}</Text>
           <Text style={styles.description} numberOfLines={3}>{item.description}</Text>
           <Text style={styles.validity}>{getValidityText(item)}</Text>
-          <Text style={styles.distance}>Entfernung: {dist} m</Text>
         </View>
       </TouchableOpacity>
     );
   };
 
-  if (initialLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={{ marginTop: 12 }}>Lade Einstellungen...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flex: 1 }}>
+  const ListHeader = () => (
+    <>
       <View style={styles.menuBar}>
-        <Pressable
-          style={styles.menuButton}
-          onPress={() => {
-            if (!userId) {
-              alert('User-ID fehlt');
-              return;
-            }
-            navigation.navigate('InterestSelection', { userId });
-          }}
-        >
+        <Pressable style={styles.menuButton} onPress={() => navigation.navigate('InterestSelection', { userId })}>
           <Text style={styles.menuText}>🎯 Interessen</Text>
         </Pressable>
         <Pressable style={styles.menuButton} onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}>
@@ -252,94 +227,97 @@ export default function HomeScreen({ navigation }) {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: 70 }}>
-        <Text style={styles.heading}>Angebote in deiner Nähe</Text>
+      <Text style={styles.heading}>Angebote in deiner Nähe</Text>
+      {status && <Text style={styles.status}>{status}</Text>}
 
-        {location && (
-          <View style={styles.mapCard}>
-            <MapView
-              ref={mapRef}
-              style={styles.map}
-              region={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.002,
-                longitudeDelta: 0.002,
-              }}
-              mapType={mapType}
-              customMapStyle={customMapStyle}
-            >
-              <Marker coordinate={location} pinColor="blue" />
-              {offers.map((offer) => (
-                <Marker
-                  key={offer._id}
-                  coordinate={{
-                    latitude: offer.location.coordinates[1],
-                    longitude: offer.location.coordinates[0],
-                  }}
-                  title={offer.name}
-                  description={offer.description}
-                />
-              ))}
-            </MapView>
-          </View>
-        )}
-
-        {loading ? (
-          <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
-        ) : offers.length === 0 ? (
-          <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
-        ) : (
-          Object.entries(groupedOffers).map(([category, items]) => (
-            <View key={category} style={{ marginBottom: 24 }}>
-              <Text style={styles.sectionTitle}>{category}</Text>
-              <FlatList
-                horizontal
-                data={items}
-                keyExtractor={(item) => item._id}
-                renderItem={renderOfferCard}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 16 }}
+      {location && (
+        <View style={styles.mapCard}>
+          <MapView
+            ref={mapRef}
+            style={styles.map}
+            region={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.002,
+              longitudeDelta: 0.002,
+            }}
+            mapType={mapType}
+            customMapStyle={customMapStyle}
+          >
+            <Marker coordinate={location} pinColor="blue" />
+            {offers.map((offer) => (
+              <Marker
+                key={offer._id}
+                coordinate={{
+                  latitude: offer.location.coordinates[1],
+                  longitude: offer.location.coordinates[0],
+                }}
+                title={offer.name}
+                description={offer.description}
               />
-            </View>
-          ))
-        )}
-      </ScrollView>
-    </View>
+            ))}
+          </MapView>
+        </View>
+      )}
+    </>
+  );
+
+  if (initialLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={{ marginTop: 12 }}>Lade Einstellungen...</Text>
+      </View>
+    );
+  }
+
+  const allOffers = Object.entries(groupedOffers).flatMap(([category, items]) => items);
+
+  return (
+    <FlatList
+      style={styles.container}
+      ListHeaderComponent={<ListHeader />}
+      data={allOffers}
+      keyExtractor={(item) => item._id}
+      renderItem={renderOfferCard}
+      contentContainerStyle={{ paddingBottom: 60 }}
+      ListEmptyComponent={loading ? (
+        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
+      ) : (
+        <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },
+  heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginTop: 16, marginBottom: 6 },
   sectionTitle: { fontSize: 20, fontWeight: '600', paddingHorizontal: 16, marginBottom: 8 },
   card: {
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f9fafb',
+    borderColor: '#d1d5db',
+    borderWidth: 1,
     borderRadius: 12,
-    marginRight: 12,
-    width: 220,
+    marginHorizontal: 16,
+    marginBottom: 16,
     overflow: 'hidden',
-    elevation: 3,
   },
   newCard: {
     borderColor: '#2563eb',
     borderWidth: 2,
   },
-  cardContent: { padding: 12 },
-  title: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  newBadge: {
-    backgroundColor: '#2563eb',
-    color: 'white',
-    fontSize: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginLeft: 6,
+  cardContent: { padding: 16 },
+  alertText: {
+    fontSize: 15,
+    color: '#dc2626',
+    fontWeight: '700',
+    marginBottom: 6,
   },
-  category: { fontSize: 13, color: '#777', marginBottom: 4 },
-  description: { fontSize: 13, color: '#333' },
-  validity: { fontSize: 13, color: '#059669', marginTop: 6 },
+  title: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginBottom: 6 },
+  category: { fontSize: 14, color: '#6b7280', marginBottom: 4 },
+  description: { fontSize: 14, color: '#374151', marginBottom: 6 },
+  validity: { fontSize: 13, color: '#059669', marginBottom: 8 },
   distance: { fontSize: 13, color: '#1d4ed8', marginTop: 2 },
   noResults: {
     fontSize: 16,
@@ -366,11 +344,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 999,
   },
   menuButton: {
     paddingVertical: 6,
@@ -381,5 +354,11 @@ const styles = StyleSheet.create({
   menuText: {
     fontWeight: '600',
     color: '#1e3a8a',
+  },
+  status: {
+    fontSize: 12,
+    color: '#4b5563',
+    paddingHorizontal: 16,
+    marginBottom: 6,
   },
 });
