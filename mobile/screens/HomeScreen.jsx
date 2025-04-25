@@ -15,10 +15,12 @@ import * as Haptics from 'expo-haptics';
 import axiosInstance from '../src/api/axios';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import customMapStyle from '../components/mapStyle';
 
 const RADIUS = 2000;
 const CACHE_KEY = 'cachedOffers';
 const CACHE_DURATION = 5 * 60 * 1000;
+
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
   const [newOffers, setNewOffers] = useState([]);
@@ -31,6 +33,21 @@ export default function HomeScreen({ navigation }) {
 
   const reloadTimer = useRef(null);
   const mapRef = useRef(null);
+
+  // ✅ Teste Backend-Verbindung beim Start
+  useEffect(() => {
+    const testBackendConnection = async () => {
+      try {
+        const res = await axiosInstance.get('/offers'); // oder z. B. '/offers/test' falls vorhanden
+        console.log('✅ Verbindung zum Backend OK:', res.status);
+      } catch (err) {
+        console.error('❌ Netzwerkfehler:', err.message);
+        Alert.alert('Verbindung fehlgeschlagen', 'Die App konnte das Backend nicht erreichen.\n' + err.message);
+      }
+    };
+    testBackendConnection();
+  }, []);
+
   useEffect(() => {
     AsyncStorage.getItem('userId').then(setUserId);
   }, []);
@@ -69,6 +86,7 @@ export default function HomeScreen({ navigation }) {
     getLocation();
     return () => unsubscribe && unsubscribe.remove();
   }, []);
+
   useEffect(() => {
     if (!location) return;
     loadFromCacheOrFetch();
@@ -94,6 +112,7 @@ export default function HomeScreen({ navigation }) {
       await fetchAllValidOffers();
     }
   };
+
   const fetchAllValidOffers = async () => {
     if (!location) return;
     setLoading(true);
@@ -119,6 +138,7 @@ export default function HomeScreen({ navigation }) {
       setLoading(false);
     }
   };
+
   const isValidOffer = (offer, userLoc, interests) => {
     const now = new Date();
     const from = new Date(offer.validDates?.from);
@@ -153,6 +173,7 @@ export default function HomeScreen({ navigation }) {
     const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
     return Math.round(R * c * 1000);
   };
+
   const getValidityText = (offer) => {
     const now = new Date();
     const end = new Date(offer.validDates?.to);
@@ -182,15 +203,16 @@ export default function HomeScreen({ navigation }) {
     const isNew = newOffers.includes(item._id);
 
     return (
-      <TouchableOpacity style={[styles.card, isNew && styles.newCard]}>
+      <TouchableOpacity
+        style={[styles.card, isNew && styles.newCard]}
+        onPress={() => navigation.navigate('OfferDetails', { offerId: item._id })}
+      >
         <View style={styles.cardContent}>
           <Text style={styles.title}>
             {item.name} {isNew && <Text style={styles.newBadge}>NEU</Text>}
           </Text>
           <Text style={styles.category}>{item.subcategory}</Text>
-          <Text style={styles.description} numberOfLines={3}>
-            {item.description}
-          </Text>
+          <Text style={styles.description} numberOfLines={3}>{item.description}</Text>
           <Text style={styles.validity}>{getValidityText(item)}</Text>
           <Text style={styles.distance}>Entfernung: {dist} m</Text>
         </View>
@@ -222,10 +244,7 @@ export default function HomeScreen({ navigation }) {
         >
           <Text style={styles.menuText}>🎯 Interessen</Text>
         </Pressable>
-        <Pressable
-          style={styles.menuButton}
-          onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-        >
+        <Pressable style={styles.menuButton} onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}>
           <Text style={styles.menuText}>🗺 Karte</Text>
         </Pressable>
         <Pressable style={styles.menuButton} onPress={fetchAllValidOffers}>
@@ -248,8 +267,20 @@ export default function HomeScreen({ navigation }) {
                 longitudeDelta: 0.002,
               }}
               mapType={mapType}
+              customMapStyle={customMapStyle}
             >
-              <Marker coordinate={location} />
+              <Marker coordinate={location} pinColor="blue" />
+              {offers.map((offer) => (
+                <Marker
+                  key={offer._id}
+                  coordinate={{
+                    latitude: offer.location.coordinates[1],
+                    longitude: offer.location.coordinates[0],
+                  }}
+                  title={offer.name}
+                  description={offer.description}
+                />
+              ))}
             </MapView>
           </View>
         )}
@@ -277,6 +308,7 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginBottom: 10 },

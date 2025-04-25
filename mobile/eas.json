@@ -25,6 +25,12 @@
         "buildType": "apk"
       },
       "resourceClass": "default"
+    },
+    "local": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
