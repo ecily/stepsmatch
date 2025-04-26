@@ -17,7 +17,7 @@ const OfferSchema = new mongoose.Schema({
     required: true
   },
   subcategory: {
-    type: String  // 👈 Subkategorie hinzugefügt
+    type: String // 👈 Subkategorie hinzugefügt
   },
   description: {
     type: String,
@@ -57,7 +57,11 @@ const OfferSchema = new mongoose.Schema({
   },
   languages: {
     type: [String]
-  }
+  },
+  foundCounter: {
+    type: Number,
+    default: 0
+  } // 🎯 Neu: Zähler, wie oft ein Angebot erreicht wurde (immer plus 1 bei Zielerreichung)
 }, {
   timestamps: true
 });

@@ -8,9 +8,12 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Vibration,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 import axiosInstance from '../src/api/axios';
 import customMapStyle from '../components/mapStyle';
 
@@ -27,6 +30,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
   const [remainingTime, setRemainingTime] = useState('');
   const [loading, setLoading] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [targetReached, setTargetReached] = useState(false); // 🎯 Neu: Ziel erreicht Status
   const mapRef = useRef(null);
   const watchId = useRef(null);
 
@@ -78,6 +82,17 @@ export default function OfferDetailsScreen({ route, navigation }) {
     return () => clearInterval(interval);
   }, [offer]);
 
+  // 🎯 Neu: Überwache Navigation, prüfe Zielnähe
+  useEffect(() => {
+    let interval;
+    if (isNavigating && location && offer && !targetReached) {
+      interval = setInterval(() => {
+        checkIfTargetReached();
+      }, 5000); // alle 5 Sekunden prüfen
+    }
+    return () => clearInterval(interval);
+  }, [isNavigating, location, offer, targetReached]);
+
   const fetchRoute = async (coords) => {
     try {
       const origin = `${coords.latitude},${coords.longitude}`;
@@ -106,16 +121,15 @@ export default function OfferDetailsScreen({ route, navigation }) {
 
   const fitMap = (coords) => {
     if (!mapRef.current || !offer) return;
-    mapRef.current.fitToCoordinates([
-      coords,
-      {
-        latitude: offer.location.coordinates[1],
-        longitude: offer.location.coordinates[0],
+    mapRef.current.animateCamera({
+      center: {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
       },
-    ], {
-      edgePadding: { top: 80, right: 80, bottom: 80, left: 80 },
-      animated: true,
-    });
+      pitch: 60, // 🎯 Neu: Karte kippen
+      heading: coords.heading || 0, // falls vorhanden, Heading nutzen
+      zoom: 18, // 🎯 Neu: reinzoomen
+    }, { duration: 1000 });
   };
 
   const decodePolyline = (t) => {
@@ -162,6 +176,47 @@ export default function OfferDetailsScreen({ route, navigation }) {
     const hours = Math.floor((minutes % 1440) / 60);
     const mins = minutes % 60;
     return `Noch gültig: ${days ? days + ' Tage, ' : ''}${hours ? hours + ' Std., ' : ''}${mins} Min.`;
+  };
+
+  const checkIfTargetReached = async () => {
+    const userLoc = location;
+    const targetLoc = {
+      latitude: offer.location.coordinates[1],
+      longitude: offer.location.coordinates[0],
+    };
+    const distance = getDistance(userLoc, targetLoc);
+    if (distance <= 20) { // 🎯 Schwelle Ziel erreicht: 20m
+      setTargetReached(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      playSound();
+      Alert.alert('🎯 Ziel erreicht!', 'Du hast das Angebot erfolgreich gefunden.');
+      try {
+        await axiosInstance.post(`/offers/found/${offer._id}`);
+      } catch (err) {
+        console.error('Fehler beim Senden des Ziel-Events:', err);
+      }
+    }
+  };
+
+  const getDistance = (loc1, loc2) => {
+    const R = 6371e3; // Erdradius in Metern
+    const φ1 = loc1.latitude * Math.PI/180;
+    const φ2 = loc2.latitude * Math.PI/180;
+    const Δφ = (loc2.latitude-loc1.latitude) * Math.PI/180;
+    const Δλ = (loc2.longitude-loc1.longitude) * Math.PI/180;
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const d = R * c;
+    return d;
+  };
+
+  const playSound = async () => {
+    const { sound } = await Audio.Sound.createAsync(
+      require('../assets/ping.mp3') // 🔔 Dein Ping-Sound im assets-Ordner
+    );
+    await sound.playAsync();
   };
 
   const distanceText = distance ? `Nur ${distance} entfernt!` : '';

@@ -167,4 +167,20 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// 🎯 NEU: Counter erhöhen, wenn Ziel erreicht
+router.post('/found/:id', async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.id);
+    if (!offer) {
+      return res.status(404).json({ error: 'Angebot nicht gefunden' });
+    }
+    offer.foundCounter = (offer.foundCounter || 0) + 1; // Counter +1 erhöhen
+    await offer.save();
+    res.json({ success: true, foundCounter: offer.foundCounter });
+  } catch (error) {
+    console.error('Fehler beim Hochzählen des foundCounters:', error);
+    res.status(500).json({ error: 'Serverfehler beim Hochzählen des Counters' });
+  }
+});
+
 export default router;
