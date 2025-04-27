@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   Pressable,
   Alert,
+  ScrollView,
 } from 'react-native';
 import * as Location from 'expo-location';
-import * as Haptics from 'expo-haptics';
 import axiosInstance from '../src/api/axios';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,10 +19,15 @@ import customMapStyle from '../components/mapStyle';
 const RADIUS = 2000;
 const CACHE_KEY = 'cachedOffers';
 const CACHE_DURATION = 5 * 60 * 1000;
+const CARD_OPACITY = 0.6;
+
+const colors = [
+  '#93c5fd', '#fcd34d', '#86efac', '#fda4af',
+  '#f9a8d4', '#ddd6fe', '#fdba74',
+];
 
 export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState([]);
-  const [newOffers, setNewOffers] = useState([]);
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('standard');
@@ -35,103 +40,87 @@ export default function HomeScreen({ navigation }) {
   const mapRef = useRef(null);
 
   useEffect(() => {
-    const testBackendConnection = async () => {
+    const startApp = async () => {
       try {
-        const res = await axiosInstance.get('/offers');
-        setStatus('✅ Server OK');
-        console.log('✅ Verbindung zum Backend OK:', res.status);
+        await checkBackendConnection();
+        await loadUserSettings();
       } catch (err) {
-        console.error('❌ Netzwerkfehler:', err.message);
-        setStatus('❌ Serverfehler');
-        Alert.alert('Verbindung fehlgeschlagen', 'Die App konnte das Backend nicht erreichen.');
+        console.error('Fehler beim Start der App:', err);
       }
     };
-    testBackendConnection();
-  }, []);
+    startApp();
 
-  useEffect(() => {
-    AsyncStorage.getItem('userId').then(setUserId);
-  }, []);
-
-  useEffect(() => {
-    AsyncStorage.getItem('userInterests').then((stored) => {
-      if (stored) {
-        try {
-          setUserInterests(JSON.parse(stored));
-        } catch (err) {
-          console.error('Fehler beim Parsen der Interessen:', err);
-        }
-      }
-      setInitialLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    let unsubscribe;
-    const getLocation = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      unsubscribe = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 1 },
-        (loc) => {
-          setLocation(loc.coords);
-        }
-      );
+    return () => {
+      if (reloadTimer.current) clearInterval(reloadTimer.current);
     };
-    getLocation();
-    return () => unsubscribe && unsubscribe.remove();
   }, []);
 
   useEffect(() => {
-    if (!location) return;
-    loadFromCacheOrFetch();
-    if (reloadTimer.current) clearInterval(reloadTimer.current);
-    reloadTimer.current = setInterval(fetchAllValidOffers, CACHE_DURATION);
-    return () => clearInterval(reloadTimer.current);
-  }, [location]);
+    if (userInterests.length > 0) {
+      getLocationAndOffers();
+    }
+  }, [userInterests]);
 
-  const loadFromCacheOrFetch = async () => {
+  const checkBackendConnection = async () => {
     try {
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { timestamp, data } = JSON.parse(cached);
-        const isFresh = Date.now() - timestamp < CACHE_DURATION;
-        const filtered = data.filter((o) => isValidOffer(o, location, userInterests));
-        setOffers(filtered);
-        setLoading(false);
-        if (!isFresh) fetchAllValidOffers();
-      } else {
-        await fetchAllValidOffers();
-      }
-    } catch {
-      await fetchAllValidOffers();
+      await axiosInstance.get('/offers');
+      setStatus('✅ Server OK');
+    } catch (err) {
+      console.error('❌ Netzwerkfehler:', err.message);
+      setStatus('❌ Serverfehler');
+      Alert.alert('Verbindung fehlgeschlagen', 'Die App konnte das Backend nicht erreichen.');
     }
   };
 
-  const fetchAllValidOffers = async () => {
-    if (!location) return;
-    setLoading(true);
+  const loadUserSettings = async () => {
     try {
-      const res = await axiosInstance.post('/offers/nearby-noauth', {
-        lat: location.latitude,
-        lng: location.longitude,
-      });
-      const cacheData = res.data.map(({ images, ...rest }) => rest);
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: cacheData }));
+      const interests = await AsyncStorage.getItem('userInterests');
+      const id = await AsyncStorage.getItem('userId');
+      if (interests) setUserInterests(JSON.parse(interests));
+      if (id) setUserId(id);
+    } catch (err) {
+      console.error('Fehler beim Laden der Nutzerdaten:', err);
+    } finally {
+      setInitialLoading(false);
+    }
+  };
 
-      const filtered = cacheData.filter((o) => isValidOffer(o, location, userInterests));
-      const newOnes = filtered.filter((o) => !offers.some((old) => old._id === o._id));
-      if (newOnes.length > 0) {
-        setNewOffers(newOnes.map((o) => o._id));
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('🎉 Neue Angebote!', `Du hast ${newOnes.length} neue Angebote erreicht.`);
+  const getLocationAndOffers = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Standort benötigt', 'Bitte erlaube den Zugriff auf den Standort.');
+      return;
+    }
+    const loc = await Location.getCurrentPositionAsync({});
+    setLocation(loc.coords);
+    await fetchAllValidOffers(loc.coords, true);
+    reloadTimer.current = setInterval(() => fetchAllValidOffers(loc.coords), CACHE_DURATION);
+  };
+
+  const fetchAllValidOffers = async (coords, updateCache = false) => {
+    if (!coords) return;
+    try {
+      setLoading(true);
+      const res = await axiosInstance.post('/offers/nearby-noauth', {
+        lat: coords.latitude,
+        lng: coords.longitude,
+      });
+      const data = res.data.map(({ images, ...rest }) => rest);
+      if (updateCache) {
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data }));
       }
+      const filtered = filterOffers(data, coords);
       setOffers(filtered);
     } catch (err) {
-      console.error('Fehler beim Laden:', err.message);
+      console.error('Fehler beim Neu-Laden:', err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const filterOffers = (data, coords) => {
+    if (!coords) return [];
+    return data.filter((offer) => isValidOffer(offer, coords, userInterests));
   };
 
   const isValidOffer = (offer, userLoc, interests) => {
@@ -141,15 +130,18 @@ export default function HomeScreen({ navigation }) {
     if (isNaN(from) || isNaN(to)) return false;
     to.setHours(23, 59, 59, 999);
     if (now < from || now > to) return false;
+
     const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
     if (!offer.validDays?.includes(weekday)) return false;
-    const [startH, startM] = offer.validTimes?.start?.split(':').map(Number);
-    const [endH, endM] = offer.validTimes?.end?.split(':').map(Number);
+
+    const [startH, startM] = offer.validTimes?.start?.split(':').map(Number) || [0, 0];
+    const [endH, endM] = offer.validTimes?.end?.split(':').map(Number) || [23, 59];
     const start = new Date(now);
     const end = new Date(now);
     start.setHours(startH, startM, 0, 0);
     end.setHours(endH, endM, 0, 0);
     if (now < start || now > end) return false;
+
     const dist = getDistance(userLoc, {
       latitude: offer.location.coordinates[1],
       longitude: offer.location.coordinates[0],
@@ -169,7 +161,7 @@ export default function HomeScreen({ navigation }) {
     return Math.round(R * c * 1000);
   };
 
-  const getValidityText = (offer) => {
+  const getTimeLeft = (offer) => {
     const now = new Date();
     const end = new Date(offer.validDates?.to);
     const [h, m] = offer.validTimes?.end?.split(':')?.map(Number) || [23, 59];
@@ -180,55 +172,55 @@ export default function HomeScreen({ navigation }) {
     const days = Math.floor(min / 1440);
     const hrs = Math.floor((min % 1440) / 60);
     const mins = min % 60;
-    return `Noch gültig: ${days ? days + ' Tage, ' : ''}${hrs ? hrs + ' Std., ' : ''}${mins} Min.`;
+    return `Noch gültig: ${days ? days + ' Tage, ' : ''}${hrs ? hrs + ' Std., ' : ''}${mins} Min.`;
   };
 
   const groupedOffers = offers.reduce((acc, offer) => {
-    const cat = offer.category || 'Sonstiges';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(offer);
+    const category = offer.category || 'Sonstiges';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(offer);
     return acc;
   }, {});
 
-  const renderOfferCard = ({ item }) => {
-    const dist = getDistance(location, {
+  const renderSubcategoryCard = (item, index) => {
+    const dist = location ? getDistance(location, {
       latitude: item.location.coordinates[1],
       longitude: item.location.coordinates[0],
-    });
-    const isNew = newOffers.includes(item._id);
-
+    }) : null;
+    const color = colors[index % colors.length];
     return (
       <TouchableOpacity
-        style={[styles.card, isNew && styles.newCard]}
+        style={[styles.offerCard, { backgroundColor: color + Math.floor(CARD_OPACITY * 255).toString(16) }]}
         onPress={() => navigation.navigate('OfferDetails', { offerId: item._id })}
       >
-        <View style={styles.cardContent}>
-          {dist <= 100 && <Text style={styles.alertText}>Nur {dist} m entfernt!</Text>}
-          <Text style={styles.category}>{item.subcategory}</Text>
-          <Text style={styles.title}>{item.name}</Text>
-          <Text style={styles.description} numberOfLines={3}>{item.description}</Text>
-          <Text style={styles.validity}>{getValidityText(item)}</Text>
-        </View>
+        {dist !== null && <Text style={styles.distanceAlert}>Nur {dist} m entfernt!</Text>}
+        <Text style={styles.timeLeft}>{getTimeLeft(item)}</Text>
+        <Text style={styles.subcategory}>{item.subcategory}</Text>
+        <Text style={styles.offerTitle}>{item.name}</Text>
       </TouchableOpacity>
     );
   };
 
-  const ListHeader = () => (
-    <>
+  if (initialLoading || loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={{ marginTop: 12 }}>Lade Angebote...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={{ height: 40 }} />
       <View style={styles.menuBar}>
         <Pressable style={styles.menuButton} onPress={() => navigation.navigate('InterestSelection', { userId })}>
-          <Text style={styles.menuText}>🎯 Interessen</Text>
+          <Text style={styles.menuButtonText}>🎯 Interessen</Text>
         </Pressable>
         <Pressable style={styles.menuButton} onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}>
-          <Text style={styles.menuText}>🗺 Karte</Text>
-        </Pressable>
-        <Pressable style={styles.menuButton} onPress={fetchAllValidOffers}>
-          <Text style={styles.menuText}>🔄 Neu</Text>
+          <Text style={styles.menuButtonText}>🛰 Karte</Text>
         </Pressable>
       </View>
-
-      <Text style={styles.heading}>Angebote in deiner Nähe</Text>
-      {status && <Text style={styles.status}>{status}</Text>}
 
       {location && (
         <View style={styles.mapCard}>
@@ -238,11 +230,11 @@ export default function HomeScreen({ navigation }) {
             region={{
               latitude: location.latitude,
               longitude: location.longitude,
-              latitudeDelta: 0.002,
-              longitudeDelta: 0.002,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
             }}
             mapType={mapType}
-            customMapStyle={customMapStyle}
+            customMapStyle={mapType === 'standard' ? customMapStyle : []}
           >
             <Marker coordinate={location} pinColor="blue" />
             {offers.map((offer) => (
@@ -259,106 +251,36 @@ export default function HomeScreen({ navigation }) {
           </MapView>
         </View>
       )}
-    </>
-  );
 
-  if (initialLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={{ marginTop: 12 }}>Lade Einstellungen...</Text>
-      </View>
-    );
-  }
-
-  const allOffers = Object.entries(groupedOffers).flatMap(([category, items]) => items);
-
-  return (
-    <FlatList
-      style={styles.container}
-      ListHeaderComponent={<ListHeader />}
-      data={allOffers}
-      keyExtractor={(item) => item._id}
-      renderItem={renderOfferCard}
-      contentContainerStyle={{ paddingBottom: 60 }}
-      ListEmptyComponent={loading ? (
-        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 30 }} />
-      ) : (
-        <Text style={styles.noResults}>Keine passenden Angebote gefunden</Text>
-      )}
-    />
+      {Object.entries(groupedOffers).map(([category, items], idx) => (
+        <View key={category}>
+          <Text style={styles.categoryTitle}>{category}</Text>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={items}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => renderSubcategoryCard(item, idx)}
+            contentContainerStyle={{ paddingLeft: 16, paddingBottom: 20 }}
+          />
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 24, fontWeight: 'bold', paddingHorizontal: 16, marginTop: 16, marginBottom: 6 },
-  sectionTitle: { fontSize: 20, fontWeight: '600', paddingHorizontal: 16, marginBottom: 8 },
-  card: {
-    backgroundColor: '#f9fafb',
-    borderColor: '#d1d5db',
-    borderWidth: 1,
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  newCard: {
-    borderColor: '#2563eb',
-    borderWidth: 2,
-  },
-  cardContent: { padding: 16 },
-  alertText: {
-    fontSize: 15,
-    color: '#dc2626',
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  title: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginBottom: 6 },
-  category: { fontSize: 14, color: '#6b7280', marginBottom: 4 },
-  description: { fontSize: 14, color: '#374151', marginBottom: 6 },
-  validity: { fontSize: 13, color: '#059669', marginBottom: 8 },
-  distance: { fontSize: 13, color: '#1d4ed8', marginTop: 2 },
-  noResults: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  mapCard: {
-    height: 250,
-    marginBottom: 20,
-    marginHorizontal: 16,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  menuBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 40,
-    paddingBottom: 10,
-    backgroundColor: '#f1f5f9',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  menuButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#e0e7ff',
-  },
-  menuText: {
-    fontWeight: '600',
-    color: '#1e3a8a',
-  },
-  status: {
-    fontSize: 12,
-    color: '#4b5563',
-    paddingHorizontal: 16,
-    marginBottom: 6,
-  },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  menuBar: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16, paddingHorizontal: 10 },
+  menuButton: { backgroundColor: '#2563eb', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row' },
+  menuButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  mapCard: { height: 250, margin: 16, borderRadius: 12, overflow: 'hidden' },
+  map: { width: '100%', height: '100%' },
+  categoryTitle: { fontSize: 22, fontWeight: 'bold', marginLeft: 16, marginVertical: 12, color: '#111827' },
+  offerCard: { borderRadius: 12, padding: 14, marginRight: 16, width: 240, borderWidth: 1, borderColor: '#d1d5db' },
+  distanceAlert: { color: '#dc2626', fontSize: 14, fontWeight: 'bold', marginBottom: 4 },
+  timeLeft: { color: '#059669', fontSize: 13, marginBottom: 4 },
+  subcategory: { color: '#6b7280', fontSize: 13, marginBottom: 4 },
+  offerTitle: { color: '#111827', fontSize: 16, fontWeight: 'bold' },
 });

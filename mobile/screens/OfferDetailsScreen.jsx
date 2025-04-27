@@ -8,93 +8,90 @@ import {
   Image,
   TouchableOpacity,
   Alert,
-  Vibration,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
-import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import axiosInstance from '../src/api/axios';
 import customMapStyle from '../components/mapStyle';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s';
+const GOOGLE_MAPS_API_KEY = 'AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s'; // Live Key
 
 export default function OfferDetailsScreen({ route, navigation }) {
   const { offerId } = route.params;
   const [offer, setOffer] = useState(null);
   const [location, setLocation] = useState(null);
   const [routeCoords, setRouteCoords] = useState([]);
-  const [instructions, setInstructions] = useState([]);
-  const [currentInstruction, setCurrentInstruction] = useState('');
-  const [distance, setDistance] = useState(null);
-  const [remainingTime, setRemainingTime] = useState('');
-  const [loading, setLoading] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [targetReached, setTargetReached] = useState(false); // 🎯 Neu: Ziel erreicht Status
+  const [remainingDistance, setRemainingDistance] = useState(0);
+  const [mapType, setMapType] = useState('standard');
+  const [pingSound, setPingSound] = useState(null);
+  const [loadingRoute, setLoadingRoute] = useState(false);
   const mapRef = useRef(null);
-  const watchId = useRef(null);
+  const lastAnimate = useRef(Date.now());
+  const lastLocation = useRef(null);
 
   useEffect(() => {
-    const fetchOffer = async () => {
-      try {
-        const res = await axiosInstance.get(`/offers/${offerId}`);
-        setOffer(res.data);
-        setLoading(false);
-      } catch (err) {
-        Alert.alert('Fehler', 'Angebot konnte nicht geladen werden.');
-        navigation.goBack();
-      }
-    };
     fetchOffer();
+    preloadPingSound();
   }, [offerId]);
 
+  const fetchOffer = async () => {
+    try {
+      const res = await axiosInstance.get(`/offers/${offerId}`);
+      setOffer(res.data);
+    } catch (err) {
+      Alert.alert('Fehler', 'Angebot konnte nicht geladen werden.');
+      navigation.goBack();
+    }
+  };
+
+  const preloadPingSound = async () => {
+    const { sound } = await Audio.Sound.createAsync(
+      require('../assets/ping.mp3')
+    );
+    setPingSound(sound);
+  };
   useEffect(() => {
     if (!offer) return;
-
-    const startTracking = async () => {
+    (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
 
       const subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 2 },
-        async (loc) => {
+        { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 8 },
+        (loc) => {
           setLocation(loc.coords);
-          if (offer) {
-            await fetchRoute(loc.coords);
-            fitMap(loc.coords);
+
+          if (isNavigating) {
+            const moved = !lastLocation.current || getDistance(lastLocation.current, loc.coords) > 5;
+
+            if (moved) {
+              updateRemainingRoute(loc.coords);
+              lastLocation.current = loc.coords;
+            }
+
+            if (Date.now() - lastAnimate.current > 8000) {
+              smoothFollowUser(loc.coords);
+              lastAnimate.current = Date.now();
+            }
           }
         }
       );
-
-      watchId.current = subscription;
-    };
-
-    startTracking();
-    return () => watchId.current?.remove();
-  }, [offer]);
+      return () => subscription.remove();
+    })();
+  }, [isNavigating, offer]);
 
   useEffect(() => {
-    if (!offer) return;
-    const interval = setInterval(() => {
-      setRemainingTime(getRemainingTimeText());
-    }, 60000);
-    setRemainingTime(getRemainingTimeText());
-    return () => clearInterval(interval);
-  }, [offer]);
-
-  // 🎯 Neu: Überwache Navigation, prüfe Zielnähe
-  useEffect(() => {
-    let interval;
-    if (isNavigating && location && offer && !targetReached) {
-      interval = setInterval(() => {
-        checkIfTargetReached();
-      }, 5000); // alle 5 Sekunden prüfen
+    if (offer && location) {
+      updateRoute(location);
+      animateInitialZoom(location);
     }
-    return () => clearInterval(interval);
-  }, [isNavigating, location, offer, targetReached]);
+  }, [offer, location]);
 
-  const fetchRoute = async (coords) => {
+  const updateRoute = async (coords) => {
     try {
+      setLoadingRoute(true);
       const origin = `${coords.latitude},${coords.longitude}`;
       const destination = `${offer.location.coordinates[1]},${offer.location.coordinates[0]}`;
       const res = await axiosInstance.get(`https://maps.googleapis.com/maps/api/directions/json`, {
@@ -105,33 +102,30 @@ export default function OfferDetailsScreen({ route, navigation }) {
           mode: 'walking',
         },
       });
-
       const route = res.data.routes[0];
       const points = decodePolyline(route.overview_polyline.points);
-      const steps = route.legs[0].steps.map((step) => step.html_instructions.replace(/<[^>]+>/g, ''));
-
       setRouteCoords(points);
-      setDistance(route.legs[0].distance.text);
-      setInstructions(steps);
-      setCurrentInstruction(translateToGerman(steps[0] || ''));
+      setRemainingDistance(calculateRouteDistance(points));
     } catch (err) {
-      console.error('Fehler bei der Routenberechnung:', err);
+      console.error('Fehler beim Abrufen der Route:', err);
+      Alert.alert('Routenfehler', 'Die Route konnte nicht geladen werden. Bitte versuche es später erneut.');
+    } finally {
+      setLoadingRoute(false);
     }
   };
 
-  const fitMap = (coords) => {
-    if (!mapRef.current || !offer) return;
-    mapRef.current.animateCamera({
-      center: {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-      },
-      pitch: 60, // 🎯 Neu: Karte kippen
-      heading: coords.heading || 0, // falls vorhanden, Heading nutzen
-      zoom: 18, // 🎯 Neu: reinzoomen
-    }, { duration: 1000 });
-  };
+  const updateRemainingRoute = async (currentLocation) => {
+    if (!routeCoords.length) return;
+    const remaining = routeCoords.filter(point => getDistance(currentLocation, point) > 10);
+    setRouteCoords(remaining);
+    setRemainingDistance(calculateRouteDistance(remaining));
 
+    if (remaining.length === 0) {
+      await playPing();
+      Alert.alert('🎯 Ziel erreicht!', 'Du bist am Ziel angekommen.');
+      stopNavigation();
+    }
+  };
   const decodePolyline = (t) => {
     let points = [], index = 0, lat = 0, lng = 0;
     while (index < t.length) {
@@ -156,50 +150,72 @@ export default function OfferDetailsScreen({ route, navigation }) {
     return points;
   };
 
-  const translateToGerman = (text) => {
-    return text
-      .replace(/Head/g, 'Folge')
-      .replace(/on /g, 'der Straße ')
-      .replace(/Turn right/g, 'Biege rechts ab')
-      .replace(/Turn left/g, 'Biege links ab')
-      .replace(/Continue/g, 'Gehe weiter');
+  const calculateRouteDistance = (coords) => {
+    let distance = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      distance += getDistance(coords[i], coords[i + 1]);
+    }
+    return distance;
   };
 
-  const getRemainingTimeText = () => {
-    if (!offer?.validDates?.to) return '';
-    const end = new Date(offer.validDates.to);
-    const now = new Date();
-    const diffMs = end - now;
-    if (diffMs <= 0) return 'Angebot abgelaufen';
-    const minutes = Math.floor(diffMs / 60000);
-    const days = Math.floor(minutes / 1440);
-    const hours = Math.floor((minutes % 1440) / 60);
-    const mins = minutes % 60;
-    return `Noch gültig: ${days ? days + ' Tage, ' : ''}${hours ? hours + ' Std., ' : ''}${mins} Min.`;
+  const animateInitialZoom = (coords) => {
+    if (mapRef.current) {
+      mapRef.current.animateCamera({
+        center: coords,
+        zoom: 18,
+        pitch: 60,
+      }, { duration: 800 });
+    }
   };
 
-  const checkIfTargetReached = async () => {
-    const userLoc = location;
-    const targetLoc = {
-      latitude: offer.location.coordinates[1],
-      longitude: offer.location.coordinates[0],
-    };
-    const distance = getDistance(userLoc, targetLoc);
-    if (distance <= 20) { // 🎯 Schwelle Ziel erreicht: 20m
-      setTargetReached(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      playSound();
-      Alert.alert('🎯 Ziel erreicht!', 'Du hast das Angebot erfolgreich gefunden.');
-      try {
-        await axiosInstance.post(`/offers/found/${offer._id}`);
-      } catch (err) {
-        console.error('Fehler beim Senden des Ziel-Events:', err);
-      }
+  const smoothFollowUser = (coords) => {
+    if (mapRef.current) {
+      mapRef.current.animateCamera({
+        center: {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        },
+        heading: coords.heading || 0,
+        pitch: mapType === 'satellite' ? 0 : 60,
+        zoom: 18,
+      }, { duration: 800 });
+    }
+  };
+
+  const handleGoPress = () => {
+    setIsNavigating(true);
+    updateRoute(location); // Beim Start neu von aktueller Position
+  };
+
+  const confirmStopNavigation = () => {
+    Alert.alert('Navigation beenden?', 'Willst du die Navigation wirklich abbrechen?', [
+      { text: 'Abbrechen', style: 'cancel' },
+      { text: 'Ja', style: 'destructive', onPress: () => stopNavigation() },
+    ]);
+  };
+
+  const stopNavigation = () => {
+    setIsNavigating(false);
+    setRouteCoords([]);
+    setRemainingDistance(0);
+  };
+
+  const toggleMapType = () => {
+    const nextType = mapType === 'standard' ? 'satellite' : 'standard';
+    setMapType(nextType);
+    if (mapRef.current) {
+      mapRef.current.animateCamera({ pitch: nextType === 'satellite' ? 0 : 60 }, { duration: 500 });
+    }
+  };
+
+  const playPing = async () => {
+    if (pingSound) {
+      await pingSound.replayAsync();
     }
   };
 
   const getDistance = (loc1, loc2) => {
-    const R = 6371e3; // Erdradius in Metern
+    const R = 6371e3;
     const φ1 = loc1.latitude * Math.PI/180;
     const φ2 = loc2.latitude * Math.PI/180;
     const Δφ = (loc2.latitude-loc1.latitude) * Math.PI/180;
@@ -208,85 +224,91 @@ export default function OfferDetailsScreen({ route, navigation }) {
               Math.cos(φ1) * Math.cos(φ2) *
               Math.sin(Δλ/2) * Math.sin(Δλ/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const d = R * c;
-    return d;
+    return R * c;
   };
 
-  const playSound = async () => {
-    const { sound } = await Audio.Sound.createAsync(
-      require('../assets/ping.mp3') // 🔔 Dein Ping-Sound im assets-Ordner
-    );
-    await sound.playAsync();
-  };
-
-  const distanceText = distance ? `Nur ${distance} entfernt!` : '';
-
-  return (
-    <View style={{ flex: 1 }}>
-      {loading || !offer || !location ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#2563eb" />
-          <Text style={{ marginTop: 12 }}>Lade Angebot...</Text>
-        </View>
-      ) : (
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30, paddingTop: 30 }}>
-          <View style={styles.card}>
-            {distanceText !== '' && <Text style={styles.distanceText}>{distanceText}</Text>}
-            <Text style={styles.subcategory}>{offer.subcategory}</Text>
-            <Text style={styles.title}>{offer.name}</Text>
-            <Text style={styles.description}>{offer.description}</Text>
-            <Text style={styles.validity}>{remainingTime}</Text>
-          </View>
-
-          {offer.images?.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
-              {offer.images.slice(0, 3).map((img, index) => (
-                <Image key={index} source={{ uri: img }} style={styles.image} resizeMode="cover" />
-              ))}
-            </ScrollView>
-          )}
-
-          <View style={styles.mapCard}>
-            <MapView
-              ref={mapRef}
-              style={styles.map}
-              customMapStyle={customMapStyle}
-              scrollEnabled={true}
-              zoomEnabled={true}
-              rotateEnabled={true}
-              showsCompass={true}
-              showsUserLocation={false}
-              showsMyLocationButton={false}
-            >
-              <Marker coordinate={location} pinColor="blue" />
-              <Marker
-                coordinate={{
-                  latitude: offer.location.coordinates[1],
-                  longitude: offer.location.coordinates[0],
-                }}
-              />
-              <Polyline coordinates={routeCoords} strokeWidth={4} strokeColor="#2563eb" />
-            </MapView>
-          </View>
-
-          {currentInstruction ? (
-            <Text style={styles.instruction}>📍 {currentInstruction}</Text>
-          ) : null}
-
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.buttonBack} onPress={() => navigation.goBack()}>
-              <Text style={styles.buttonTextBack}>Zurück</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.buttonGo} onPress={() => setIsNavigating(true)}>
-              <Text style={styles.buttonTextGo}>Los geht’s</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      )}
+  const minutesEstimate = Math.max(1, Math.round((remainingDistance / 1000) / 5 * 60));
+  return (!offer || !location) ? (
+    <View style={styles.centered}>
+      <ActivityIndicator size="large" color="#2563eb" />
+      <Text style={{ marginTop: 12 }}>Lade Daten...</Text>
     </View>
+  ) : (
+    <ScrollView style={styles.container}>
+      <View style={{ height: 40 }} />
+
+      <View style={styles.card}>
+        <Text style={styles.title}>{offer.name}</Text>
+        <Text style={styles.subcategory}>{offer.subcategory}</Text>
+        <Text style={styles.description}>{offer.description}</Text>
+
+        {offer.images?.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+            {offer.images.slice(0, 3).map((img, idx) => (
+              <Image key={idx} source={{ uri: img }} style={styles.image} resizeMode="cover" />
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      <View style={styles.mapCard}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          mapType={mapType}
+          customMapStyle={mapType === 'standard' ? customMapStyle : []}
+          showsUserLocation
+          followsUserLocation
+          showsCompass
+          pitchEnabled
+          rotateEnabled
+          zoomEnabled
+        >
+          <Marker coordinate={location} pinColor="blue" />
+          <Marker coordinate={{
+            latitude: offer.location.coordinates[1],
+            longitude: offer.location.coordinates[0],
+          }} />
+          {routeCoords.length > 0 && (
+            <Polyline coordinates={routeCoords} strokeWidth={6} strokeColor="#f87171" />
+          )}
+        </MapView>
+
+        {loadingRoute && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#2563eb" />
+          </View>
+        )}
+      </View>
+
+      {isNavigating && (
+        <Text style={styles.distanceInfo}>
+          Noch {Math.round(remainingDistance)} m ({minutesEstimate} Minuten) bis zum Ziel
+        </Text>
+      )}
+
+      <View style={styles.buttonRow}>
+        <TouchableOpacity style={styles.buttonSmall} onPress={toggleMapType}>
+          <Text style={styles.buttonSmallText}>🛰️ Sat / Map</Text>
+        </TouchableOpacity>
+
+        {!isNavigating ? (
+          <TouchableOpacity style={styles.buttonGo} onPress={handleGoPress}>
+            <Text style={styles.buttonTextGo}>Los geht’s</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.buttonAbort} onPress={confirmStopNavigation}>
+            <Text style={styles.buttonTextAbort}>Abbruch</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={styles.buttonBack} onPress={() => navigation.goBack()}>
+          <Text style={styles.buttonTextBack}>Zurück</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -297,22 +319,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  distanceText: {
-    fontSize: 16,
-    color: '#dc2626',
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subcategory: { fontSize: 14, color: '#6b7280', marginBottom: 4 },
-  title: { fontSize: 20, fontWeight: 'bold', color: '#111827', marginBottom: 6 },
-  description: { fontSize: 14, color: '#374151', marginBottom: 6 },
-  validity: { fontSize: 13, color: '#059669' },
-  imageRow: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 20 },
-  image: { width: 220, height: 130, borderRadius: 10, marginRight: 12 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#111827', marginBottom: 8 },
+  subcategory: { fontSize: 16, color: '#6b7280', marginBottom: 4 },
+  description: { fontSize: 14, color: '#374151', marginBottom: 10 },
+  image: { width: 220, height: 130, borderRadius: 12, marginRight: 12 },
   mapCard: {
-    height: 250,
+    height: 320,
     marginHorizontal: 16,
     borderRadius: 12,
     overflow: 'hidden',
@@ -321,38 +335,64 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   map: { flex: 1 },
-  instruction: {
-    fontSize: 14,
-    color: '#2563eb',
-    paddingHorizontal: 16,
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  distanceInfo: {
+    textAlign: 'center',
     marginBottom: 20,
+    fontSize: 16,
+    color: '#ef4444',
+    fontWeight: 'bold',
   },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingBottom: 30,
+    alignItems: 'center',
+    marginBottom: 30,
+    marginHorizontal: 16,
   },
-  buttonBack: {
-    backgroundColor: '#e5e7eb',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+  buttonSmall: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     borderRadius: 10,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  buttonSmallText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   buttonGo: {
     backgroundColor: '#2563eb',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 10,
+    minWidth: 110,
+    alignItems: 'center',
   },
-  buttonTextBack: {
-    color: '#111827',
-    fontWeight: 'bold',
-    fontSize: 16,
+  buttonAbort: {
+    backgroundColor: '#f87171',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    minWidth: 110,
+    alignItems: 'center',
   },
-  buttonTextGo: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
+  buttonBack: {
+    backgroundColor: '#e5e7eb',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    minWidth: 90,
+    alignItems: 'center',
   },
+  buttonTextGo: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  buttonTextAbort: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  buttonTextBack: { color: '#111827', fontSize: 16, fontWeight: 'bold' },
 });
