@@ -1,17 +1,16 @@
+// offers.js (optimiert)
+
 import express from 'express';
 import Offer from '../models/Offer.js';
 import haversine from 'haversine-distance';
 
 const router = express.Router();
 
-// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zurück (ohne Bilder)
+// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zur schnellen Überprüfung (ohne Bilder)
 router.get('/test-offers', async (req, res) => {
   try {
-    const offers = await Offer.find().limit(3);
-    const sanitized = offers.map(({ _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates }) => ({
-      _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates
-    }));
-    res.json({ success: true, offers: sanitized });
+    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates').limit(3);
+    res.json({ success: true, offers });
   } catch (error) {
     console.error('Fehler beim Abrufen:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -27,7 +26,7 @@ router.post('/nearby', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find().populate('provider');
+    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider');
     const userLocation = { lat, lng };
     const normalizedInterests = interests.map((i) => i.toLowerCase().trim());
 
@@ -39,19 +38,14 @@ router.post('/nearby', async (req, res) => {
       return distance <= offer.radius && normalizedInterests.includes(subcategory.toLowerCase().trim());
     });
 
-    const sanitized = filtered.map(({ _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates }) => ({
-      _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates
-    }));
-
-    console.log(`📍 Gefundene Angebote: ${sanitized.length}`);
-    res.json(sanitized);
+    res.json(filtered);
   } catch (err) {
     console.error('Fehler bei Nearby-Abfrage:', err);
     res.status(500).json({ error: 'Serverfehler bei Nearby-Abfrage' });
   }
 });
 
-// 🔓 Öffentliche Nearby-Route ohne Interessenfilter (ohne Bilder)
+// ✅ Öffentliche Nearby-Route ohne Interessenfilter (ohne Bilder)
 router.post('/nearby-noauth', async (req, res) => {
   try {
     const { lat, lng } = req.body;
@@ -60,7 +54,7 @@ router.post('/nearby-noauth', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find().populate('provider');
+    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider');
     const userLocation = { lat, lng };
 
     const filtered = allOffers.filter((offer) => {
@@ -70,12 +64,7 @@ router.post('/nearby-noauth', async (req, res) => {
       return distance <= offer.radius;
     });
 
-    const sanitized = filtered.map(({ _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates }) => ({
-      _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates
-    }));
-
-    console.log(`🆓 Öffentliche Nearby-Angebote: ${sanitized.length}`);
-    res.json(sanitized);
+    res.json(filtered);
   } catch (err) {
     console.error('Fehler bei Nearby-NoAuth-Abfrage:', err);
     res.status(500).json({ error: 'Serverfehler bei Nearby-NoAuth' });
@@ -93,34 +82,28 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ Alle Angebote abrufen (ohne Bilder)
+// ✅ Alle Angebote abrufen (nur wichtige Felder)
 router.get('/', async (req, res) => {
   try {
-    const offers = await Offer.find();
-    const sanitized = offers.map(({ _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates }) => ({
-      _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates
-    }));
-    res.json(sanitized);
+    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates');
+    res.json(offers);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Alle Angebote eines Providers (ohne Bilder)
+// ✅ Alle Angebote eines Providers (nur wichtige Felder)
 router.get('/provider/:providerId', async (req, res) => {
   try {
-    const offers = await Offer.find({ provider: req.params.providerId });
-    const sanitized = offers.map(({ _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates }) => ({
-      _id, name, description, category, subcategory, location, radius, validDays, validTimes, validDates
-    }));
-    res.json(sanitized);
+    const offers = await Offer.find({ provider: req.params.providerId }, 'name description category subcategory location radius validDays validTimes validDates');
+    res.json(offers);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Fehler beim Laden der Angebote.' });
   }
 });
 
-// ✅ Einzelnes Angebot mit Bildern
+// ✅ Einzelnes Angebot (mit Bildern)
 router.get('/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);
@@ -167,14 +150,14 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// 🎯 NEU: Counter erhöhen, wenn Ziel erreicht
+// ✅ Ziel erreicht Counter
 router.post('/found/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);
     if (!offer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
-    offer.foundCounter = (offer.foundCounter || 0) + 1; // Counter +1 erhöhen
+    offer.foundCounter = (offer.foundCounter || 0) + 1;
     await offer.save();
     res.json({ success: true, foundCounter: offer.foundCounter });
   } catch (error) {
