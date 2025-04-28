@@ -1,4 +1,4 @@
-// offers.js (optimiert)
+// offers.js (optimiert für schnelles Laden ohne Bilder)
 
 import express from 'express';
 import Offer from '../models/Offer.js';
@@ -6,7 +6,7 @@ import haversine from 'haversine-distance';
 
 const router = express.Router();
 
-// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote zur schnellen Überprüfung (ohne Bilder)
+// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote (ohne Bilder)
 router.get('/test-offers', async (req, res) => {
   try {
     const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates').limit(3);
@@ -103,19 +103,35 @@ router.get('/provider/:providerId', async (req, res) => {
   }
 });
 
-// ✅ Einzelnes Angebot (mit Bildern)
+// ✅ Einzelnes Angebot (⚡ Optimiert: Nur Textdaten, keine Bilder)
 router.get('/:id', async (req, res) => {
   try {
-    const offer = await Offer.findById(req.params.id);
+    const offer = await Offer.findById(req.params.id, 'name description category subcategory location radius validDays validTimes validDates');
     if (!offer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
-    res.json(offer); // enthält Bilder
+    res.json(offer);
   } catch (error) {
     console.error('Fehler beim Abrufen eines Angebots:', error);
     res.status(500).json({ error: 'Serverfehler' });
   }
 });
+
+/*
+  // 🗂️ Alte Version mit vollständigen Bildern (Archiv)
+  router.get('/:id', async (req, res) => {
+    try {
+      const offer = await Offer.findById(req.params.id);
+      if (!offer) {
+        return res.status(404).json({ error: 'Angebot nicht gefunden' });
+      }
+      res.json(offer); // enthält Bilder
+    } catch (error) {
+      console.error('Fehler beim Abrufen eines Angebots:', error);
+      res.status(500).json({ error: 'Serverfehler' });
+    }
+  });
+*/
 
 // ✅ Angebot aktualisieren
 router.put('/:id', async (req, res) => {

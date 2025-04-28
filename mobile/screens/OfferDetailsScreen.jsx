@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Image,
   TouchableOpacity,
   Alert,
 } from 'react-native';
@@ -52,8 +51,8 @@ export default function OfferDetailsScreen({ route, navigation }) {
     );
     setPingSound(sound);
   };
+
   useEffect(() => {
-    if (!offer) return;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
@@ -80,14 +79,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
       );
       return () => subscription.remove();
     })();
-  }, [isNavigating, offer]);
-
-  useEffect(() => {
-    if (offer && location) {
-      updateRoute(location);
-      animateInitialZoom(location);
-    }
-  }, [offer, location]);
+  }, [isNavigating]);
 
   const updateRoute = async (coords) => {
     try {
@@ -126,6 +118,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
       stopNavigation();
     }
   };
+
   const decodePolyline = (t) => {
     let points = [], index = 0, lat = 0, lng = 0;
     while (index < t.length) {
@@ -183,8 +176,10 @@ export default function OfferDetailsScreen({ route, navigation }) {
   };
 
   const handleGoPress = () => {
-    setIsNavigating(true);
-    updateRoute(location); // Beim Start neu von aktueller Position
+    if (location) {
+      setIsNavigating(true);
+      updateRoute(location);
+    }
   };
 
   const confirmStopNavigation = () => {
@@ -227,88 +222,82 @@ export default function OfferDetailsScreen({ route, navigation }) {
     return R * c;
   };
 
-  const minutesEstimate = Math.max(1, Math.round((remainingDistance / 1000) / 5 * 60));
   return (!offer || !location) ? (
     <View style={styles.centered}>
       <ActivityIndicator size="large" color="#2563eb" />
       <Text style={{ marginTop: 12 }}>Lade Daten...</Text>
     </View>
   ) : (
-    <ScrollView style={styles.container}>
-      <View style={{ height: 40 }} />
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container}>
+        <View style={{ height: 40 }} />
 
-      <View style={styles.card}>
-        <Text style={styles.title}>{offer.name}</Text>
-        <Text style={styles.subcategory}>{offer.subcategory}</Text>
-        <Text style={styles.description}>{offer.description}</Text>
+        <View style={styles.card}>
+          <Text style={styles.title}>{offer.name}</Text>
+          <Text style={styles.subcategory}>{offer.subcategory}</Text>
+          <Text style={styles.description}>{offer.description}</Text>
+        </View>
 
-        {offer.images?.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-            {offer.images.slice(0, 3).map((img, idx) => (
-              <Image key={idx} source={{ uri: img }} style={styles.image} resizeMode="cover" />
-            ))}
-          </ScrollView>
-        )}
-      </View>
+        <View style={styles.mapCard}>
+          <MapView
+            ref={mapRef}
+            style={styles.map}
+            mapType={mapType}
+            customMapStyle={mapType === 'standard' ? customMapStyle : []}
+            showsUserLocation
+            followsUserLocation
+            showsCompass
+            pitchEnabled
+            rotateEnabled
+            zoomEnabled
+          >
+            <Marker coordinate={location} pinColor="blue" />
+            <Marker coordinate={{
+              latitude: offer.location.coordinates[1],
+              longitude: offer.location.coordinates[0],
+            }} />
+            {routeCoords.length > 0 && (
+              <Polyline coordinates={routeCoords} strokeWidth={6} strokeColor="#f87171" />
+            )}
+          </MapView>
 
-      <View style={styles.mapCard}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          mapType={mapType}
-          customMapStyle={mapType === 'standard' ? customMapStyle : []}
-          showsUserLocation
-          followsUserLocation
-          showsCompass
-          pitchEnabled
-          rotateEnabled
-          zoomEnabled
-        >
-          <Marker coordinate={location} pinColor="blue" />
-          <Marker coordinate={{
-            latitude: offer.location.coordinates[1],
-            longitude: offer.location.coordinates[0],
-          }} />
-          {routeCoords.length > 0 && (
-            <Polyline coordinates={routeCoords} strokeWidth={6} strokeColor="#f87171" />
+          {loadingRoute && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#2563eb" />
+            </View>
           )}
-        </MapView>
+        </View>
 
-        {loadingRoute && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#2563eb" />
-          </View>
-        )}
-      </View>
-
-      {isNavigating && (
-        <Text style={styles.distanceInfo}>
-          Noch {Math.round(remainingDistance)} m ({minutesEstimate} Minuten) bis zum Ziel
-        </Text>
-      )}
-
-      <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.buttonSmall} onPress={toggleMapType}>
-          <Text style={styles.buttonSmallText}>🛰️ Sat / Map</Text>
-        </TouchableOpacity>
-
-        {!isNavigating ? (
-          <TouchableOpacity style={styles.buttonGo} onPress={handleGoPress}>
-            <Text style={styles.buttonTextGo}>Los geht’s</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.buttonAbort} onPress={confirmStopNavigation}>
-            <Text style={styles.buttonTextAbort}>Abbruch</Text>
-          </TouchableOpacity>
+        {isNavigating && (
+          <Text style={styles.distanceInfo}>
+            Noch {Math.round(remainingDistance)} m bis zum Ziel
+          </Text>
         )}
 
-        <TouchableOpacity style={styles.buttonBack} onPress={() => navigation.goBack()}>
-          <Text style={styles.buttonTextBack}>Zurück</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.buttonSmall} onPress={toggleMapType}>
+            <Text style={styles.buttonSmallText}>🛰️ Sat / Map</Text>
+          </TouchableOpacity>
+
+          {!isNavigating ? (
+            <TouchableOpacity style={styles.buttonGo} onPress={handleGoPress}>
+              <Text style={styles.buttonTextGo}>Los geht’s</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.buttonAbort} onPress={confirmStopNavigation}>
+              <Text style={styles.buttonTextAbort}>Abbruch</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.buttonBack} onPress={() => navigation.goBack()}>
+            <Text style={styles.buttonTextBack}>Zurück</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -324,7 +313,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: 'bold', color: '#111827', marginBottom: 8 },
   subcategory: { fontSize: 16, color: '#6b7280', marginBottom: 4 },
   description: { fontSize: 14, color: '#374151', marginBottom: 10 },
-  image: { width: 220, height: 130, borderRadius: 12, marginRight: 12 },
   mapCard: {
     height: 320,
     marginHorizontal: 16,
