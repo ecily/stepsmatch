@@ -14,6 +14,7 @@ const EditOfferForm = () => {
   const [providerLocation, setProviderLocation] = useState(null);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
+  const [uploading, setUploading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -25,8 +26,8 @@ const EditOfferForm = () => {
     validTimes: { start: '', end: '' },
     validDates: { from: '', to: '' },
     contact: '',
-    images: [],
-    provider: '',
+    images: [], // Store image URLs here
+    provider: '', // Provider-ID
   });
 
   const [success, setSuccess] = useState(false);
@@ -60,6 +61,13 @@ const EditOfferForm = () => {
         const res = await axiosInstance.get(`/offers/${offerId}`);
         const data = res.data;
 
+        console.log("Angebot geladen:", data); // Hier loggen wir alle Daten zur Überprüfung
+
+        const providerId = data.provider || ''; // Sicherstellen, dass providerID existiert
+        if (!providerId) {
+          console.error('Provider-ID fehlt in den Offer-Daten!');
+        }
+
         setFormData({
           name: data.name || '',
           category: data.category || '',
@@ -73,11 +81,11 @@ const EditOfferForm = () => {
             to: formatDateInput(data.validDates?.to),
           },
           contact: data.contact || '',
-          images: Array.isArray(data.images) ? data.images : [],
-          provider: data.provider || '',
+          images: data.images || [], // Bilder-URLs aus der Offer-Datenbank
+          provider: providerId, // Provider-ID setzen
         });
 
-        setProviderLocation(data.location.coordinates);
+        setProviderLocation(data.location?.coordinates);
       } catch (err) {
         console.error(err);
         setError('Angebot konnte nicht geladen werden.');
@@ -115,27 +123,44 @@ const EditOfferForm = () => {
     }));
   };
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
 
-    Promise.all(
-      files.map(file => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      }))
-    ).then(base64Images => {
+    try {
+      setUploading(true);
+
+      const uploadedUrls = await Promise.all(files.map(async (file) => {
+        const uploadData = new FormData();
+        uploadData.append('image', file);
+
+        const res = await axiosInstance.post('/uploads', uploadData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        return res.data.url;
+      }));
+
       setFormData((prev) => ({
         ...prev,
-        images: [...prev.images, ...base64Images],
+        images: [...prev.images, ...uploadedUrls],
       }));
-    }).catch(err => {
-      console.error("Fehler beim Konvertieren der Bilder:", err);
-    });
+    } catch (err) {
+      console.error('Fehler beim Hochladen der Bilder:', err);
+      setError('Fehler beim Hochladen der Bilder.');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const removeImage = (index) => {
+  const removeImage = async (index) => {
+    const imageUrl = formData.images[index];
+    if (imageUrl) {
+      try {
+        await axiosInstance.post('/uploads/delete', { imageUrl });
+      } catch (err) {
+        console.error('Fehler beim Löschen in Cloudinary:', err);
+      }
+    }
     setFormData((prev) => ({
       ...prev,
       images: prev.images.filter((_, i) => i !== index),
@@ -146,13 +171,22 @@ const EditOfferForm = () => {
     e.preventDefault();
     setError('');
 
+    // Überprüfen, ob die Kategorie und Subkategorie gesetzt sind
     if (!formData.category || !formData.subcategory) {
       setError('Kategorie und Subkategorie müssen gewählt werden.');
       return;
     }
 
+    // Überprüfen, ob die Beschreibung zu lang ist
     if (formData.description.length > 250) {
       setError('Beschreibung darf maximal 250 Zeichen haben.');
+      return;
+    }
+
+    // Überprüfen, ob der provider korrekt gesetzt ist
+    if (!formData.provider || formData.provider === '') {
+      setError('Provider-ID fehlt!');
+      console.error('Provider-ID fehlt!');
       return;
     }
 
@@ -232,6 +266,7 @@ const EditOfferForm = () => {
           </GoogleMap>
         )}
 
+        {/* Datum und Zeit */}
         <div className="flex gap-4">
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
@@ -250,9 +285,10 @@ const EditOfferForm = () => {
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
 
+        {/* Bilder-Upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
-          <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
+          <input type="file" accept="image/*" multiple onChange={handleImageChange} disabled={uploading} className="w-full" />
           <div className="flex flex-wrap mt-2 gap-2">
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
@@ -265,6 +301,7 @@ const EditOfferForm = () => {
           </div>
         </div>
 
+        {/* Wochentage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">

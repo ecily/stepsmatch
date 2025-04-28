@@ -1,7 +1,11 @@
+// AddOfferForm.jsx (final mit Cloudinary Upload, Toastify, allen Eingabefeldern und richtigem Löschen)
+
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axios';
 import { GoogleMap, Circle, useLoadScript } from '@react-google-maps/api';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const mapContainerStyle = {
   width: '100%',
@@ -17,7 +21,6 @@ const AddOfferForm = () => {
   const [providerLocation, setProviderLocation] = useState(null);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
-
   const [formData, setFormData] = useState({
     provider: providerId,
     name: '',
@@ -32,7 +35,7 @@ const AddOfferForm = () => {
     images: [],
   });
 
-  const [success, setSuccess] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
   const { isLoaded, loadError } = useLoadScript({
@@ -41,16 +44,8 @@ const AddOfferForm = () => {
 
   useEffect(() => {
     axiosInstance.get('/categories')
-      .then((res) => {
-        if (Array.isArray(res.data)) {
-          setCategories(res.data);
-        } else {
-          console.warn('⚠️ Unerwartetes Format bei Kategorien:', res.data);
-        }
-      })
-      .catch((err) => {
-        console.error('Fehler beim Laden der Kategorien', err);
-      });
+      .then((res) => setCategories(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => console.error('Fehler beim Laden der Kategorien', err));
   }, []);
 
   useEffect(() => {
@@ -58,15 +53,9 @@ const AddOfferForm = () => {
       setError('Kein Anbieter gefunden.');
       return;
     }
-
     axiosInstance.get(`/providers/${providerId}`)
-      .then((res) => {
-        setProviderLocation(res.data.location.coordinates);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError('Anbieter nicht gefunden');
-      });
+      .then((res) => setProviderLocation(res.data.location.coordinates))
+      .catch(() => setError('Anbieter nicht gefunden'));
   }, [providerId]);
 
   useEffect(() => {
@@ -79,66 +68,75 @@ const AddOfferForm = () => {
     const { name, value } = e.target;
     if (name.includes('.')) {
       const [parent, child] = name.split('.');
-      setFormData((prev) => ({
-        ...prev,
-        [parent]: { ...prev[parent], [child]: value }
-      }));
+      setFormData(prev => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
     } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
+      setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
   const toggleArrayItem = (field, value) => {
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
       [field]: prev[field].includes(value)
-        ? prev[field].filter((v) => v !== value)
+        ? prev[field].filter(v => v !== value)
         : [...prev[field], value]
     }));
   };
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
 
-    Promise.all(
-      files.map(file => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      }))
-    ).then(base64Images => {
-      setFormData((prev) => ({
-        ...prev,
-        images: [...prev.images, ...base64Images],
+    try {
+      setUploading(true);
+      const uploadedUrls = await Promise.all(files.map(async (file) => {
+        const uploadData = new FormData();
+        uploadData.append('image', file);
+
+        const res = await axiosInstance.post('/uploads', uploadData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        return res.data.url;
       }));
-    }).catch(err => {
-      console.error("Fehler beim Konvertieren der Bilder:", err);
-    });
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...uploadedUrls],
+      }));
+    } catch (err) {
+      console.error('Fehler beim Hochladen:', err);
+      setError('Fehler beim Hochladen der Bilder.');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const removeImage = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index),
-    }));
+  const removeImage = async (index) => {
+    const imageUrl = formData.images[index];
+    try {
+      await axiosInstance.delete('/uploads', { data: { url: imageUrl } });
+      setFormData(prev => ({
+        ...prev,
+        images: prev.images.filter((_, i) => i !== index),
+      }));
+    } catch (err) {
+      console.error('Fehler beim Löschen des Bildes:', err);
+      toast.error('Fehler beim Löschen des Bildes.');
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess(false);
 
     if (!providerLocation) {
       setError('Standort des Anbieters fehlt.');
       return;
     }
-
     if (!formData.category || !formData.subcategory) {
       setError('Kategorie und Subkategorie müssen gewählt werden.');
       return;
     }
-
     if (formData.description.length > 250) {
       setError('Beschreibung darf maximal 250 Zeichen haben.');
       return;
@@ -155,7 +153,7 @@ const AddOfferForm = () => {
 
     try {
       await axiosInstance.post('/offers', payload);
-      setSuccess(true);
+      toast.success('✅ Angebot erfolgreich gespeichert!');
       navigate(`/dashboard/${providerId}`);
     } catch (err) {
       console.error(err);
@@ -168,6 +166,7 @@ const AddOfferForm = () => {
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white shadow-lg rounded-xl mt-8">
+      <ToastContainer />
       <h2 className="text-2xl font-semibold mb-4 text-gray-800">Angebot hinzufügen</h2>
       {error && <p className="text-red-500 mb-2">{error}</p>}
 
@@ -220,7 +219,6 @@ const AddOfferForm = () => {
           </GoogleMap>
         )}
 
-        {/* Datum & Zeit */}
         <div className="flex gap-4">
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
@@ -241,8 +239,10 @@ const AddOfferForm = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
-          <input type="file" accept="image/*" multiple onChange={handleImageChange} className="w-full" />
-          <div className="flex flex-wrap mt-2 gap-2">
+          <input type="file" accept="image/*" multiple onChange={handleImageChange} disabled={uploading} className="w-full" />
+          {uploading && <p className="text-blue-500 text-sm mt-1">Bilder werden hochgeladen...</p>}
+
+          <div className="flex flex-wrap gap-2 mt-2">
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
                 <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
@@ -270,7 +270,6 @@ const AddOfferForm = () => {
           </div>
         </div>
 
-        {success && <p className="text-green-600">✅ Angebot erfolgreich gespeichert!</p>}
         <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Angebot speichern</button>
       </form>
     </div>

@@ -1,8 +1,7 @@
-// offers.js (optimiert für schnelles Laden ohne Bilder)
-
 import express from 'express';
 import Offer from '../models/Offer.js';
 import haversine from 'haversine-distance';
+import cloudinary from '../utils/cloudinary.js';
 
 const router = express.Router();
 
@@ -106,32 +105,20 @@ router.get('/provider/:providerId', async (req, res) => {
 // ✅ Einzelnes Angebot (⚡ Optimiert: Nur Textdaten, keine Bilder)
 router.get('/:id', async (req, res) => {
   try {
-    const offer = await Offer.findById(req.params.id, 'name description category subcategory location radius validDays validTimes validDates');
+    // Bild-URLs mit einbeziehen
+    const offer = await Offer.findById(req.params.id, 'name description category subcategory location radius validDays validTimes validDates provider images');
+    
     if (!offer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
+    
+    // Antwort enthält nun auch die 'images'
     res.json(offer);
   } catch (error) {
     console.error('Fehler beim Abrufen eines Angebots:', error);
     res.status(500).json({ error: 'Serverfehler' });
   }
 });
-
-/*
-  // 🗂️ Alte Version mit vollständigen Bildern (Archiv)
-  router.get('/:id', async (req, res) => {
-    try {
-      const offer = await Offer.findById(req.params.id);
-      if (!offer) {
-        return res.status(404).json({ error: 'Angebot nicht gefunden' });
-      }
-      res.json(offer); // enthält Bilder
-    } catch (error) {
-      console.error('Fehler beim Abrufen eines Angebots:', error);
-      res.status(500).json({ error: 'Serverfehler' });
-    }
-  });
-*/
 
 // ✅ Angebot aktualisieren
 router.put('/:id', async (req, res) => {
