@@ -5,10 +5,10 @@ import cloudinary from '../utils/cloudinary.js';
 
 const router = express.Router();
 
-// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote (ohne Bilder)
+// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote (mit Bildern)
 router.get('/test-offers', async (req, res) => {
   try {
-    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates').limit(3);
+    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider images').limit(3);
     res.json({ success: true, offers });
   } catch (error) {
     console.error('Fehler beim Abrufen:', error.message);
@@ -16,7 +16,7 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage mit Interessenfilter (ohne Bilder)
+// ✅ GEO-Abfrage mit Interessenfilter (mit Bildern)
 router.post('/nearby', async (req, res) => {
   try {
     const { lat, lng, interests } = req.body;
@@ -25,7 +25,7 @@ router.post('/nearby', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider');
+    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider images');
     const userLocation = { lat, lng };
     const normalizedInterests = interests.map((i) => i.toLowerCase().trim());
 
@@ -44,7 +44,7 @@ router.post('/nearby', async (req, res) => {
   }
 });
 
-// ✅ Öffentliche Nearby-Route ohne Interessenfilter (ohne Bilder)
+// ✅ Öffentliche Nearby-Route ohne Interessenfilter (mit Bildern)
 router.post('/nearby-noauth', async (req, res) => {
   try {
     const { lat, lng } = req.body;
@@ -53,7 +53,7 @@ router.post('/nearby-noauth', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider');
+    const allOffers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates provider images');
     const userLocation = { lat, lng };
 
     const filtered = allOffers.filter((offer) => {
@@ -81,20 +81,20 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ Alle Angebote abrufen (nur wichtige Felder)
+// ✅ Alle Angebote abrufen (mit Bildern)
 router.get('/', async (req, res) => {
   try {
-    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates');
+    const offers = await Offer.find({}, 'name description category subcategory location radius validDays validTimes validDates images');
     res.json(offers);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Alle Angebote eines Providers (nur wichtige Felder)
+// ✅ Alle Angebote eines Providers (mit Bildern)
 router.get('/provider/:providerId', async (req, res) => {
   try {
-    const offers = await Offer.find({ provider: req.params.providerId }, 'name description category subcategory location radius validDays validTimes validDates');
+    const offers = await Offer.find({ provider: req.params.providerId }, 'name description category subcategory location radius validDays validTimes validDates images');
     res.json(offers);
   } catch (err) {
     console.error(err);
@@ -102,18 +102,14 @@ router.get('/provider/:providerId', async (req, res) => {
   }
 });
 
-// ✅ Einzelnes Angebot (⚡ Optimiert: Nur Textdaten, keine Bilder)
+// ✅ Einzelnes Angebot (mit Bildern)
 router.get('/:id', async (req, res) => {
   try {
-    // Bild-URLs mit einbeziehen
     const offer = await Offer.findById(req.params.id, 'name description category subcategory location radius validDays validTimes validDates provider images');
-    
     if (!offer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
-    
-    // Antwort enthält nun auch die 'images'
-    res.json(offer);
+    res.json(offer); // Antwort enthält nun auch die 'images'
   } catch (error) {
     console.error('Fehler beim Abrufen eines Angebots:', error);
     res.status(500).json({ error: 'Serverfehler' });
