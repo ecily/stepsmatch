@@ -9,11 +9,11 @@ import {
   Pressable,
   Alert,
   ScrollView,
-  Image,  // Importiere die Image-Komponente für die Anzeige der Bilder
+  Image,
 } from 'react-native';
 import * as Location from 'expo-location';
 import axiosInstance from '../src/api/axios';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Callout } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import customMapStyle from '../components/mapStyle';
 
@@ -50,10 +50,7 @@ export default function HomeScreen({ navigation }) {
       }
     };
     startApp();
-
-    return () => {
-      if (reloadTimer.current) clearInterval(reloadTimer.current);
-    };
+    return () => reloadTimer.current && clearInterval(reloadTimer.current);
   }, []);
 
   useEffect(() => {
@@ -102,12 +99,8 @@ export default function HomeScreen({ navigation }) {
     if (!coords) return;
     try {
       setLoading(true);
-      const res = await axiosInstance.post('/offers/nearby-noauth', {
-        lat: coords.latitude,
-        lng: coords.longitude,
-      });
-      const data = res.data.map(({ images, ...rest }) => rest);
-      console.log("Ladene Angebote: ", data); // Log die geladenen Angebote, um sicherzustellen, dass die Daten korrekt sind.
+      const res = await axiosInstance.post('/offers/nearby-noauth', { lat: coords.latitude, lng: coords.longitude });
+      const data = res.data;
       if (updateCache) {
         await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data }));
       }
@@ -144,12 +137,8 @@ export default function HomeScreen({ navigation }) {
     end.setHours(endH, endM, 0, 0);
     if (now < start || now > end) return false;
 
-    const dist = getDistance(userLoc, {
-      latitude: offer.location.coordinates[1],
-      longitude: offer.location.coordinates[0],
-    });
-    return dist <= Math.min(RADIUS, offer.radius) &&
-      (interests.length === 0 || interests.includes(offer.subcategory));
+    const dist = getDistance(userLoc, { latitude: offer.location.coordinates[1], longitude: offer.location.coordinates[0] });
+    return dist <= Math.min(RADIUS, offer.radius) && (interests.length === 0 || interests.includes(offer.subcategory));
   };
 
   const getDistance = (a, b) => {
@@ -185,27 +174,19 @@ export default function HomeScreen({ navigation }) {
   }, {});
 
   const renderSubcategoryCard = (item, index) => {
-    const dist = location ? getDistance(location, {
-      latitude: item.location.coordinates[1],
-      longitude: item.location.coordinates[0],
-    }) : null;
+    const dist = location ? getDistance(location, { latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] }) : null;
     const color = colors[index % colors.length];
     return (
       <TouchableOpacity
-        style={[styles.offerCard, { backgroundColor: color + Math.floor(CARD_OPACITY * 255).toString(16) }] }
+        style={[styles.offerCard, { backgroundColor: color + Math.floor(CARD_OPACITY * 255).toString(16) }]}
         onPress={() => navigation.navigate('OfferDetails', { offerId: item._id })}
       >
         {dist !== null && <Text style={styles.distanceAlert}>Nur {dist} m entfernt!</Text>}
         <Text style={styles.timeLeft}>{getTimeLeft(item)}</Text>
         <Text style={styles.subcategory}>{item.subcategory}</Text>
         <Text style={styles.offerTitle}>{item.name}</Text>
-
-        {/* Hier das Bild der ersten URL anzeigen */}
         {item.images && item.images.length > 0 && (
-          <Image
-            source={{ uri: item.images[0] }}  // URL des ersten Bildes aus der MongoDB-Collection
-            style={styles.offerImage}
-          />
+          <Image source={{ uri: item.images[0] }} style={styles.offerImage} />
         )}
       </TouchableOpacity>
     );
@@ -254,16 +235,17 @@ export default function HomeScreen({ navigation }) {
                   latitude: offer.location.coordinates[1],
                   longitude: offer.location.coordinates[0],
                 }}
-                title={offer.name}
-                description={offer.description}
               >
-                {/* Bild als Callout */}
-                {offer.images && offer.images.length > 0 && (
-                  <Image
-                    source={{ uri: offer.images[0] }}  // URL des ersten Bildes
-                    style={styles.mapMarkerImage}
-                  />
-                )}
+                <Callout onPress={() => navigation.navigate('OfferDetails', { offerId: offer._id })}>
+                  <View style={{ alignItems: 'center', width: 200 }}>
+                    {offer.images && offer.images.length > 0 && (
+                      <Image source={{ uri: offer.images[0] }} style={{ width: 180, height: 100, borderRadius: 8, marginBottom: 8 }} />
+                    )}
+                    <Text style={{ fontWeight: 'bold' }}>{offer.name}</Text>
+                    <Text>{offer.subcategory}</Text>
+                    <Text style={{ fontSize: 12, color: '#6b7280' }}>{getTimeLeft(offer)}</Text>
+                  </View>
+                </Callout>
               </Marker>
             ))}
           </MapView>
@@ -301,15 +283,5 @@ const styles = StyleSheet.create({
   timeLeft: { color: '#059669', fontSize: 13, marginBottom: 4 },
   subcategory: { color: '#6b7280', fontSize: 13, marginBottom: 4 },
   offerTitle: { color: '#111827', fontSize: 16, fontWeight: 'bold' },
-  offerImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  mapMarkerImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
+  offerImage: { width: '100%', height: 150, borderRadius: 8, marginTop: 8 },
 });
