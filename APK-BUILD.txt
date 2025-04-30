@@ -1,0 +1,6 @@
+
+rsync -av --exclude=node_modules --exclude=.git --exclude=.expo --exclude=build /mnt/c/Users/Lenovo/Desktop/stepsmatch/mobile/ ~/stepsmatch-mobile
+cd ~/stepsmatch-mobile
+npm install
+eas build --platform android --profile production --local
+

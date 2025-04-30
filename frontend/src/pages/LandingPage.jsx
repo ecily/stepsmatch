@@ -9,26 +9,26 @@ const LandingPage = () => {
     <div className="bg-white min-h-screen flex flex-col font-sans">
       {/* Hero Section */}
       <header
-        className="relative bg-cover bg-center text-white"
+        className="relative w-full h-screen bg-cover bg-center text-white"
         style={{ backgroundImage: `url(${heroBg})` }}
       >
-        <div className="absolute inset-0 bg-black bg-opacity-70"></div> {/* Erhöhte Opazität für das Hintergrundbild */}
-        <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 text-center"> {/* Noch kleinere Hero Section */}
+        <div className="absolute inset-0 bg-black bg-opacity-60"></div> {/* Leicht abgedunkelter Overlay */}
+        <div className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center">
           <img
             src={logo}
             alt="StepsMatch Logo"
-            className="w-72 h-72 mx-auto mb-4"  // Logo noch kleiner (288x288px)
+            className="w-64 h-64 mb-6" // 256x256px Logo
           />
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-2"> {/* Kleinere Schriftgröße */}
+          <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-4">
             <span className="block text-3xl font-semibold text-gray-100 mb-2">stepsmatch.com</span>
             Finden. Nicht suchen.
           </h1>
-          <p className="text-md md:text-lg mb-4 text-gray-200"> {/* Kleinere Beschreibung */}
+          <p className="text-lg md:text-xl mb-6 text-gray-200 max-w-2xl">
             Deine Umgebung, deine Bedürfnisse – stepsmatch zeigt dir, was du brauchst, genau dann, wenn du es brauchst.
           </p>
           <Link
             to="/login"
-            className="inline-block bg-white text-blue-700 font-semibold px-6 py-3 rounded-lg shadow hover:bg-gray-100 transition duration-200"
+            className="bg-white text-blue-700 font-semibold px-6 py-3 rounded-lg shadow hover:bg-gray-100 transition duration-200"
           >
             Anbieter-Login
           </Link>
