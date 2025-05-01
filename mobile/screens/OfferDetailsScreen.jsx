@@ -1,22 +1,31 @@
+// BLOCK 1: Imports & Konstanten
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   FlatList,
   Vibration,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import axiosInstance from '../src/api/axios';
 import customMapStyle from '../components/mapStyle';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GOOGLE_MAPS_API_KEY = 'AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s';
 
+// BLOCK 2: State, Refs & useEffect
 export default function OfferDetailsScreen({ route, navigation }) {
   const { offerId } = route.params;
   const [offer, setOffer] = useState(null);
@@ -36,11 +45,61 @@ export default function OfferDetailsScreen({ route, navigation }) {
   const lastLocation = useRef(null);
   const destinationReached = useRef(false);
 
+  const mapHeight = useSharedValue(300);
+  const animatedMapStyle = useAnimatedStyle(() => ({
+    height: withTiming(mapHeight.value, { duration: 300 }),
+  }));
+
+  const [detailsVisible, setDetailsVisible] = useState(true);  // Track details visibility
+
   useEffect(() => {
     fetchOffer();
     preloadPingSound();
   }, [offerId]);
 
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 8,
+        },
+        (loc) => {
+          setLocation(loc.coords);
+          if (isNavigating && offer?.location) {
+            const moved =
+              !lastLocation.current ||
+              getDistance(lastLocation.current, loc.coords) > 5;
+            if (moved) {
+              updateRemainingDistance(loc.coords);
+              lastLocation.current = loc.coords;
+            }
+            if (
+              Date.now() - lastAnimate.current > 8000 &&
+              mapRef.current
+            ) {
+              mapRef.current.animateCamera(
+                {
+                  center: loc.coords,
+                  pitch: 60,
+                  zoom: 18,
+                },
+                { duration: 800 }
+              );
+              lastAnimate.current = Date.now();
+            }
+          }
+        }
+      );
+      return () => subscription.remove();
+    })();
+  }, [isNavigating]);
+
+  // BLOCK 3: Funktionen
   const fetchOffer = async () => {
     try {
       const res = await axiosInstance.get(`/offers/${offerId}`);
@@ -87,6 +146,67 @@ export default function OfferDetailsScreen({ route, navigation }) {
     }
     return points;
   };
+
+  const fetchAndSetRoute = async (coords) => {
+    const origin = `${coords.latitude},${coords.longitude}`;
+    const destination = `${offer.location.coordinates[1]},${offer.location.coordinates[0]}`;
+    try {
+      const res = await axiosInstance.get('https://maps.googleapis.com/maps/api/directions/json', {
+        params: {
+          origin,
+          destination,
+          key: GOOGLE_MAPS_API_KEY,
+          mode: 'walking',
+        },
+      });
+
+      if (res.data.routes && res.data.routes.length > 0) {
+        const points = decodePolyline(res.data.routes[0].overview_polyline.points);
+        setRouteCoords(points);
+        return true;
+      } else {
+        console.warn('⚠️ No route found');
+        return false;
+      }
+    } catch (err) {
+      console.error('❌ Error fetching route:', err);
+      return false;
+    }
+  };
+
+  const handleStartNavigation = async () => {
+    if (!location || !offer?.location?.coordinates) return;
+
+    setLoading(true);
+    destinationReached.current = false;
+
+    const success = await fetchAndSetRoute(location);
+    if (success) {
+      mapHeight.value = 500;
+      requestAnimationFrame(() => {
+        setIsNavigating(true);
+        setLoading(false);
+        showToast('start');
+      });
+    } else {
+      setLoading(false);
+    }
+  };
+
+  const getDistance = (loc1, loc2) => {
+    const R = 6371e3;
+    const φ1 = loc1.latitude * Math.PI / 180;
+    const φ2 = loc2.latitude * Math.PI / 180;
+    const Δφ = (loc2.latitude - loc1.latitude) * Math.PI / 180;
+    const Δλ = (loc2.longitude - loc1.longitude) * Math.PI / 180;
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   const updateRemainingDistance = (coords) => {
     if (!offer?.location?.coordinates) return;
     const target = {
@@ -102,95 +222,11 @@ export default function OfferDetailsScreen({ route, navigation }) {
       if (pingSound) pingSound.replayAsync();
       setIsNavigating(false);
       setRouteCoords([]);
+      mapHeight.value = 300;
       showToast('arrived');
     }
   };
 
-  const getDistance = (loc1, loc2) => {
-    const R = 6371e3;
-    const φ1 = loc1.latitude * Math.PI / 180;
-    const φ2 = loc2.latitude * Math.PI / 180;
-    const Δφ = (loc2.latitude - loc1.latitude) * Math.PI / 180;
-    const Δλ = (loc2.longitude - loc1.longitude) * Math.PI / 180;
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 8 },
-        (loc) => {
-          setLocation(loc.coords);
-
-          if (isNavigating && offer?.location) {
-            const moved = !lastLocation.current || getDistance(lastLocation.current, loc.coords) > 5;
-            if (moved) {
-              updateRemainingDistance(loc.coords);
-              lastLocation.current = loc.coords;
-            }
-            if (Date.now() - lastAnimate.current > 8000 && mapRef.current) {
-              mapRef.current.animateCamera({ center: loc.coords, pitch: 60, zoom: 18 }, { duration: 800 });
-              lastAnimate.current = Date.now();
-            }
-          }
-        }
-      );
-      return () => subscription.remove();
-    })();
-  }, [isNavigating]);
-
-  const handleStartNavigation = async () => {
-    if (!location || !offer?.location?.coordinates) {
-      console.log('Location or destination not available');
-      return;
-    }
-
-    console.log('🔵 START handleStartNavigation');
-    setLoading(true);
-    destinationReached.current = false;
-
-    const origin = `${location.latitude},${location.longitude}`;
-    const destination = `${offer.location.coordinates[1]},${offer.location.coordinates[0]}`;
-
-    try {
-      const res = await axiosInstance.get(`https://maps.googleapis.com/maps/api/directions/json`, {
-        params: {
-          origin,
-          destination,
-          key: GOOGLE_MAPS_API_KEY,
-          mode: 'walking'
-        }
-      });
-
-      console.log('📦 Directions API response received');
-
-      if (res.data.routes && res.data.routes.length > 0) {
-        const points = decodePolyline(res.data.routes[0].overview_polyline.points);
-        console.log('✅ Polyline decoded:', points.length, 'points');
-
-        setRouteCoords(points);
-        console.log('📍 routeCoords set');
-
-        requestAnimationFrame(() => {
-          setIsNavigating(true);
-          setLoading(false);
-          console.log('🟢 isNavigating set to true');
-          showToast('start');
-        });
-      } else {
-        console.warn('⚠️ No route found from API');
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error('❌ Error fetching route:', err);
-      setLoading(false);
-    }
-  };
   const showToast = (type) => {
     if (type === 'start') {
       setNavigationMessageVisible(true);
@@ -210,27 +246,51 @@ export default function OfferDetailsScreen({ route, navigation }) {
     setMapType((prev) => (prev === 'standard' ? 'satellite' : 'standard'));
   };
 
+  // BLOCK 4: JSX Layout
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40, paddingTop: 40 }}>
-        <View style={{ padding: 20 }}>
-          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8 }}>{offer?.name}</Text>
-          <Text style={{ color: '#6b7280', marginBottom: 6 }}>{offer?.subcategory}</Text>
-          <Text style={{ color: '#374151', marginBottom: 12 }}>{offer?.description}</Text>
-          {offer?.images && (
-            <FlatList
-              data={offer.images}
-              horizontal
-              keyExtractor={(item, index) => index.toString()}
-              showsHorizontalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <Image source={{ uri: item }} style={{ width: 240, height: 140, borderRadius: 10, marginRight: 12 }} />
-              )}
-            />
-          )}
-        </View>
+        {/* DETAILS CARD */}
+        {detailsVisible && (
+          <View style={[styles.detailsCard, { marginBottom: 10 }]}>
+            <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8 }}>{offer?.name}</Text>
+            <Text style={{ color: '#6b7280', marginBottom: 6 }}>{offer?.subcategory}</Text>
+            <Text style={{ color: '#374151', marginBottom: 12 }}>{offer?.description}</Text>
+            {offer?.images && (
+              <FlatList
+                data={offer.images}
+                horizontal
+                keyExtractor={(item, index) => index.toString()}
+                showsHorizontalScrollIndicator={false}
+                renderItem={({ item }) => (
+                  <Image source={{ uri: item }} style={{ width: 240, height: 140, borderRadius: 10, marginRight: 12 }} />
+                )}
+              />
+            )}
+          </View>
+        )}
 
-        <View style={{ height: 300, marginHorizontal: 16, borderRadius: 12, overflow: 'hidden', borderColor: '#d1d5db', borderWidth: 1, marginBottom: 10 }}>
+        {/* TOGGLE BUTTON TO EXPAND/COLLAPSE MAP */}
+        <TouchableOpacity
+          onPress={() => {
+            setDetailsVisible(!detailsVisible);
+            mapHeight.value = detailsVisible ? 500 : 300;
+          }}
+          style={{ alignSelf: 'center', marginBottom: 10 }}
+        >
+          <Text style={{ color: '#6b7280' }}>
+            {detailsVisible ? 'Details ausblenden ⬆️' : 'Details anzeigen ⬇️'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* MAP CARD */}
+        <Animated.View style={[animatedMapStyle, {
+          marginHorizontal: 16,
+          borderRadius: 12,
+          overflow: 'hidden',
+          borderColor: '#d1d5db',
+          borderWidth: 1,
+        }]}>
           <MapView
             provider={PROVIDER_GOOGLE}
             ref={mapRef}
@@ -266,14 +326,18 @@ export default function OfferDetailsScreen({ route, navigation }) {
               {mapType === 'standard' ? 'Satellitenansicht' : 'Kartenansicht'}
             </Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
+        {/* Navigation Banner */}
         {isNavigating && (
           <View style={styles.navigationBanner}>
-            <Text style={styles.navigationBannerText}>Noch {Math.round(remainingDistance)} m bis zum Ziel</Text>
+            <Text style={styles.navigationBannerText}>
+              Noch {Math.round(remainingDistance)} m bis zum Ziel
+            </Text>
           </View>
         )}
 
+        {/* Control Buttons */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginHorizontal: 16 }}>
           <TouchableOpacity
             disabled={loading}
@@ -281,6 +345,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
               if (isNavigating) {
                 setIsNavigating(false);
                 setRouteCoords([]);
+                mapHeight.value = 300;
                 showToast('abort');
               } else {
                 handleStartNavigation();
@@ -325,8 +390,12 @@ export default function OfferDetailsScreen({ route, navigation }) {
   );
 }
 
+// BLOCK 5: Styles
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   navigationBanner: {
     backgroundColor: '#f87171',
     paddingVertical: 10,
@@ -349,6 +418,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
+    zIndex: 1000,
   },
   toastText: {
     color: '#fff',
@@ -363,10 +433,26 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   mapTypeButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  detailsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });
