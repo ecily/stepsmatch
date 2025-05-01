@@ -23,9 +23,10 @@ export default function OfferDetailsScreen({ route, navigation }) {
   const [location, setLocation] = useState(null);
   const [routeCoords, setRouteCoords] = useState([]);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [remainingDistance, setRemainingDistance] = useState(0);
   const [pingSound, setPingSound] = useState(null);
-  const [mapType, setMapType] = useState('standard'); // Default to standard view
+  const [mapType, setMapType] = useState('standard');
   const [navigationMessageVisible, setNavigationMessageVisible] = useState(false);
   const [abortMessageVisible, setAbortMessageVisible] = useState(false);
   const [arrivedMessageVisible, setArrivedMessageVisible] = useState(false);
@@ -43,7 +44,6 @@ export default function OfferDetailsScreen({ route, navigation }) {
   const fetchOffer = async () => {
     try {
       const res = await axiosInstance.get(`/offers/${offerId}`);
-      console.log('Fetched offer:', res.data);
       setOffer(res.data);
       if (res.data?.location?.coordinates) {
         const [lng, lat] = res.data.location.coordinates;
@@ -87,60 +87,8 @@ export default function OfferDetailsScreen({ route, navigation }) {
     }
     return points;
   };
-
-  const updateRoute = async (coords) => {
-    if (!offer || !offer.location || !offer.location.coordinates) {
-      console.log('Offer or location not available for route calculation');
-      return;
-    }
-
-    try {
-      console.log('Attempting to fetch route');
-      const origin = `${coords.latitude},${coords.longitude}`;
-      const destination = `${offer.location.coordinates[1]},${offer.location.coordinates[0]}`;
-
-      console.log(`Fetching route from ${origin} to ${destination}`);
-
-      const res = await axiosInstance.get(`https://maps.googleapis.com/maps/api/directions/json`, {
-        params: {
-          origin,
-          destination,
-          key: GOOGLE_MAPS_API_KEY,
-          mode: 'walking'
-        }
-      });
-
-      console.log('API response:', res.data);
-
-      if (res.data.routes && res.data.routes.length > 0) {
-        const points = decodePolyline(res.data.routes[0].overview_polyline.points);
-        setRouteCoords(points);  // Set the route immediately
-        showToast('start');
-      } else {
-        console.log('No route found');
-      }
-    } catch (err) {
-      console.error('Error fetching route:', err);
-    }
-  };
-
-  const showToast = (type) => {
-    if (type === 'start') {
-      setNavigationMessageVisible(true);
-      setTimeout(() => setNavigationMessageVisible(false), 2000);
-    }
-    if (type === 'abort') {
-      setAbortMessageVisible(true);
-      setTimeout(() => setAbortMessageVisible(false), 2000);
-    }
-    if (type === 'arrived') {
-      setArrivedMessageVisible(true);
-      setTimeout(() => setArrivedMessageVisible(false), 2000);
-    }
-  };
-
   const updateRemainingDistance = (coords) => {
-    if (!offer || !offer.location || !offer.location.coordinates) return;
+    if (!offer?.location?.coordinates) return;
     const target = {
       latitude: offer.location.coordinates[1],
       longitude: offer.location.coordinates[0],
@@ -153,7 +101,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
       Vibration.vibrate(1000);
       if (pingSound) pingSound.replayAsync();
       setIsNavigating(false);
-      setRouteCoords([]);  // Clear route when destination is reached
+      setRouteCoords([]);
       showToast('arrived');
     }
   };
@@ -179,7 +127,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
         (loc) => {
           setLocation(loc.coords);
 
-          if (isNavigating && offer && offer.location) {
+          if (isNavigating && offer?.location) {
             const moved = !lastLocation.current || getDistance(lastLocation.current, loc.coords) > 5;
             if (moved) {
               updateRemainingDistance(loc.coords);
@@ -197,13 +145,65 @@ export default function OfferDetailsScreen({ route, navigation }) {
   }, [isNavigating]);
 
   const handleStartNavigation = async () => {
-    if (!location) {
-      console.log('Location is not available');
+    if (!location || !offer?.location?.coordinates) {
+      console.log('Location or destination not available');
       return;
     }
-    setIsNavigating(true);
+
+    console.log('🔵 START handleStartNavigation');
+    setLoading(true);
     destinationReached.current = false;
-    await updateRoute(location);
+
+    const origin = `${location.latitude},${location.longitude}`;
+    const destination = `${offer.location.coordinates[1]},${offer.location.coordinates[0]}`;
+
+    try {
+      const res = await axiosInstance.get(`https://maps.googleapis.com/maps/api/directions/json`, {
+        params: {
+          origin,
+          destination,
+          key: GOOGLE_MAPS_API_KEY,
+          mode: 'walking'
+        }
+      });
+
+      console.log('📦 Directions API response received');
+
+      if (res.data.routes && res.data.routes.length > 0) {
+        const points = decodePolyline(res.data.routes[0].overview_polyline.points);
+        console.log('✅ Polyline decoded:', points.length, 'points');
+
+        setRouteCoords(points);
+        console.log('📍 routeCoords set');
+
+        requestAnimationFrame(() => {
+          setIsNavigating(true);
+          setLoading(false);
+          console.log('🟢 isNavigating set to true');
+          showToast('start');
+        });
+      } else {
+        console.warn('⚠️ No route found from API');
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('❌ Error fetching route:', err);
+      setLoading(false);
+    }
+  };
+  const showToast = (type) => {
+    if (type === 'start') {
+      setNavigationMessageVisible(true);
+      setTimeout(() => setNavigationMessageVisible(false), 2000);
+    }
+    if (type === 'abort') {
+      setAbortMessageVisible(true);
+      setTimeout(() => setAbortMessageVisible(false), 2000);
+    }
+    if (type === 'arrived') {
+      setArrivedMessageVisible(true);
+      setTimeout(() => setArrivedMessageVisible(false), 2000);
+    }
   };
 
   const toggleMapType = () => {
@@ -261,11 +261,7 @@ export default function OfferDetailsScreen({ route, navigation }) {
               <Polyline coordinates={routeCoords} strokeWidth={6} strokeColor="#f87171" />
             )}
           </MapView>
-          {/* MapType Toggle Button */}
-          <TouchableOpacity
-            onPress={toggleMapType}
-            style={styles.mapTypeButton}
-          >
+          <TouchableOpacity onPress={toggleMapType} style={styles.mapTypeButton}>
             <Text style={styles.mapTypeButtonText}>
               {mapType === 'standard' ? 'Satellitenansicht' : 'Kartenansicht'}
             </Text>
@@ -279,18 +275,32 @@ export default function OfferDetailsScreen({ route, navigation }) {
         )}
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginHorizontal: 16 }}>
-          <TouchableOpacity onPress={() => {
-            if (isNavigating) {
-              setIsNavigating(false);
-              setRouteCoords([]);
-              showToast('abort');
-            } else {
-              handleStartNavigation();
-            }
-          }} style={{ backgroundColor: isNavigating ? '#f87171' : '#2563eb', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 10 }}>
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{isNavigating ? 'Abbruch' : 'Los geht’s'}</Text>
+          <TouchableOpacity
+            disabled={loading}
+            onPress={() => {
+              if (isNavigating) {
+                setIsNavigating(false);
+                setRouteCoords([]);
+                showToast('abort');
+              } else {
+                handleStartNavigation();
+              }
+            }}
+            style={{
+              backgroundColor: isNavigating ? '#f87171' : '#2563eb',
+              paddingVertical: 14,
+              paddingHorizontal: 24,
+              borderRadius: 10
+            }}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+              {loading ? 'Lade Route…' : isNavigating ? 'Abbruch' : 'Los geht’s'}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ backgroundColor: '#e5e7eb', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 10 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ backgroundColor: '#e5e7eb', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 10 }}
+          >
             <Text style={{ color: '#111827', fontWeight: 'bold', fontSize: 16 }}>Zurück</Text>
           </TouchableOpacity>
         </View>
