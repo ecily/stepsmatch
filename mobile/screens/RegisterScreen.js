@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import axiosInstance from '../src/api/axios';
 
 const RegisterScreen = ({ navigation }) => {
@@ -12,12 +13,15 @@ const RegisterScreen = ({ navigation }) => {
 
   const handleRegister = async () => {
     try {
-      // ✅ KORRIGIERT: Kein doppeltes /api
       const res = await axiosInstance.post('/auth/register', formData);
-      const userId = res.data?.provider?._id;
-      if (!userId) throw new Error('Registrierung fehlgeschlagen');
 
-      // 🟢 Speichere userId im AsyncStorage
+      const userId = res.data?.user?._id;
+      const token = res.data?.token;
+
+      if (!userId || !token) throw new Error('Fehlende Antwortdaten');
+
+      // ✅ Token & User-ID speichern
+      await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
@@ -43,6 +47,8 @@ const RegisterScreen = ({ navigation }) => {
         placeholder="E-Mail"
         value={formData.email}
         onChangeText={text => handleChange('email', text)}
+        keyboardType="email-address"
+        autoCapitalize="none"
         style={{ borderWidth: 1, marginBottom: 16, padding: 8 }}
       />
 

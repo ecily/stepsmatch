@@ -25,20 +25,38 @@ export default function App() {
 
   useEffect(() => {
     registerForPushNotificationsAsync().then(async token => {
+      console.log('📟 Expo Push Token:', token);
+
+      if (!token) {
+        console.warn('❌ Kein Token zurückgegeben');
+        return;
+      }
+
       const storedToken = await SecureStore.getItemAsync('jwt');
-      if (token && storedToken) {
-        const userId = parseJwt(storedToken)?.userId || parseJwt(storedToken)?.id;
-        if (userId) {
-          try {
-            await axios.post(`/users/push-token/${userId}`, { expoPushToken: token });
-            console.log('✅ Push-Token erfolgreich gespeichert');
-          } catch (err) {
-            console.error('❌ Fehler beim Speichern des Push Tokens:', err.message);
-          }
+      if (!storedToken) {
+        console.warn('❌ Kein JWT gefunden');
+        return;
+      }
+
+      const userId = parseJwt(storedToken)?.userId || parseJwt(storedToken)?.id;
+      if (!userId) {
+        console.warn('❌ User ID konnte aus JWT nicht gelesen werden');
+        return;
+      }
+
+      console.log('🆔 User ID:', userId);
+
+      try {
+        const response = await axios.post(`/auth/push-token/${userId}`, { expoPushToken: token });
+        console.log('✅ Push-Token erfolgreich gespeichert:', response.data);
+      } catch (err) {
+        console.error('❌ Fehler beim Speichern des Push Tokens:', err.message);
+        if (err.response) {
+          console.error('🔎 Serverantwort:', err.response.data);
         }
       }
 
-      if (token) setExpoPushToken(token);
+      setExpoPushToken(token);
     });
 
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
@@ -87,18 +105,22 @@ async function registerForPushNotificationsAsync() {
     return null;
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
-  });
-
-  return tokenData.data;
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
+    });
+    return tokenData.data;
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
+    return null;
+  }
 }
 
 function parseJwt(token) {
   try {
     return JSON.parse(atob(token.split('.')[1]));
   } catch (e) {
-    console.warn('❌ JWT Parsing fehlgeschlagen');
+    console.warn('❌ JWT Parsing fehlgeschlagen:', e.message);
     return null;
   }
 }

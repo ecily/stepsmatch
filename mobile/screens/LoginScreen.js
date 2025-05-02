@@ -9,15 +9,16 @@ import {
   Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import axiosInstance from '../src/api/axios';
 
 const LoginScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const fadeAnim = useRef(new Animated.Value(0)).current; // Startet bei 0 (unsichtbar)
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
-      toValue: 1, // Endet bei 1 (voll sichtbar)
+      toValue: 1,
       duration: 800,
       useNativeDriver: true,
     }).start();
@@ -30,10 +31,15 @@ const LoginScreen = ({ navigation }) => {
   const handleLogin = async () => {
     try {
       const res = await axiosInstance.post('/auth/login', formData);
-      const userId = res.data?.provider?._id;
-      if (!userId) throw new Error('Kein Benutzer gefunden.');
 
+      const userId = res.data?.user?._id || res.data?.provider?._id;
+      const token = res.data?.token;
+
+      if (!userId || !token) throw new Error('Fehlende Anmeldedaten');
+
+      await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
+
       navigation.navigate('LocationAccess', { userId });
     } catch (err) {
       console.error(err);
@@ -44,7 +50,6 @@ const LoginScreen = ({ navigation }) => {
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <Animated.View style={{ flex: 1, padding: 24, justifyContent: 'center', opacity: fadeAnim }}>
-        {/* Projekt-Infos */}
         <View style={{ alignItems: 'center', marginBottom: 40 }}>
           <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#2563eb', marginBottom: 4 }}>stepsmatch</Text>
           <Text style={{ fontSize: 16, color: '#6b7280', marginBottom: 16 }}>Find. Not seek.</Text>
@@ -58,8 +63,9 @@ const LoginScreen = ({ navigation }) => {
           <Text style={{ fontSize: 12, color: '#d1d5db', marginTop: 4 }}>(c) 2025</Text>
         </View>
 
-        {/* Login-Formular */}
-        <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 24, textAlign: 'center', color: '#111827' }}>Login</Text>
+        <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 24, textAlign: 'center', color: '#111827' }}>
+          Login
+        </Text>
 
         <TextInput
           placeholder="E-Mail"
