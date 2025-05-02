@@ -3,6 +3,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
+import { sendPushNotification } from '../utils/sendPushNotification.js';
 
 const router = express.Router();
 
@@ -44,21 +45,28 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// ⏺️ 🆕 Push Token speichern
+// ⏺️ 🆕 Push Token speichern (mit Logging)
 router.post('/push-token/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { expoPushToken } = req.body;
 
+    console.log('📥 Push-Token Request empfangen');
+    console.log('→ User ID:', userId);
+    console.log('→ Token:', expoPushToken);
+
     if (!expoPushToken) {
+      console.warn('⚠️ Kein Token im Request Body');
       return res.status(400).json({ error: 'Kein Push-Token übergeben' });
     }
 
     const user = await User.findByIdAndUpdate(userId, { expoPushToken }, { new: true });
     if (!user) {
+      console.warn('⚠️ User nicht gefunden:', userId);
       return res.status(404).json({ error: 'Nutzer nicht gefunden' });
     }
 
+    console.log('✅ Token erfolgreich gespeichert für Nutzer:', user.email);
     res.json({ message: 'Push-Token gespeichert', user });
   } catch (err) {
     console.error('❌ Fehler beim Speichern des Push Tokens:', err);
@@ -66,12 +74,7 @@ router.post('/push-token/:userId', async (req, res) => {
   }
 });
 
-export default router;
-
-
 // ⏺️ 🧪 Test-Notification an User senden
-import { sendPushNotification } from '../utils/sendPushNotification.js';
-
 router.post('/test-push/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -93,3 +96,5 @@ router.post('/test-push/:userId', async (req, res) => {
     res.status(500).json({ error: 'Fehler beim Senden der Push-Nachricht' });
   }
 });
+
+export default router;
