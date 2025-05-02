@@ -1,3 +1,5 @@
+// LoginScreen.js
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -10,6 +12,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import axiosInstance from '../src/api/axios';
 
 const LoginScreen = ({ navigation }) => {
@@ -39,6 +43,21 @@ const LoginScreen = ({ navigation }) => {
 
       await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
+
+      // 🔁 Versuche auch beim Login den Push-Token zu speichern
+      const pushToken = await registerForPushNotificationsAsync();
+      if (pushToken) {
+        try {
+          const response = await axiosInstance.post(`/auth/push-token/${userId}`, {
+            expoPushToken: pushToken,
+          });
+          console.log('✅ Push-Token gespeichert beim Login:', response.data);
+        } catch (err) {
+          console.error('❌ Fehler beim Speichern des Push Tokens beim Login:', err.message);
+        }
+      } else {
+        console.warn('⚠️ Kein Push-Token beim Login verfügbar');
+      }
 
       navigation.navigate('LocationAccess', { userId });
     } catch (err) {
@@ -121,3 +140,29 @@ const LoginScreen = ({ navigation }) => {
 };
 
 export default LoginScreen;
+
+// 🔁 Push-Berechtigung & Token abrufen
+async function registerForPushNotificationsAsync() {
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') {
+    console.warn('⚠️ Push notification permission not granted');
+    return null;
+  }
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
+    });
+    return tokenData.data;
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
+    return null;
+  }
+}

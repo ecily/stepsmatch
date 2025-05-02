@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
@@ -7,7 +7,6 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
 import 'react-native-gesture-handler';
-import axios from './src/api/axios';
 
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
@@ -19,46 +18,11 @@ import OfferDetailsScreen from './screens/OfferDetailsScreen';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [expoPushToken, setExpoPushToken] = useState('');
   const notificationListener = useRef();
   const responseListener = useRef();
 
   useEffect(() => {
-    registerForPushNotificationsAsync().then(async token => {
-      console.log('📟 Expo Push Token:', token);
-
-      if (!token) {
-        console.warn('❌ Kein Token zurückgegeben');
-        return;
-      }
-
-      const storedToken = await SecureStore.getItemAsync('jwt');
-      if (!storedToken) {
-        console.warn('❌ Kein JWT gefunden');
-        return;
-      }
-
-      const userId = parseJwt(storedToken)?.userId || parseJwt(storedToken)?.id;
-      if (!userId) {
-        console.warn('❌ User ID konnte aus JWT nicht gelesen werden');
-        return;
-      }
-
-      console.log('🆔 User ID:', userId);
-
-      try {
-        const response = await axios.post(`/auth/push-token/${userId}`, { expoPushToken: token });
-        console.log('✅ Push-Token erfolgreich gespeichert:', response.data);
-      } catch (err) {
-        console.error('❌ Fehler beim Speichern des Push Tokens:', err.message);
-        if (err.response) {
-          console.error('🔎 Serverantwort:', err.response.data);
-        }
-      }
-
-      setExpoPushToken(token);
-    });
-
+    // Nur Listener setzen – keine Token-Logik mehr
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('📬 Notification received:', notification);
     });
@@ -91,7 +55,8 @@ export default function App() {
   );
 }
 
-async function registerForPushNotificationsAsync() {
+// 🔁 Exportiere als Utility für Login/Registrierung
+export async function registerForPushNotificationsAsync() {
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -112,15 +77,6 @@ async function registerForPushNotificationsAsync() {
     return tokenData.data;
   } catch (error) {
     console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
-    return null;
-  }
-}
-
-function parseJwt(token) {
-  try {
-    return JSON.parse(atob(token.split('.')[1]));
-  } catch (e) {
-    console.warn('❌ JWT Parsing fehlgeschlagen:', e.message);
     return null;
   }
 }

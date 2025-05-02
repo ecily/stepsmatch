@@ -1,7 +1,11 @@
+// RegisterScreen.js
+
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import axiosInstance from '../src/api/axios';
 
 const RegisterScreen = ({ navigation }) => {
@@ -20,9 +24,25 @@ const RegisterScreen = ({ navigation }) => {
 
       if (!userId || !token) throw new Error('Fehlende Antwortdaten');
 
-      // ✅ Token & User-ID speichern
       await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
+
+      console.log('🟢 Registrierung erfolgreich:', userId);
+
+      // 🟢 Versuche Push-Token zu registrieren
+      const pushToken = await registerForPushNotificationsAsync();
+      if (pushToken) {
+        try {
+          const response = await axiosInstance.post(`/auth/push-token/${userId}`, {
+            expoPushToken: pushToken,
+          });
+          console.log('✅ Push-Token gespeichert:', response.data);
+        } catch (err) {
+          console.error('❌ Fehler beim Speichern des Push Tokens:', err.message);
+        }
+      } else {
+        console.warn('⚠️ Kein Push-Token verfügbar');
+      }
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
       navigation.navigate('LocationAccess', { userId });
@@ -60,7 +80,10 @@ const RegisterScreen = ({ navigation }) => {
         style={{ borderWidth: 1, marginBottom: 16, padding: 8 }}
       />
 
-      <TouchableOpacity onPress={handleRegister} style={{ backgroundColor: '#2563eb', padding: 12, borderRadius: 6 }}>
+      <TouchableOpacity
+        onPress={handleRegister}
+        style={{ backgroundColor: '#2563eb', padding: 12, borderRadius: 6 }}
+      >
         <Text style={{ color: 'white', textAlign: 'center' }}>Registrieren</Text>
       </TouchableOpacity>
 
@@ -72,3 +95,29 @@ const RegisterScreen = ({ navigation }) => {
 };
 
 export default RegisterScreen;
+
+// ⏬ Push-Berechtigung & Token abrufen
+async function registerForPushNotificationsAsync() {
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') {
+    console.warn('⚠️ Push notification permission not granted');
+    return null;
+  }
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
+    });
+    return tokenData.data;
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
+    return null;
+  }
+}

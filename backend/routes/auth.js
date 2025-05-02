@@ -108,4 +108,34 @@ router.put('/preferences/:userId', async (req, res) => {
   }
 });
 
+// 📬 Expo Push Token speichern
+router.post('/push-token/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { expoPushToken } = req.body;
+
+    console.log("📬 Push-Token-Request erhalten:", { userId, expoPushToken });
+
+    if (!expoPushToken) {
+      return res.status(400).json({ error: 'Kein Push-Token übermittelt' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { expoPushToken },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    console.log("✅ Token gespeichert für User:", user._id);
+    res.status(200).json({ message: 'Token erfolgreich gespeichert', user });
+  } catch (error) {
+    console.error("❌ Fehler beim Speichern des Push Tokens:", error);
+    res.status(500).json({ error: 'Serverfehler beim Speichern des Push Tokens' });
+  }
+});
+
 export default router;
