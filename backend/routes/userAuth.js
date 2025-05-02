@@ -44,4 +44,52 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ⏺️ 🆕 Push Token speichern
+router.post('/push-token/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { expoPushToken } = req.body;
+
+    if (!expoPushToken) {
+      return res.status(400).json({ error: 'Kein Push-Token übergeben' });
+    }
+
+    const user = await User.findByIdAndUpdate(userId, { expoPushToken }, { new: true });
+    if (!user) {
+      return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+    }
+
+    res.json({ message: 'Push-Token gespeichert', user });
+  } catch (err) {
+    console.error('❌ Fehler beim Speichern des Push Tokens:', err);
+    res.status(500).json({ error: 'Serverfehler beim Speichern des Push Tokens' });
+  }
+});
+
 export default router;
+
+
+// ⏺️ 🧪 Test-Notification an User senden
+import { sendPushNotification } from '../utils/sendPushNotification.js';
+
+router.post('/test-push/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+
+    if (!user || !user.expoPushToken) {
+      return res.status(404).json({ error: 'Kein gültiger Push-Token gefunden' });
+    }
+
+    const result = await sendPushNotification(user.expoPushToken, {
+      title: '🎉 Push funktioniert!',
+      body: 'Dies ist eine Testnachricht von StepsMatch.',
+      data: { screen: 'Home' }
+    });
+
+    res.json({ message: 'Push gesendet', result });
+  } catch (err) {
+    console.error('❌ Fehler bei Test-Push:', err);
+    res.status(500).json({ error: 'Fehler beim Senden der Push-Nachricht' });
+  }
+});

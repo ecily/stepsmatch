@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js';
 import userAuthRoutes from './routes/userAuth.js';
 import uploadRoutes from './routes/uploads.js';
+import pushTokenRoutes from './routes/pushTokens.js'; // ✅ NEU
 
 dotenv.config();
 const app = express();
@@ -38,14 +39,14 @@ app.use(cors({
       callback(new Error('Nicht erlaubter Ursprung'));
     }
   },
-  credentials: true, // Sicherstellen, dass Credentials wie Cookies gesendet werden
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Alle Methoden erlauben
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 }));
 
-// Cloudinary (Hier wurde CORS explizit für die Uploads-Route gesetzt)
+// Cloudinary Uploads
 app.use('/api/uploads', cors({
-  origin: 'http://localhost:5173', // Stelle sicher, dass nur die korrekte Origin zugelassen ist
-  credentials: true,              // Sicherstellen, dass Cookies gesendet werden
+  origin: 'http://localhost:5173',
+  credentials: true,
 }), uploadRoutes);
 
 // ✅ API-Routen
@@ -54,6 +55,7 @@ app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/users', userAuthRoutes);
+app.use('/api/push-token', pushTokenRoutes); // ✅ NEU
 
 // ✅ Neu: Ping-Route für Serverstatus
 app.get('/api/ping', (req, res) => {

@@ -43,3 +43,6 @@ Thumbs.db
 *.tar.gz
 *.apk
 *.ipa
+
+/android
+/ios

@@ -9,8 +9,11 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
 
     // 🆕 Onboarding-Daten
-    preferredRadius: { type: Number, default: 500 }, // z. B. 500 m
-    interests: { type: [String], default: [] }, // Subkategorien wie "Café", "Museum", etc.
+    preferredRadius: { type: Number, default: 500 },
+    interests: { type: [String], default: [] },
+
+    // 🆕 Expo Push Token
+    expoPushToken: { type: String }
   },
   { timestamps: true }
 );

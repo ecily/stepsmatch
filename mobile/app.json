@@ -12,7 +12,6 @@
       "supportsTablet": true
     },
     "android": {
-      "permissions": ["ACCESS_FINE_LOCATION"], // ✅ HINZUGEFÜGT
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -22,7 +21,12 @@
           "apiKey": "AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s"
         }
       },
-      "package": "com.ecily.stepsmatch"
+      "package": "com.ecily.stepsmatch",
+      "permissions": [
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -36,7 +40,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": false
