@@ -1,5 +1,3 @@
-// LoginScreen.js
-
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -12,9 +10,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import axiosInstance from '../src/api/axios';
+import { registerForPushNotificationsAsync } from '../App'; // ✅ zentrale Funktion importiert
 
 const LoginScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -34,34 +31,48 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     try {
-      const res = await axiosInstance.post('/auth/login', formData);
+      console.log('🟦 [Login] Start – E-Mail:', formData.email);
 
+      // 🔧 Route korrigiert von /auth/login auf /users/login
+      const res = await axiosInstance.post('/users/login', formData);
       const userId = res.data?.user?._id || res.data?.provider?._id;
       const token = res.data?.token;
+
+      console.log('🟩 [Login] Erfolgreich. User ID:', userId);
+      console.log('🔐 [Login] JWT vorhanden:', !!token);
 
       if (!userId || !token) throw new Error('Fehlende Anmeldedaten');
 
       await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
 
-      // 🔁 Versuche auch beim Login den Push-Token zu speichern
+      // 🔁 Push-Token holen
       const pushToken = await registerForPushNotificationsAsync();
+      console.log('📲 [Login] Expo Push-Token erhalten:', pushToken);
+
       if (pushToken) {
         try {
-          const response = await axiosInstance.post(`/auth/push-token/${userId}`, {
+          const response = await axiosInstance.post(`/users/push-token/${userId}`, {
             expoPushToken: pushToken,
           });
-          console.log('✅ Push-Token gespeichert beim Login:', response.data);
+          console.log('✅ [Login] Push-Token gespeichert:', response.data);
         } catch (err) {
-          console.error('❌ Fehler beim Speichern des Push Tokens beim Login:', err.message);
+          console.error('❌ [Login] Fehler beim Speichern des Push-Tokens');
+          console.error('→ Message:', err.message);
+          if (err.response?.data) {
+            console.error('→ Serverantwort:', err.response.data);
+          }
         }
       } else {
-        console.warn('⚠️ Kein Push-Token beim Login verfügbar');
+        console.warn('⚠️ [Login] Kein Push-Token verfügbar');
       }
 
       navigation.navigate('LocationAccess', { userId });
     } catch (err) {
-      console.error(err);
+      console.error('❌ [Login] Fehler:', err.message);
+      if (err.response?.data) {
+        console.error('→ Serverantwort:', err.response.data);
+      }
       Alert.alert('Fehler', err.response?.data?.error || 'Login fehlgeschlagen');
     }
   };
@@ -140,29 +151,3 @@ const LoginScreen = ({ navigation }) => {
 };
 
 export default LoginScreen;
-
-// 🔁 Push-Berechtigung & Token abrufen
-async function registerForPushNotificationsAsync() {
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    console.warn('⚠️ Push notification permission not granted');
-    return null;
-  }
-
-  try {
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
-    });
-    return tokenData.data;
-  } catch (error) {
-    console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
-    return null;
-  }
-}

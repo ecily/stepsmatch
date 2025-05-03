@@ -66,4 +66,7 @@ const OfferSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// 🔁 Notwendig für Geo-Abfragen:
+OfferSchema.index({ location: '2dsphere' });
+
 export default mongoose.model('Offer', OfferSchema);

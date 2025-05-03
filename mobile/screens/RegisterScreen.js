@@ -1,12 +1,9 @@
-// RegisterScreen.js
-
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import axiosInstance from '../src/api/axios';
+import { registerForPushNotificationsAsync } from '../App';
 
 const RegisterScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -17,37 +14,49 @@ const RegisterScreen = ({ navigation }) => {
 
   const handleRegister = async () => {
     try {
-      const res = await axiosInstance.post('/auth/register', formData);
+      console.log('🟨 [Register] Versuch mit:', formData.email);
 
+      // ✅ Korrigierte API-Route
+      const res = await axiosInstance.post('/users/register', formData);
       const userId = res.data?.user?._id;
       const token = res.data?.token;
+
+      console.log('🟩 [Register] Erfolgreich. User ID:', userId);
+      console.log('🔐 [Register] JWT erhalten:', !!token);
 
       if (!userId || !token) throw new Error('Fehlende Antwortdaten');
 
       await SecureStore.setItemAsync('jwt', token);
       await AsyncStorage.setItem('userId', userId);
 
-      console.log('🟢 Registrierung erfolgreich:', userId);
-
       // 🟢 Versuche Push-Token zu registrieren
       const pushToken = await registerForPushNotificationsAsync();
+      console.log('📲 [Register] Expo Push-Token erhalten:', pushToken);
+
       if (pushToken) {
         try {
-          const response = await axiosInstance.post(`/auth/push-token/${userId}`, {
+          const response = await axiosInstance.post(`/users/push-token/${userId}`, {
             expoPushToken: pushToken,
           });
-          console.log('✅ Push-Token gespeichert:', response.data);
+          console.log('✅ [Register] Push-Token gespeichert:', response.data);
         } catch (err) {
-          console.error('❌ Fehler beim Speichern des Push Tokens:', err.message);
+          console.error('❌ [Register] Fehler beim Speichern des Push Tokens');
+          console.error('→ Message:', err.message);
+          if (err.response?.data) {
+            console.error('→ Serverantwort:', err.response.data);
+          }
         }
       } else {
-        console.warn('⚠️ Kein Push-Token verfügbar');
+        console.warn('⚠️ [Register] Kein Push-Token verfügbar');
       }
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
       navigation.navigate('LocationAccess', { userId });
     } catch (err) {
-      console.error(err);
+      console.error('❌ [Register] Fehler:', err.message);
+      if (err.response?.data) {
+        console.error('→ Serverantwort:', err.response.data);
+      }
       Alert.alert('Fehler', err.response?.data?.error || 'Registrierung fehlgeschlagen');
     }
   };
@@ -88,36 +97,12 @@ const RegisterScreen = ({ navigation }) => {
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 20 }}>
-        <Text style={{ color: '#2563eb', textAlign: 'center' }}>Bereits ein Konto? Jetzt einloggen</Text>
+        <Text style={{ color: '#2563eb', textAlign: 'center' }}>
+          Bereits ein Konto? Jetzt einloggen
+        </Text>
       </TouchableOpacity>
     </View>
   );
 };
 
 export default RegisterScreen;
-
-// ⏬ Push-Berechtigung & Token abrufen
-async function registerForPushNotificationsAsync() {
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    console.warn('⚠️ Push notification permission not granted');
-    return null;
-  }
-
-  try {
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: Constants?.expoConfig?.extra?.eas?.projectId || 'de0e17e7-05bf-4a73-a61b-1edd912bd925',
-    });
-    return tokenData.data;
-  } catch (error) {
-    console.error('❌ Fehler beim Abrufen des Push Tokens:', error);
-    return null;
-  }
-}

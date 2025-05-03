@@ -1,8 +1,9 @@
+// /routes/userAuth.js
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
-import { sendPushNotification } from '../utils/sendPushNotification.js';
+import sendPushNotification from '../utils/sendPushNotification.js';
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// ⏺️ Push Token speichern (mit Logging auf allen Ebenen)
+// ⏺️ Push Token speichern
 router.post('/push-token/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -90,7 +91,7 @@ router.post('/push-token/:userId', async (req, res) => {
   }
 });
 
-// ⏺️ Test-Notification an User senden
+// ⏺️ Test-Push senden
 router.post('/test-push/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -112,6 +113,33 @@ router.post('/test-push/:userId', async (req, res) => {
   } catch (err) {
     console.error('❌ Fehler bei Test-Push:', err);
     res.status(500).json({ error: 'Fehler beim Senden der Push-Nachricht' });
+  }
+});
+
+// 🆕 Interessen & Radius speichern
+router.put('/preferences/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { preferredRadius, interests } = req.body;
+
+    if (!preferredRadius || !interests) {
+      return res.status(400).json({ error: 'Radius und Interessen sind erforderlich.' });
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { preferredRadius, interests },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+    }
+
+    res.json({ message: 'Präferenzen erfolgreich gespeichert', user: updated });
+  } catch (error) {
+    console.error('❌ Fehler beim Speichern der Präferenzen:', error);
+    res.status(500).json({ error: 'Serverfehler beim Speichern der Präferenzen' });
   }
 });
 

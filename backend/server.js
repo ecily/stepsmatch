@@ -6,10 +6,11 @@ import cors from 'cors';
 import connectDB from './config/db.js';
 import offerRoutes from './routes/offers.js';
 import providerRoutes from './routes/providers.js';
-import authRoutes from './routes/auth.js';
+// ❌ entfernt: import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js';
 import userAuthRoutes from './routes/userAuth.js';
 import uploadRoutes from './routes/uploads.js';
+import matchRoutes from './routes/match.js';
 
 dotenv.config();
 const app = express();
@@ -23,13 +24,13 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
-      'http://localhost:5173',    // Web-Frontend lokal
-      'http://localhost:19006',   // Expo Go
-      'http://localhost:8081',    // Android Emulator
-      'http://10.0.0.34:5173',    // Web-Frontend im Netzwerk
-      'http://10.0.0.34:19006',   // Expo Go im Netzwerk
-      'exp://10.0.0.34:19000',    // Expo Dev Client
-      'https://lobster-app-ie9a5.ondigitalocean.app', // Live-URL
+      'http://localhost:5173',
+      'http://localhost:19006',
+      'http://localhost:8081',
+      'http://10.0.0.34:5173',
+      'http://10.0.0.34:19006',
+      'exp://10.0.0.34:19000',
+      'https://lobster-app-ie9a5.ondigitalocean.app',
     ];
 
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
@@ -49,13 +50,13 @@ app.use('/api/uploads', cors({
 }), uploadRoutes);
 
 // ✅ API-Routen
-app.use('/api/auth', authRoutes);
+app.use('/api/users', userAuthRoutes); // enthält auch /register, /login, /push-token, /preferences
 app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/users', userAuthRoutes); // enthält auch /push-token/:userId
+app.use('/api/match-check', matchRoutes);
 
-// ✅ Neu: Ping-Route für Serverstatus
+// ✅ Ping-Route für Serverstatus
 app.get('/api/ping', (req, res) => {
   res.status(200).send('pong');
 });
