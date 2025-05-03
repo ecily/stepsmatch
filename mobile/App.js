@@ -1,5 +1,3 @@
-// /mobile/App.js
-
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -21,6 +19,7 @@ import HomeScreen from './screens/HomeScreen';
 import OfferDetailsScreen from './screens/OfferDetailsScreen';
 
 import { BACKGROUND_LOCATION_TASK } from './backgroundLocationTask';
+import { navigationRef, navigate } from './navigationRef'; // ✅ Neu
 
 const Stack = createNativeStackNavigator();
 
@@ -35,6 +34,11 @@ export default function App() {
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('📲 Notification response:', response);
+      const offerId = response?.notification?.request?.content?.data?.offerId;
+      if (offerId) {
+        console.log('🧭 Navigation zu OfferDetails mit ID:', offerId);
+        navigate('OfferDetails', { offerId });
+      }
     });
 
     initBackgroundLocationTask();
@@ -47,7 +51,7 @@ export default function App() {
 
   return (
     <>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />

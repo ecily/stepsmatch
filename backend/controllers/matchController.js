@@ -3,7 +3,6 @@ import User from '../models/User.js';
 import Offer from '../models/Offer.js';
 import NotificationLog from '../models/NotificationLog.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
-import haversine from 'haversine-distance';
 import moment from 'moment';
 
 export const checkForMatchingOffers = async (req, res) => {
@@ -24,8 +23,8 @@ export const checkForMatchingOffers = async (req, res) => {
     const maxRadius = user.preferredRadius || 500;
 
     const offers = await Offer.find({
-      category: { $in: userInterests },
-      'location.coordinates': {
+      subcategory: { $in: userInterests },
+      location: {
         $near: {
           $geometry: {
             type: 'Point',
@@ -42,7 +41,6 @@ export const checkForMatchingOffers = async (req, res) => {
     let sent = 0;
 
     for (const offer of offers) {
-      // 🔒 Zeitlich gültig?
       const { validDates, validDays, validTimes } = offer;
 
       if (
@@ -50,6 +48,7 @@ export const checkForMatchingOffers = async (req, res) => {
         !now.isBetween(moment(validDates.from), moment(validDates.to).endOf('day')) ||
         !isWithinTimeRange(validTimes.start, validTimes.end, now)
       ) {
+        console.log(`⏱️ Angebot ${offer.name} aktuell nicht gültig – übersprungen`);
         continue;
       }
 
@@ -59,10 +58,13 @@ export const checkForMatchingOffers = async (req, res) => {
         date: { $gte: moment().startOf('day').toDate() }
       });
 
-      if (alreadyNotified) continue;
+      if (alreadyNotified) {
+        console.log(`🔁 Bereits benachrichtigt: ${offer.name}`);
+        continue;
+      }
 
       await sendPushNotification(user.expoPushToken, {
-        title: `🎯 Neues Angebot: ${offer.name}`,
+        title: `🎯 ${offer.name}`,
         body: offer.description || 'Jetzt in deiner Nähe aktiv!',
         data: { offerId: offer._id }
       });
@@ -73,6 +75,7 @@ export const checkForMatchingOffers = async (req, res) => {
         date: new Date()
       });
 
+      console.log(`✅ Push gesendet: ${offer.name}`);
       sent++;
     }
 

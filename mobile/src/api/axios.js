@@ -1,19 +1,24 @@
-// mobile/src/api/axios.js
+// /mobile/src/api/axios.js
 
 import axios from 'axios';
+import { Platform } from 'react-native';
 
-// 🌐 Fester lokaler Server für Debug-Build
-const baseURL = 'http://10.0.0.34:5000/api';
+// 🌐 Dynamische Base URL abhängig von Umgebung
+const baseURL =
+  Platform.OS === 'android' || process.env.NODE_ENV === 'production'
+    ? 'https://lobster-app-ie9a5.ondigitalocean.app/api' // ✅ Live-Backend
+    : 'http://10.0.0.34:5000/api'; // 🔧 Lokales Backend für Web/Expo Go
 
-console.log('🔗 [DEBUG] Lokale Base URL aktiv:', baseURL);
+console.log('🌍 [AXIOS] Base URL verwendet:', baseURL);
 
+// ⚙️ Erstelle Axios-Instanz mit globalem Timeout
 const axiosInstance = axios.create({
   baseURL,
   timeout: 30000,
   withCredentials: false,
 });
 
-// 🛠️ Zentrale Logging-Logik für jede Anfrage
+// 📤 Logging für ausgehende Anfragen
 axiosInstance.interceptors.request.use(
   (config) => {
     console.log('📤 [AXIOS] Anfrage an:', config.baseURL + config.url);
@@ -28,7 +33,7 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// 🛠️ Logging für jede Antwort oder Fehler
+// ✅ Logging für eingehende Antworten oder Fehler
 axiosInstance.interceptors.response.use(
   (response) => {
     console.log('✅ [AXIOS] Antwort:', response.status, response.data);
