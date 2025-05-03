@@ -66,7 +66,10 @@ export const checkForMatchingOffers = async (req, res) => {
       await sendPushNotification(user.expoPushToken, {
         title: `🎯 ${offer.name}`,
         body: offer.description || 'Jetzt in deiner Nähe aktiv!',
-        data: { offerId: offer._id }
+        data: {
+          screen: 'OfferDetails',
+          offerId: offer._id.toString()
+        }
       });
 
       await NotificationLog.create({

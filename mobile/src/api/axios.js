@@ -3,15 +3,15 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 
-// 🌐 Dynamische Base URL abhängig von Umgebung
+// 🌐 Dynamische Base URL je nach Umgebung
 const baseURL =
-  Platform.OS === 'android' || process.env.NODE_ENV === 'production'
-    ? 'https://lobster-app-ie9a5.ondigitalocean.app/api' // ✅ Live-Backend
-    : 'http://10.0.0.34:5000/api'; // 🔧 Lokales Backend für Web/Expo Go
+  Platform.OS === 'android' && !__DEV__
+    ? 'https://lobster-app-ie9a5.ondigitalocean.app/api' // ✅ Live-Backend für APK
+    : 'http://10.0.0.34:5000/api'; // 💻 Lokales Backend für Entwicklung (Web/Emulator/Expo Go)
 
 console.log('🌍 [AXIOS] Base URL verwendet:', baseURL);
 
-// ⚙️ Erstelle Axios-Instanz mit globalem Timeout
+// ⚙️ Erstelle Axios-Instanz
 const axiosInstance = axios.create({
   baseURL,
   timeout: 30000,

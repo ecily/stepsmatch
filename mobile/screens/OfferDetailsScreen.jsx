@@ -106,7 +106,16 @@ export default function OfferDetailsScreen({ route, navigation }) {
       setOffer(res.data);
       if (res.data?.location?.coordinates) {
         const [lng, lat] = res.data.location.coordinates;
-        setLocation({ latitude: lat, longitude: lng });
+        setLocation({ latitude: lat, longitude: lng });const coords = { latitude: lat, longitude: lng };
+        setLocation(coords);
+        if (mapRef.current) {
+          mapRef.current.animateCamera({
+            center: coords,
+            pitch: 60,
+            zoom: 18,
+          });
+        }
+       
       }
     } catch (err) {
       console.error('Error fetching offer:', err);
