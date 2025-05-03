@@ -19,7 +19,7 @@ import HomeScreen from './screens/HomeScreen';
 import OfferDetailsScreen from './screens/OfferDetailsScreen';
 
 import { BACKGROUND_LOCATION_TASK } from './backgroundLocationTask';
-import { navigationRef, navigate } from './navigationRef'; // ✅ Neu
+import { navigationRef, navigate } from './navigationRef';
 
 const Stack = createNativeStackNavigator();
 
@@ -120,9 +120,9 @@ async function initBackgroundLocationTask() {
     }
 
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-      accuracy: Location.Accuracy.High,
-      timeInterval: 900000, // 15 Minuten
-      distanceInterval: 50, // nur bei Bewegung über 50m
+      accuracy: Location.Accuracy.BestForNavigation, // ✅ höchste Genauigkeit aktiviert
+      timeInterval: 300000, // ⏱️ 5 Minuten (wird ignoriert bei Bewegung)
+      distanceInterval: 50, // ✅ bei Bewegung über 50 m wird getriggert
       showsBackgroundLocationIndicator: false,
       foregroundService: {
         notificationTitle: 'StepsMatch läuft',
