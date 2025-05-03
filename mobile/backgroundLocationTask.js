@@ -39,6 +39,8 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   }
 
   if (data) {
+    console.log('📡 [BG] Standorttask ausgeführt – auch bei Screen off?');
+
     const { locations } = data;
     const location = locations[0];
     if (!location) return;

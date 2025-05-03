@@ -37,17 +37,16 @@ export const checkForMatchingOffers = async (req, res) => {
 
     const now = moment();
     const weekday = now.format('dddd');
-
     let sent = 0;
 
     for (const offer of offers) {
       const { validDates, validDays, validTimes } = offer;
 
-      if (
-        !validDays.includes(weekday) ||
-        !now.isBetween(moment(validDates.from), moment(validDates.to).endOf('day')) ||
-        !isWithinTimeRange(validTimes.start, validTimes.end, now)
-      ) {
+      const isDayValid = validDays.includes(weekday);
+      const isDateValid = now.isBetween(moment(validDates.from), moment(validDates.to).endOf('day'));
+      const isTimeValid = isWithinTimeRange(validTimes.start, validTimes.end, now);
+
+      if (!isDayValid || !isDateValid || !isTimeValid) {
         console.log(`⏱️ Angebot ${offer.name} aktuell nicht gültig – übersprungen`);
         continue;
       }
@@ -63,14 +62,19 @@ export const checkForMatchingOffers = async (req, res) => {
         continue;
       }
 
-      await sendPushNotification(user.expoPushToken, {
+      const payload = {
         title: `🎯 ${offer.name}`,
         body: offer.description || 'Jetzt in deiner Nähe aktiv!',
         data: {
           screen: 'OfferDetails',
           offerId: offer._id.toString()
         }
-      });
+      };
+
+      console.log('📦 Push Payload:', payload);
+
+      const result = await sendPushNotification(user.expoPushToken, payload);
+      console.log('📲 Push-Ergebnis:', result);
 
       await NotificationLog.create({
         userId,
@@ -78,7 +82,7 @@ export const checkForMatchingOffers = async (req, res) => {
         date: new Date()
       });
 
-      console.log(`✅ Push gesendet: ${offer.name}`);
+      console.log(`✅ Push gesendet: ${offer.name} an ${user.email}`);
       sent++;
     }
 

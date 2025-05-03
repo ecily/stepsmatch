@@ -20,9 +20,9 @@ const Register = ({ onRegisterSuccess }) => {
     e.preventDefault();
     setError('');
     try {
-      const res = await axiosInstance.post('/auth/register', formData);
+      const res = await axiosInstance.post('/users/register', formData);
 
-      const userId = res.data.provider._id;
+      const userId = res.data.user._id;
       localStorage.setItem('userId', userId);
 
       if (onRegisterSuccess) {

@@ -20,9 +20,9 @@ const Login = () => {
     setError('');
 
     try {
-      const res = await axiosInstance.post('/auth/login', formData);
+      const res = await axiosInstance.post('/users/login', formData);
 
-      const userId = res.data.provider._id;
+      const userId = res.data.user._id;
       if (!userId) throw new Error('userId fehlt in der Login-Antwort');
 
       localStorage.setItem('userId', userId);
@@ -74,4 +74,3 @@ const Login = () => {
 };
 
 export default Login;
-
