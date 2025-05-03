@@ -10,7 +10,6 @@ import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js';
 import userAuthRoutes from './routes/userAuth.js';
 import uploadRoutes from './routes/uploads.js';
-import pushTokenRoutes from './routes/pushTokens.js'; // ✅ NEU
 
 dotenv.config();
 const app = express();
@@ -27,10 +26,10 @@ app.use(cors({
       'http://localhost:5173',    // Web-Frontend lokal
       'http://localhost:19006',   // Expo Go
       'http://localhost:8081',    // Android Emulator
-      'http://10.0.0.34:5173',   // Web-Frontend im Netzwerk
-      'http://10.0.0.34:19006',  // Expo Go im Netzwerk
-      'exp://10.0.0.34:19000',   // Expo Dev Client
-      'https://lobster-app-ie9a5.ondigitalocean.app', // Deine aktuelle Live-URL
+      'http://10.0.0.34:5173',    // Web-Frontend im Netzwerk
+      'http://10.0.0.34:19006',   // Expo Go im Netzwerk
+      'exp://10.0.0.34:19000',    // Expo Dev Client
+      'https://lobster-app-ie9a5.ondigitalocean.app', // Live-URL
     ];
 
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
@@ -43,7 +42,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 }));
 
-// Cloudinary Uploads
+// ✅ Upload-Route separat behandeln
 app.use('/api/uploads', cors({
   origin: 'http://localhost:5173',
   credentials: true,
@@ -54,8 +53,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/users', userAuthRoutes);
-app.use('/api/push-token', pushTokenRoutes); // ✅ NEU
+app.use('/api/users', userAuthRoutes); // enthält auch /push-token/:userId
 
 // ✅ Neu: Ping-Route für Serverstatus
 app.get('/api/ping', (req, res) => {
@@ -70,4 +68,6 @@ connectDB().then(() => {
     console.log(`→ im Netzwerk: http://10.0.0.34:${PORT}`);
     console.log(`→ alle Geräte im WLAN sollten http://10.0.0.34:${PORT}/api erreichen können`);
   });
+}).catch(err => {
+  console.error('❌ Fehler bei DB-Verbindung:', err);
 });
