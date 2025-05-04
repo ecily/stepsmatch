@@ -1,3 +1,4 @@
+// BLOCK 1: Imports
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -23,17 +24,31 @@ import { navigationRef, navigate } from './navigationRef';
 
 const Stack = createNativeStackNavigator();
 
+// BLOCK 2: Haupt-App ohne Firebase Wrapper
 export default function App() {
+  return <MainApp />;
+}
+
+// BLOCK 3: Haupt-Komponente mit Navigation & Push
+function MainApp() {
   const notificationListener = useRef();
   const responseListener = useRef();
 
   useEffect(() => {
+    // Foreground Notification Listener
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('📬 Notification received:', notification);
+      console.log('📬 Notification received (foreground):', notification);
+
+      Toast.show({
+        type: 'info',
+        text1: 'Neues Angebot',
+        text2: notification.request.content.body,
+      });
     });
 
+    // Notification-Klick-Handler
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('📲 Notification response:', response);
+      console.log('📲 Notification response (tapped):', response);
       const offerId = response?.notification?.request?.content?.data?.offerId;
       if (offerId) {
         console.log('🧭 Navigation zu OfferDetails mit ID:', offerId);
@@ -61,13 +76,12 @@ export default function App() {
           <Stack.Screen name="OfferDetails" component={OfferDetailsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
-
       <Toast />
     </>
   );
 }
 
-// 🔁 Exportierte Token-Funktion mit maximalem Logging
+// BLOCK 4: Funktion zur Registrierung für Push-Notifications
 export async function registerForPushNotificationsAsync() {
   try {
     console.log('🔍 [Push] Starte Abfrage nach vorhandener Berechtigung…');
@@ -105,7 +119,7 @@ export async function registerForPushNotificationsAsync() {
   }
 }
 
-// 🚀 Initialisiert den Hintergrund-Standorttask
+// BLOCK 5: Initialisierung für Hintergrundstandort
 async function initBackgroundLocationTask() {
   const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
 
@@ -120,9 +134,9 @@ async function initBackgroundLocationTask() {
     }
 
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-      accuracy: Location.Accuracy.BestForNavigation, // ✅ höchste Genauigkeit aktiviert
-      timeInterval: 300000, // ⏱️ 5 Minuten (wird ignoriert bei Bewegung)
-      distanceInterval: 50, // ✅ bei Bewegung über 50 m wird getriggert
+      accuracy: Location.Accuracy.BestForNavigation,
+      timeInterval: 300000,
+      distanceInterval: 50,
       showsBackgroundLocationIndicator: false,
       foregroundService: {
         notificationTitle: 'StepsMatch läuft',

@@ -10,8 +10,8 @@ export const checkForMatchingOffers = async (req, res) => {
 
   try {
     const { userId, location } = req.body;
-    if (!userId || !location) {
-      return res.status(400).json({ message: 'userId und location erforderlich' });
+    if (!userId || !location?.lat || !location?.lng) {
+      return res.status(400).json({ message: 'userId und vollständige location erforderlich' });
     }
 
     const user = await User.findById(userId);
@@ -42,12 +42,12 @@ export const checkForMatchingOffers = async (req, res) => {
     for (const offer of offers) {
       const { validDates, validDays, validTimes } = offer;
 
-      const isDayValid = validDays.includes(weekday);
-      const isDateValid = now.isBetween(moment(validDates.from), moment(validDates.to).endOf('day'));
-      const isTimeValid = isWithinTimeRange(validTimes.start, validTimes.end, now);
+      const isDayValid = validDays?.includes(weekday);
+      const isDateValid = now.isBetween(moment(validDates?.from), moment(validDates?.to).endOf('day'), null, '[]');
+      const isTimeValid = isWithinTimeRange(validTimes?.start, validTimes?.end, now);
 
       if (!isDayValid || !isDateValid || !isTimeValid) {
-        console.log(`⏱️ Angebot ${offer.name} aktuell nicht gültig – übersprungen`);
+        console.log(`⏱️ Angebot ${offer.name} nicht gültig – übersprungen`);
         continue;
       }
 
@@ -84,9 +84,15 @@ export const checkForMatchingOffers = async (req, res) => {
 
       console.log(`✅ Push gesendet: ${offer.name} an ${user.email}`);
       sent++;
+
+      // Nur **eine** Notification pro Durchlauf
+      return res.json({
+        message: `Notification: ${offer.name}`,
+        offerId: offer._id.toString()
+      });
     }
 
-    res.json({ message: `✅ ${sent} Notification(s) gesendet.` });
+    res.json({ message: 'Keine passenden Angebote im Radius & Zeitfenster gefunden.' });
   } catch (err) {
     console.error('❌ Match-Check Fehler:', err);
     res.status(500).json({ message: 'Serverfehler beim Matching.' });
@@ -95,8 +101,15 @@ export const checkForMatchingOffers = async (req, res) => {
 
 // ⏱️ Hilfsfunktion zur Zeitprüfung
 function isWithinTimeRange(startTime, endTime, now) {
+  if (!startTime || !endTime) return false;
   const format = 'HH:mm';
   const start = moment(startTime, format);
   const end = moment(endTime, format);
+
+  // Umgang mit übernachtenden Zeitfenstern (z. B. 22:00 – 03:00)
+  if (end.isBefore(start)) {
+    return now.isAfter(start) || now.isBefore(end);
+  }
+
   return now.isBetween(start, end);
 }

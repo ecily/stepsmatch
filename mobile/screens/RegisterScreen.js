@@ -1,3 +1,4 @@
+// /mobile/screens/RegisterScreen.js
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,7 +17,6 @@ const RegisterScreen = ({ navigation }) => {
     try {
       console.log('🟨 [Register] Versuch mit:', formData.email);
 
-      // ✅ Korrigierte API-Route
       const res = await axiosInstance.post('/users/register', formData);
       const userId = res.data?.user?._id;
       const token = res.data?.token;
@@ -40,18 +40,18 @@ const RegisterScreen = ({ navigation }) => {
           });
           console.log('✅ [Register] Push-Token gespeichert:', response.data);
         } catch (err) {
-          console.error('❌ [Register] Fehler beim Speichern des Push Tokens');
-          console.error('→ Message:', err.message);
+          console.error('❌ [Register] Fehler beim Speichern des Push Tokens:', err.message);
           if (err.response?.data) {
             console.error('→ Serverantwort:', err.response.data);
           }
         }
       } else {
-        console.warn('⚠️ [Register] Kein Push-Token verfügbar');
+        console.warn('⚠️ [Register] Kein Push-Token verfügbar – vermutlich Berechtigung abgelehnt');
       }
 
       Alert.alert('Willkommen!', 'Registrierung erfolgreich.');
       navigation.navigate('LocationAccess', { userId });
+
     } catch (err) {
       console.error('❌ [Register] Fehler:', err.message);
       if (err.response?.data) {

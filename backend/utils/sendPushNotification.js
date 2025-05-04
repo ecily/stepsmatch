@@ -1,26 +1,32 @@
 // /utils/sendPushNotification.js
-import fetch from 'node-fetch';
+import axios from 'axios';
 
 export default async function sendPushNotification(token, message) {
-  try {
-    const payload = {
-      to: token,
-      sound: 'default',
-      ...message
-    };
+  if (!token || !token.startsWith('ExponentPushToken')) {
+    console.warn('⚠️ Ungültiger oder fehlender Push-Token:', token);
+    return { error: 'Ungültiger oder fehlender Push-Token' };
+  }
 
-    const res = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
+  const payload = {
+    to: token,
+    sound: 'default',
+    ...message,
+  };
+
+  try {
+    const response = await axios.post('https://exp.host/--/api/v2/push/send', payload, {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
-    console.log('📤 Push gesendet:', data);
-    return data;
-  } catch (err) {
-    console.error('❌ Fehler beim Push-Versand:', err);
+    console.log('📤 Push erfolgreich gesendet:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Fehler beim Push-Versand:', error.message);
+    if (error.response?.data) {
+      console.error('📩 Antwort vom Expo-Server:', error.response.data);
+    }
+    return { error: error.message };
   }
 }
