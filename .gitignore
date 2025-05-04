@@ -19,6 +19,5 @@ logs/
 .DS_Store
 Thumbs.db
 
-# NICHT ignorieren:
-# google-services.json
-# android/app/google-services.json
+# >>> Whitelist google-services.json <<<
+!android/app/google-services.json
