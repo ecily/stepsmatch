@@ -54,7 +54,7 @@ app.use('/api/users', userAuthRoutes); // enthält auch /register, /login, /push
 app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/match-check', matchRoutes);
+app.use('/api/match', matchRoutes); // ✅ aktualisiert: statt /match-check
 
 // ✅ Ping-Route für Serverstatus
 app.get('/api/ping', (req, res) => {

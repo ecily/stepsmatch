@@ -27,7 +27,7 @@
         "ACCESS_COARSE_LOCATION",
         "POST_NOTIFICATIONS"
       ],
-      "googleServicesFile": "./android/app/google-services.json"
+      "googleServicesFile": "./assets/private/google-services.json"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"

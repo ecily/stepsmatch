@@ -1,6 +1,4 @@
-plugins {
-    id 'expo-root-project'
-}
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
     ext {
@@ -16,21 +14,31 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath('com.android.tools.build:gradle:8.2.1')
-        classpath('com.facebook.react:react-native-gradle-plugin')
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
-        // ✅ Für Firebase / Push Notifications
-    classpath 'com.google.gms:google-services:4.3.15'
+        classpath 'com.android.tools.build:gradle:8.3.0'
+        classpath 'com.facebook.react:react-native-gradle-plugin'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'
+        classpath 'com.google.gms:google-services:4.4.1'
+
+        // ✅ Notwendig für Expo SDK 52+
+        classpath 'expo.modules:expo-module-gradle-plugin:1.8.1'
     }
 }
 
+// ✅ Für Expo SDK 52 – darf *nicht* com.facebook.react.rootproject verwenden
+apply plugin: "expo-root-project"
+
 allprojects {
     repositories {
+        // React Native Module
         maven {
-            url(new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../android"))
+            url(new File(['node', '--print', "require.resolve('react-native/package.json')"]
+                .execute(null, rootDir).text.trim(), '../android'))
         }
+
+        // JavaScriptCore (JSC)
         maven {
-            url(new File(["node", "--print", "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../dist"))
+            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"]
+                .execute(null, rootDir).text.trim(), '../dist'))
         }
 
         google()

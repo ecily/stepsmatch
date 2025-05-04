@@ -1,9 +1,9 @@
-// /routes/match.js
 import express from 'express';
 import { checkForMatchingOffers } from '../controllers/matchController.js';
 
 const router = express.Router();
 
-router.post('/', checkForMatchingOffers);
+// ✅ explizite Route: /api/match/check
+router.post('/check', checkForMatchingOffers);
 
 export default router;

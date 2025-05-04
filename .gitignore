@@ -19,5 +19,5 @@ logs/
 .DS_Store
 Thumbs.db
 
-# >>> Whitelist google-services.json <<<
-!android/app/google-services.json
+# 🔒 Firebase config (nicht ins Git, aber rsync soll sie sehen)
+assets/private/google-services.json
