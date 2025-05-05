@@ -6,7 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
-import * as TaskManager from 'expo-task-manager';
+//import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import Constants from 'expo-constants';
 
@@ -21,7 +21,9 @@ import OfferDetailsScreen from './screens/OfferDetailsScreen';
 
 import { BACKGROUND_LOCATION_TASK } from './backgroundLocationTask';
 import { navigationRef, navigate } from './navigationRef';
-import axiosInstance from './src/api/axios'; // ✅ benötigt für Initial-Matching
+import axiosInstance from './src/api/axios';
+
+
 
 const Stack = createNativeStackNavigator();
 
