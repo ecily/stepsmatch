@@ -15,30 +15,29 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.3.0'
-        classpath 'com.facebook.react:react-native-gradle-plugin'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25"
         classpath 'com.google.gms:google-services:4.4.1'
-
-        // ✅ Notwendig für Expo SDK 52+
-        classpath 'expo.modules:expo-module-gradle-plugin:1.8.1'
+        // ❌ NICHT hinzufügen: com.facebook.react:react-native-gradle-plugin
+        // Wird über settings.gradle mit includeBuild() eingebunden
     }
 }
 
-// ✅ Für Expo SDK 52 – darf *nicht* com.facebook.react.rootproject verwenden
-apply plugin: "expo-root-project"
+// ❗️ KEIN apply plugin: 'expo-root-project' hier – wird über settings.gradle geladen
 
 allprojects {
     repositories {
-        // React Native Module
+        // React Native AAR & Build Artefakte
         maven {
-            url(new File(['node', '--print', "require.resolve('react-native/package.json')"]
-                .execute(null, rootDir).text.trim(), '../android'))
+            url(new File(
+                ['node', '--print', "require.resolve('react-native/package.json')"]
+                    .execute(null, rootDir).text.trim(), '../android'))
         }
 
-        // JavaScriptCore (JSC)
+        // Optional: JavaScriptCore (falls kein Hermes)
         maven {
-            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"]
-                .execute(null, rootDir).text.trim(), '../dist'))
+            url(new File(
+                ['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"]
+                    .execute(null, rootDir).text.trim(), '../dist'))
         }
 
         google()

@@ -21,6 +21,7 @@ import OfferDetailsScreen from './screens/OfferDetailsScreen';
 
 import { BACKGROUND_LOCATION_TASK } from './backgroundLocationTask';
 import { navigationRef, navigate } from './navigationRef';
+import axiosInstance from './src/api/axios'; // ✅ benötigt für Initial-Matching
 
 const Stack = createNativeStackNavigator();
 
@@ -49,13 +50,19 @@ function MainApp() {
     // Notification-Klick-Handler
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('📲 Notification response (tapped):', response);
+      const screen = response?.notification?.request?.content?.data?.screen;
       const offerId = response?.notification?.request?.content?.data?.offerId;
-      if (offerId) {
-        console.log('🧭 Navigation zu OfferDetails mit ID:', offerId);
+
+      if (screen === 'OfferDetails' && offerId) {
+        console.log('🧭 Navigiere zu OfferDetails mit ID:', offerId);
         navigate('OfferDetails', { offerId });
       }
     });
 
+    // ⏳ Sofortiger Matching-Check beim Start
+    runInitialMatchCheck();
+
+    // Hintergrund-Standortüberwachung starten
     initBackgroundLocationTask();
 
     return () => {
@@ -147,5 +154,54 @@ async function initBackgroundLocationTask() {
     console.log('✅ [BG] Hintergrund-Standort-Task gestartet.');
   } else {
     console.log('🔁 [BG] Task läuft bereits.');
+  }
+}
+
+// BLOCK 6: Sofortige Matching-Prüfung beim App-Start
+async function runInitialMatchCheck() {
+  try {
+    console.log('🚀 [Init] Starte Initial-Matching…');
+
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      console.warn('⚠️ [Init] Keine Standortberechtigung');
+      return;
+    }
+
+    const location = await Location.getCurrentPositionAsync({});
+    const userId = await SecureStore.getItemAsync('userId');
+
+    if (!userId || !location) {
+      console.warn('⚠️ [Init] Keine Daten für Matching verfügbar');
+      return;
+    }
+
+    const payload = {
+      userId,
+      location: {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude
+      }
+    };
+
+    const response = await axiosInstance.post('/match-check', payload);
+    console.log('📬 [Init] MatchCheck Antwort:', response.data);
+
+    const message = response.data?.message;
+    const offerId = response.data?.offerId;
+
+    if (message && message.includes('Notification')) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '✨ Neues Angebot!',
+          body: message,
+          data: { screen: 'OfferDetails', offerId },
+        },
+        trigger: null,
+      });
+      console.log('📲 [Init] Lokale Notification gesendet.');
+    }
+  } catch (err) {
+    console.error('❌ [Init] Fehler beim Matching:', err.message);
   }
 }

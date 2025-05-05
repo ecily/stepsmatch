@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "stepsmatch",
+    "name": "StepsMatch",
     "slug": "stepsmatch",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/stepsmatch-icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/stepsmatch-icon.png",
         "backgroundColor": "#ffffff"
       },
       "config": {

@@ -1,15 +1,11 @@
 // /mobile/src/api/axios.js
 
 import axios from 'axios';
-import { Platform } from 'react-native';
 
-// 🌐 Dynamische Base URL je nach Umgebung
-const baseURL =
-  Platform.OS === 'android' && !__DEV__
-    ? 'https://lobster-app-ie9a5.ondigitalocean.app/api' // ✅ Live-Backend für APK
-    : 'http://10.0.0.34:5000/api'; // 💻 Lokales Backend für Entwicklung (Web/Emulator/Expo Go)
+// 🌐 Feste Base URL für Live-Backend (für Expo Go, APK & Web)
+const baseURL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-console.log('🌍 [AXIOS] Base URL verwendet:', baseURL);
+console.log('🌍 [AXIOS] Live Base URL verwendet:', baseURL);
 
 // ⚙️ Erstelle Axios-Instanz
 const axiosInstance = axios.create({
