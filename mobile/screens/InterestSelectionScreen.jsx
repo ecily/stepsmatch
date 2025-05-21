@@ -1,0 +1,226 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import axiosInstance from '../src/api/axios';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const colors = [
+  '#93c5fd', '#fcd34d', '#86efac', '#fda4af',
+  '#f9a8d4', '#ddd6fe', '#fdba74',
+];
+
+const InterestSelectionScreen = () => {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const userId = route.params?.userId;
+
+  const [categories, setCategories] = useState([]);
+  const [selectedInterests, setSelectedInterests] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      Alert.alert('Fehler', 'User-ID fehlt – du wirst zurück zur Startseite geleitet.');
+      navigation.navigate('Home');
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        const [res, storedInterests] = await Promise.all([
+          axiosInstance.get('/categories'),
+          AsyncStorage.getItem('userInterests'),
+        ]);
+        setCategories(res.data || []);
+        if (storedInterests) {
+          setSelectedInterests(JSON.parse(storedInterests));
+        }
+        await AsyncStorage.setItem('cachedCategories', JSON.stringify(res.data));
+      } catch (error) {
+        console.error('❌ Fehler beim Laden der Kategorien oder Interessen:', error);
+        Alert.alert('Fehler', 'Kategorien konnten nicht geladen werden. Versuche es später erneut.');
+        try {
+          const cached = await AsyncStorage.getItem('cachedCategories');
+          if (cached) {
+            setCategories(JSON.parse(cached));
+            Alert.alert('Offline', 'Lade zwischengespeicherte Kategorien.');
+          }
+        } catch (cacheErr) {
+          console.error('❌ Fehler beim Laden aus dem Cache:', cacheErr);
+        }
+      }
+    };
+    fetchData();
+  }, []);
+
+  const toggleInterest = (subcategory) => {
+    setSelectedInterests((prev) =>
+      prev.includes(subcategory)
+        ? prev.filter((i) => i !== subcategory)
+        : [...prev, subcategory]
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (selectedInterests.length === 0) {
+      Alert.alert('Hinweis', 'Bitte wähle mindestens ein Interesse aus.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const url = `/users/preferences/${userId}`;
+      const payload = {
+        interests: selectedInterests,
+        preferredRadius: 2000,
+      };
+
+      console.log('📤 Sende Präferenzen an:', url);
+      console.log('📦 Payload:', payload);
+
+      const res = await axiosInstance.put(url, payload, {
+        timeout: 30000,
+      });
+
+      try {
+        await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
+      } catch (storageErr) {
+        console.warn('⚠️ Konnte userInterests nicht speichern:', storageErr);
+      }
+
+      navigation.navigate('Home', { refresh: true });
+    } catch (error) {
+      console.error('❌ Fehler beim Speichern der Präferenzen:', JSON.stringify(error, null, 2));
+      Alert.alert(
+        'Fehler',
+        error?.response?.data?.error ||
+        'Präferenzen konnten nicht gespeichert werden. Bitte prüfe deine Internetverbindung und versuche es erneut.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }}>
+      <Text style={styles.headline}>Was interessiert dich?</Text>
+      <Text style={styles.subline}>
+        Wähle Kategorien aus, die dir wichtig sind. Du kannst sie später jederzeit ändern.
+      </Text>
+
+      {categories.length === 0 ? (
+        <Text style={{ color: '#9ca3af', marginTop: 10 }}>
+          Keine Kategorien verfügbar.
+        </Text>
+      ) : (
+        categories.map((cat, index) => (
+          <View key={cat.category} style={styles.categoryBlock}>
+            <Text style={styles.categoryTitle}>{cat.category}</Text>
+            <View style={styles.bubbleContainer}>
+              {cat.subcategories.map((sub) => (
+                <TouchableOpacity
+                  key={sub}
+                  onPress={() => toggleInterest(sub)}
+                  style={[
+                    styles.bubble,
+                    {
+                      backgroundColor: selectedInterests.includes(sub)
+                        ? colors[index % colors.length]
+                        : '#f3f4f6',
+                      borderColor: colors[index % colors.length],
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: selectedInterests.includes(sub) ? '#111827' : '#6b7280',
+                      fontWeight: '500',
+                    }}
+                  >
+                    {sub}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))
+      )}
+
+      <TouchableOpacity
+        onPress={handleSubmit}
+        style={styles.submitButton}
+        disabled={loading || selectedInterests.length === 0}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.submitText}>Weiter</Text>
+        )}
+      </TouchableOpacity>
+    </ScrollView>
+  );
+};
+
+export default InterestSelectionScreen;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff',
+    paddingTop: 40,
+  },
+  headline: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  subline: {
+    fontSize: 16,
+    color: '#4b5563',
+    marginBottom: 20,
+  },
+  categoryBlock: {
+    marginBottom: 24,
+  },
+  categoryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 12,
+  },
+  bubbleContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bubble: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  submitButton: {
+    marginTop: 24,
+    backgroundColor: '#2563eb',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});

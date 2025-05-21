@@ -1,0 +1,7 @@
+node_modules/
+*.log
+android/app/build/
+ios/Pods/
+.vscode/
+.DS_Store
+*.iml

@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "StepsMatch",
+    "slug": "stepsmatch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/stepsmatch-icon.png",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/stepsmatch-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s"
+        }
+      },
+      "package": "com.ecily.stepsmatch",
+      "permissions": [
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./assets/private/google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "de0e17e7-05bf-4a73-a61b-1edd912bd925"
+      }
+    }
+  }
+}
