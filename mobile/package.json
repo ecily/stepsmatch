@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "npx react-native start",
+    "start": "expo start",
     "android": "npx react-native run-android",
     "ios": "npx react-native run-ios",
     "test": "jest --watchAll"
@@ -16,6 +16,11 @@
     "@react-navigation/native": "^6.1.6",
     "@react-navigation/native-stack": "^6.9.12",
     "axios": "^1.8.4",
+    "expo-av": "~15.1.4",
+    "expo-device": "~7.1.4",
+    "expo-location": "~18.1.5",
+    "expo-notifications": "~0.31.2",
+    "expo-secure-store": "~14.2.3",
     "haversine-distance": "^1.2.3",
     "moment": "^2.30.1",
     "react": "19.0.0",

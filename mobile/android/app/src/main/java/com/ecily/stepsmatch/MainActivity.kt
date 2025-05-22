@@ -1,4 +1,4 @@
-package com.stepsmatch.app
+package com.ecily.stepsmatch
 
 import expo.modules.splashscreen.SplashScreenManager
 

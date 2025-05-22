@@ -1,5 +1,4 @@
-package com.stepsmatch.app
-
+package com.ecily.stepsmatch
 
 import android.app.Application
 import android.content.Context
@@ -10,6 +9,7 @@ import com.facebook.react.ReactPackage
 import com.facebook.soloader.SoLoader
 
 class MainApplication : Application(), ReactApplication {
+
   private val mReactNativeHost: ReactNativeHost = object : ReactNativeHost(this) {
     override fun getUseDeveloperSupport(): Boolean {
       return BuildConfig.DEBUG

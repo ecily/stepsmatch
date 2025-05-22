@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-
   <!-- Berechtigungen -->
   <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -24,7 +23,6 @@
   </queries>
 
   <application
-    android:name="com.stepsmatch.app.MainApplication"
     android:label="@string/app_name"
     android:icon="@mipmap/ic_launcher"
     android:roundIcon="@mipmap/ic_launcher_round"
@@ -34,7 +32,7 @@
 
     <!-- Hauptaktivität -->
     <activity
-      android:name=".MainActivity"
+      android:name="com.ecily.stepsmatch.MainActivity"
       android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
       android:launchMode="singleTask"
       android:windowSoftInputMode="adjustResize"

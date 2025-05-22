@@ -11,6 +11,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@hello-pangea/dnd": "^18.0.1",
         "@react-google-maps/api": "^2.20.6",
         "axios": "^1.8.4",
         "lucide-react": "^0.488.0",

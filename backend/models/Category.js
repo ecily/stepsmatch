@@ -6,9 +6,13 @@ const CategorySchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
+    trim: true,
   },
-});
+  subcategories: {
+    type: [String],
+    default: [],
+  }
+}, { timestamps: true });
 
 const Category = mongoose.model('Category', CategorySchema);
-
 export default Category;

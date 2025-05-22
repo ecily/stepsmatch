@@ -1,62 +1,74 @@
 // backend/routes/categories.js
 import express from 'express';
+import Category from '../models/Category.js';
 
 const router = express.Router();
 
-// 🔒 Statisch definierte Kategorienstruktur mit Subkategorien
-const categories = [
-  {
-    category: "🏨 Beherbergung",
-    subcategories: [
-      "Hotel", "Boutique-Hotel", "Wellness-Hotel", "Pension", "Gästehaus",
-      "Privatzimmer", "AirBnB", "Hostel", "Tiny House", "Hausboot", "Kloster"
-    ]
-  },
-  {
-    category: "🍽️ Essen & Trinken",
-    subcategories: [
-      "Restaurant (Vegan)", "Restaurant (Vegetarisch)", "Restaurant (Italienisch)", "Restaurant (Asiatisch)",
-      "Café", "Bar", "Pub", "Imbiss", "Street Food", "Bäckerei"
-    ]
-  },
-  {
-    category: "🛍️ Shopping & Services",
-    subcategories: [
-      "Mode (Damen)", "Mode (Herren)", "Schuhe", "Second Hand",
-      "Friseur", "Kosmetik", "Massage", "Reparatur", "Reinigung", "Copyshop", "Drogerie", "Apotheke"
-    ]
-  },
-  {
-    category: "🎭 Kultur & Freizeit",
-    subcategories: [
-      "Museum", "Galerie", "Sehenswürdigkeit", "Führung", "Konzert",
-      "Markt", "Vortrag", "Meetup", "Park", "Spielplatz"
-    ]
-  },
-  {
-    category: "👨‍👩‍👧 Familie & Kinder",
-    subcategories: [
-      "Kinderlokale", "Indoor-Spielplatz", "Flohmarkt", "Second-Hand", "Familienfreundliche Orte"
-    ]
-  },
-  {
-    category: "ℹ️ Info & Hilfe",
-    subcategories: [
-      "Stadtinfo", "Öffentliche Toiletten", "Trinkwasserstelle", "WLAN",
-      "Wärmestube", "Caritas", "Notruf", "Beratung"
-    ]
-  },
-  {
-    category: "🎯 Sonderaktionen",
-    subcategories: [
-      "Aktionen", "Rabatte", "Pop-Ups", "Tagesangebote", "Restposten"
-    ]
+// 📥 GET /api/categories – alle Kategorien
+router.get('/', async (req, res) => {
+  try {
+    const categories = await Category.find();
+    res.json(categories);
+  } catch (err) {
+    console.error('Fehler beim Laden der Kategorien:', err);
+    res.status(500).json({ error: 'Serverfehler beim Laden der Kategorien' });
   }
-];
+});
 
-// GET /api/categories – gibt alle Kategorien + Subkategorien zurück
-router.get('/', (req, res) => {
-  res.json(categories);
+// ➕ POST /api/categories – neue Kategorie anlegen
+router.post('/', async (req, res) => {
+  try {
+    const { name, subcategories } = req.body;
+
+    const existing = await Category.findOne({ name });
+    if (existing) {
+      return res.status(400).json({ error: 'Kategorie existiert bereits' });
+    }
+
+    const newCategory = new Category({
+      name,
+      subcategories: subcategories || [],
+    });
+
+    await newCategory.save();
+    res.status(201).json(newCategory);
+  } catch (err) {
+    console.error('Fehler beim Erstellen der Kategorie:', err);
+    res.status(500).json({ error: 'Serverfehler beim Erstellen' });
+  }
+});
+
+// ✏️ PUT /api/categories/:id – Kategorie aktualisieren
+router.put('/:id', async (req, res) => {
+  try {
+    const { name, subcategories } = req.body;
+
+    const updated = await Category.findByIdAndUpdate(
+      req.params.id,
+      { name, subcategories },
+      { new: true }
+    );
+
+    if (!updated) return res.status(404).json({ error: 'Kategorie nicht gefunden' });
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Fehler beim Aktualisieren der Kategorie:', err);
+    res.status(500).json({ error: 'Serverfehler beim Aktualisieren' });
+  }
+});
+
+// ❌ DELETE /api/categories/:id – Kategorie löschen
+router.delete('/:id', async (req, res) => {
+  try {
+    const deleted = await Category.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Kategorie nicht gefunden' });
+
+    res.json({ success: true, message: 'Kategorie gelöscht' });
+  } catch (err) {
+    console.error('Fehler beim Löschen der Kategorie:', err);
+    res.status(500).json({ error: 'Serverfehler beim Löschen' });
+  }
 });
 
 export default router;

@@ -10,6 +10,7 @@ import ProviderDashboard from './components/ProviderDashboard';
 import Register from './pages/Register';
 import Login from './pages/Login';
 import LandingPage from './pages/LandingPage';
+import AdminCategoryPage from './pages/AdminCategoryPage'; // ✅ NEU
 
 const App = () => {
   // Debug-Log zur aktiven API-Umgebung
@@ -29,10 +30,13 @@ const App = () => {
         <Route path="/add-offer/:providerId" element={<AddOfferForm />} />
         <Route path="/edit-offer/:offerId" element={<EditOfferForm />} />
         <Route path="/dashboard/:providerId" element={<ProviderDashboard />} />
+        <Route path="/admin/categories" element={<AdminCategoryPage />} /> {/* ✅ NEUE ROUTE */}
         <Route path="*" element={<p className="p-8 text-center text-red-500">404 – Seite nicht gefunden</p>} />
       </Routes>
     </Router>
   );
 };
+console.log('🌍 VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+
 
 export default App;

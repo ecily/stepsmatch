@@ -1,3 +1,4 @@
+// vollständige EditOfferForm.jsx mit Mongo-Kategorien
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axios';
@@ -26,8 +27,8 @@ const EditOfferForm = () => {
     validTimes: { start: '', end: '' },
     validDates: { from: '', to: '' },
     contact: '',
-    images: [], // Store image URLs here
-    provider: '', // Provider-ID
+    images: [],
+    provider: '',
   });
 
   const [success, setSuccess] = useState(false);
@@ -61,13 +62,7 @@ const EditOfferForm = () => {
         const res = await axiosInstance.get(`/offers/${offerId}`);
         const data = res.data;
 
-        console.log("Angebot geladen:", data); // Hier loggen wir alle Daten zur Überprüfung
-
-        const providerId = data.provider || ''; // Sicherstellen, dass providerID existiert
-        if (!providerId) {
-          console.error('Provider-ID fehlt in den Offer-Daten!');
-        }
-
+        const providerId = data.provider || '';
         setFormData({
           name: data.name || '',
           category: data.category || '',
@@ -81,8 +76,8 @@ const EditOfferForm = () => {
             to: formatDateInput(data.validDates?.to),
           },
           contact: data.contact || '',
-          images: data.images || [], // Bilder-URLs aus der Offer-Datenbank
-          provider: providerId, // Provider-ID setzen
+          images: data.images || [],
+          provider: providerId,
         });
 
         setProviderLocation(data.location?.coordinates);
@@ -97,7 +92,7 @@ const EditOfferForm = () => {
   }, [offerId]);
 
   useEffect(() => {
-    const selected = categories.find(c => c.category === formData.category);
+    const selected = categories.find(c => c.name === formData.category);
     setSubcategories(selected?.subcategories || []);
   }, [formData.category, categories]);
 
@@ -125,21 +120,16 @@ const EditOfferForm = () => {
 
   const handleImageChange = async (e) => {
     const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
-
     try {
       setUploading(true);
-
       const uploadedUrls = await Promise.all(files.map(async (file) => {
         const uploadData = new FormData();
         uploadData.append('image', file);
-
         const res = await axiosInstance.post('/uploads', uploadData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-
         return res.data.url;
       }));
-
       setFormData((prev) => ({
         ...prev,
         images: [...prev.images, ...uploadedUrls],
@@ -170,26 +160,18 @@ const EditOfferForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    // Überprüfen, ob die Kategorie und Subkategorie gesetzt sind
     if (!formData.category || !formData.subcategory) {
       setError('Kategorie und Subkategorie müssen gewählt werden.');
       return;
     }
-
-    // Überprüfen, ob die Beschreibung zu lang ist
     if (formData.description.length > 250) {
       setError('Beschreibung darf maximal 250 Zeichen haben.');
       return;
     }
-
-    // Überprüfen, ob der provider korrekt gesetzt ist
     if (!formData.provider || formData.provider === '') {
       setError('Provider-ID fehlt!');
-      console.error('Provider-ID fehlt!');
       return;
     }
-
     try {
       const payload = {
         ...formData,
@@ -216,14 +198,13 @@ const EditOfferForm = () => {
     <div className="max-w-2xl mx-auto p-6 bg-white shadow-lg rounded-xl mt-8">
       <h2 className="text-2xl font-semibold mb-4 text-gray-800">Angebot bearbeiten</h2>
       {error && <p className="text-red-500 mb-2">{error}</p>}
-
       <form onSubmit={handleSubmit} className="space-y-4">
         <input name="name" value={formData.name} onChange={handleChange} placeholder="Name" required className="w-full p-2 border rounded" />
 
         <select name="category" value={formData.category} onChange={handleChange} required className="w-full p-2 border rounded">
           <option value="">Kategorie wählen</option>
           {categories.map((cat, idx) => (
-            <option key={idx} value={cat.category}>{cat.category}</option>
+            <option key={idx} value={cat.name}>{cat.name}</option>
           ))}
         </select>
 
@@ -234,39 +215,15 @@ const EditOfferForm = () => {
           ))}
         </select>
 
-        <textarea
-          name="description"
-          value={formData.description}
-          onChange={handleChange}
-          placeholder="Beschreibung"
-          maxLength={250}
-          rows={3}
-          className="w-full p-2 border rounded"
-        />
-
+        <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Beschreibung" maxLength={250} rows={3} className="w-full p-2 border rounded" />
         <input type="number" name="radius" value={formData.radius} onChange={handleChange} placeholder="Radius (in m)" className="w-full p-2 border rounded" />
 
         {providerLocation && (
-          <GoogleMap
-            mapContainerStyle={mapContainerStyle}
-            zoom={14}
-            center={{ lat: providerLocation[1], lng: providerLocation[0] }}
-          >
-            <Circle
-              center={{ lat: providerLocation[1], lng: providerLocation[0] }}
-              radius={parseFloat(formData.radius) || 0}
-              options={{
-                fillColor: '#3b82f6',
-                fillOpacity: 0.2,
-                strokeColor: '#2563eb',
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-              }}
-            />
+          <GoogleMap mapContainerStyle={mapContainerStyle} zoom={14} center={{ lat: providerLocation[1], lng: providerLocation[0] }}>
+            <Circle center={{ lat: providerLocation[1], lng: providerLocation[0] }} radius={parseFloat(formData.radius) || 0} options={{ fillColor: '#3b82f6', fillOpacity: 0.2, strokeColor: '#2563eb', strokeOpacity: 0.8, strokeWeight: 2 }} />
           </GoogleMap>
         )}
 
-        {/* Datum und Zeit */}
         <div className="flex gap-4">
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Gültig ab</label>
@@ -285,7 +242,6 @@ const EditOfferForm = () => {
 
         <input name="contact" value={formData.contact} onChange={handleChange} placeholder="Kontaktinfo (optional)" className="w-full p-2 border rounded" />
 
-        {/* Bilder-Upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
           <input type="file" accept="image/*" multiple onChange={handleImageChange} disabled={uploading} className="w-full" />
@@ -293,25 +249,17 @@ const EditOfferForm = () => {
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
                 <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
-                <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center" title="Bild entfernen">
-                  ✕
-                </button>
+                <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs hidden group-hover:flex items-center justify-center" title="Bild entfernen">✕</button>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Wochentage */}
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">
             {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-              <button
-                type="button"
-                key={day}
-                onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}
-              >
+              <button type="button" key={day} onClick={() => toggleArrayItem('validDays', day)} className={`px-3 py-1 rounded border ${formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'}`}>
                 {day.slice(0, 2)}
               </button>
             ))}
