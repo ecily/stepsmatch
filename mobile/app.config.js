@@ -1,12 +1,11 @@
 require('./expo-plugin-shim');
 
-export default {
+export default () => ({
   name: "StepsMatch",
   slug: "stepsmatch",
   version: "1.0.0",
   sdkVersion: "53.0.0",
   orientation: "portrait",
-  //icon: "./assets/icon.png",
   splash: {
     image: "./assets/splash.png",
     resizeMode: "contain",
@@ -17,13 +16,9 @@ export default {
   },
   assetBundlePatterns: ["**/*"],
   ios: {
-    supportsTablet: true
+    bundleIdentifier: "com.stepsmatch.app" // ✅ notwendig – wird nicht wirklich gebaut
   },
   android: {
-    // adaptiveIcon: {
-    //   foregroundImage: "./assets/adaptive-icon.png",
-    //   backgroundColor: "#ffffff"
-    // },
     package: "com.stepsmatch.app"
   },
   web: {
@@ -34,4 +29,4 @@ export default {
       projectId: "de0e17e7-05bf-4a73-a61b-1edd912bd925"
     }
   }
-};
+});

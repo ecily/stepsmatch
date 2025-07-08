@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": null
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,9 +20,7 @@
         "backgroundColor": "#ffffff"
       },
       "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyDshmx1ihpF6C2jtBykjeilBxmF7l3LX3s"
-        }
+        "googleMaps": null
       },
       "package": "com.ecily.stepsmatch",
       "permissions": [
