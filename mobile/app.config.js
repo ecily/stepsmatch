@@ -16,14 +16,16 @@ export default () => ({
   },
   assetBundlePatterns: ["**/*"],
   ios: {
-    bundleIdentifier: "com.stepsmatch.app" // ✅ notwendig – wird nicht wirklich gebaut
+    bundleIdentifier: "com.stepsmatch.app"
   },
   android: {
-    package: "com.stepsmatch.app"
+    package: "com.stepsmatch.app",
+    googleServicesFile: "./android/app/google-services.json" // ✅ wichtig für Push
   },
   web: {
     favicon: "./assets/favicon.png"
   },
+  plugins: ["expo-notifications"], // ✅ zwingend notwendig für FCM
   extra: {
     eas: {
       projectId: "de0e17e7-05bf-4a73-a61b-1edd912bd925"
