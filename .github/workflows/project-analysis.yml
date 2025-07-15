@@ -8,39 +8,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout via Token
-        uses: actions/checkout@v4
-        with:
-          repository: ecily/stepsmatch
-          token: ${{ secrets.CLONE_URL }}
-          fetch-depth: 1
-
-      - name: 📁 Struktur anzeigen (tree)
+      - name: 📥 Manuelles Klonen via CLONE_URL
         run: |
+          git clone "${{ secrets.CLONE_URL }}" project
+          ls -la project
+
+      - name: 📁 Struktur erfassen
+        run: |
+          cd project
           mkdir -p analysis
-          echo '# Projektstruktur (`tree -L 3`)' > analysis/overview.md
+          echo '# 📂 Projektstruktur (tree -L 3)' > analysis/overview.md
           tree -L 3 -h >> analysis/overview.md
 
-      - name: 🧪 Analyse package.json
+      - name: 📦 package.json Inhalte erfassen
         run: |
-          echo -e '\n---\n## 📦 Abhängigkeiten' >> analysis/overview.md
-          if [ -f mobile/package.json ]; then
-            echo -e '\n### mobile/package.json\n' >> analysis/overview.md
-            cat mobile/package.json >> analysis/overview.md
-          fi
-          if [ -f frontend/package.json ]; then
-            echo -e '\n### frontend/package.json\n' >> analysis/overview.md
-            cat frontend/package.json >> analysis/overview.md
-          fi
-          if [ -f backend/package.json ]; then
-            echo -e '\n### backend/package.json\n' >> analysis/overview.md
-            cat backend/package.json >> analysis/overview.md
-          fi
+          cd project
+          echo -e '\n---\n## 📦 package.json Dateien' >> analysis/overview.md
+          for dir in mobile frontend backend; do
+            if [ -f "$dir/package.json" ]; then
+              echo -e "\n### $dir/package.json\n" >> analysis/overview.md
+              cat "$dir/package.json" >> analysis/overview.md
+            fi
+          done
 
       - name: 🚀 Commit Analyse-Ergebnis
         run: |
+          cd project
           git config user.name "stepsmatch-analyzer"
           git config user.email "analyzer@stepsmatch.com"
-          git add analysis/overview.md
-          git commit -m "🧾 Projektanalyse automatisch erstellt"
-          git push
+          git add analysis/overview.md || true
+          git commit -m "🧾 Analysebericht erstellt" || true
+          git push || true
+
