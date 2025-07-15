@@ -31,12 +31,9 @@ jobs:
             fi
           done
 
-      - name: 🚀 Commit Analyse-Ergebnis
-        run: |
-          cd project
-          git config user.name "stepsmatch-analyzer"
-          git config user.email "analyzer@stepsmatch.com"
-          git add analysis/overview.md || true
-          git commit -m "🧾 Analysebericht erstellt" || true
-          git push || true
+      - name: 💾 Analysebericht bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: stepsmatch-analysis
+          path: project/analysis/overview.md
 
