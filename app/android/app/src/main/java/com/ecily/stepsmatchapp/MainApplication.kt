@@ -1,4 +1,4 @@
-package com.stepsmatch.app
+package com.ecily.stepsmatchapp
 
 import android.app.Application
 import android.content.res.Configuration

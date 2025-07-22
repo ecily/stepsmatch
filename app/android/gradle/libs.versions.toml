@@ -1,0 +1,5 @@
+[versions]
+kotlin = "1.7.10"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
