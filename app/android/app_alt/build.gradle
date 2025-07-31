@@ -8,12 +8,12 @@ project.ext.react = [
 
 android {
     namespace "com.stepsmatch"
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    compileSdkVersion 34
 
     defaultConfig {
         applicationId "com.stepsmatch"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdkVersion 24
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
     }
@@ -24,12 +24,22 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// ✅ Kotlin-JVM-Target richtig gesetzt
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
 
 dependencies {
-    implementation("com.facebook.react:react-android:+") {
-        exclude group: "com.facebook.fbjni"
-    }
+    implementation "com.facebook.react:react-android:0.73.6"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.0.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
 }
