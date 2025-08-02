@@ -1,11 +1,9 @@
 // /mobile/app/_layout.js
 
-import { Stack } from 'expo-router';
+import { Stack, ThemeProvider } from 'expo-router';
 import { useFonts } from 'expo-font';
-import { ThemeProvider } from '@react-navigation/native';
 import colors from '../theme/colors';
 import fonts from '../theme/fonts';
-console.log('FONTS in _layout.js:', fonts);
 import { View } from 'react-native';
 
 export default function RootLayout() {
@@ -20,7 +18,6 @@ export default function RootLayout() {
     return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }
 
-  // Theme-Objekt für ThemeProvider
   const customTheme = {
     dark: false,
     colors: {
