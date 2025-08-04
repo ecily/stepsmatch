@@ -1,55 +1,40 @@
-// /mobile/app/(tabs)/_layout.js
-
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import colors from '../../theme/colors';
 
-export default function TabsLayout() {
+export default function TabLayout() {
   return (
     <Tabs
-      screenOptions={{
+      initialRouteName="HomeScreen" // <- Explizit Start-Tab setzen
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ color, size }) => {
+          if (route.name === 'HomeScreen') {
+            return <Ionicons name="home-outline" size={size} color={color} />;
+          }
+          if (route.name === 'OffersScreen') {
+            return <Ionicons name="list-outline" size={size} color={color} />;
+          }
+          if (route.name === 'ProfileScreen') {
+            return <Ionicons name="person-outline" size={size} color={color} />;
+          }
+          return null;
+        },
+        tabBarActiveTintColor: '#0062FF',
+        tabBarInactiveTintColor: '#888',
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.accent,
-        tabBarStyle: {
-          backgroundColor: colors.white,
-          borderTopWidth: 0.5,
-          borderTopColor: colors.accent,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
-        },
-        tabBarLabelStyle: {
-          fontSize: 13,
-        },
-      }}
+        tabBarLabelStyle: { fontSize: 13, paddingBottom: 2 },
+      })}
     >
       <Tabs.Screen
         name="HomeScreen"
-        options={{
-          title: 'Start',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Start' }}
       />
       <Tabs.Screen
         name="OffersScreen"
-        options={{
-          title: 'Angebote',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list-outline" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Angebote' }}
       />
       <Tabs.Screen
         name="ProfileScreen"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Profil' }}
       />
     </Tabs>
   );

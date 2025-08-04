@@ -1,13 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import colors from '../../theme/colors';
 import { useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom || 24 }]}>
       <Image
         source={require('../../assets/logo.png')}
         style={styles.logo}
@@ -24,7 +26,7 @@ export default function WelcomeScreen() {
       >
         <Text style={styles.buttonText}>Jetzt starten</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -35,6 +37,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
+    // KEIN HARDCODED paddingBottom!
   },
   logo: {
     width: 110,
@@ -42,7 +45,6 @@ const styles = StyleSheet.create({
     marginBottom: 36,
   },
   headline: {
-    // fontFamily: fonts.logo,
     fontWeight: 'bold',
     fontSize: 30,
     color: colors.primary,
@@ -50,7 +52,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   subheadline: {
-    // fontFamily: fonts.regular,
     fontSize: 17,
     color: colors.text,
     textAlign: 'center',
@@ -69,7 +70,6 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.white,
-    // fontFamily: fonts.bold,
     fontWeight: 'bold',
     fontSize: 18,
     letterSpacing: 0.2,

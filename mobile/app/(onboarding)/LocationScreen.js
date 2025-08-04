@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import * as Location from 'expo-location';
 import colors from '../../theme/colors';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LocationScreen() {
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ export default function LocationScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.headline}>Standort freigeben</Text>
       <Text style={styles.subheadline}>
         Damit wir passende Angebote in deiner Nähe finden, brauchen wir Zugriff auf deinen Standort.
@@ -44,7 +45,7 @@ export default function LocationScreen() {
       >
         <Text style={styles.laterText}>Später entscheiden</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 

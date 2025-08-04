@@ -1,16 +1,30 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Button } from 'react-native';
 import colors from '../../theme/colors';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 export default function ProfileScreen() {
+  const router = useRouter();
+
+  const handleReset = async () => {
+    await AsyncStorage.removeItem('userInterests');
+    router.replace('/(onboarding)/WelcomeScreen');
+  };
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.headline}>Profil</Text>
       <Text style={styles.subheadline}>
         Hier kannst du deine persönlichen Einstellungen anpassen.
       </Text>
-      {/* Erweiterung: Login, Einstellungen, Interessen-Reset etc. */}
-    </View>
+      <Button
+        title="Interessen & Onboarding zurücksetzen"
+        onPress={handleReset}
+        color={colors.primary}
+      />
+    </SafeAreaView>
   );
 }
 
@@ -23,17 +37,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   headline: {
-    // fontFamily: fonts.bold,
     fontWeight: 'bold',
     fontSize: 23,
     color: colors.primary,
     marginBottom: 14,
   },
   subheadline: {
-    // fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
     textAlign: 'center',
-    marginBottom: 14,
+    marginBottom: 24,
   },
 });
