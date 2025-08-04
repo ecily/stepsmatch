@@ -1,10 +1,11 @@
+// app/(tabs)/_layout.js
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function TabLayout() {
   return (
     <Tabs
-      initialRouteName="index"    // ← Das ist korrekt!
+      initialRouteName="index"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ color, size }) => {
@@ -23,4 +24,3 @@ export default function TabLayout() {
     </Tabs>
   );
 }
-
