@@ -35,9 +35,9 @@ export default function RegisterScreen() {
         if (res.data.user.interests) {
           await AsyncStorage.setItem('userInterests', JSON.stringify(res.data.user.interests));
         }
-        // Saubere Weiterleitung direkt nach Registrierung!
+        // Korrekte Weiterleitung zur Tabs-Route (ohne /index)
         InteractionManager.runAfterInteractions(() => {
-          router.replace('/(tabs)/index');
+          router.replace('/(tabs)');
         });
       } else {
         setError('Registrierung fehlgeschlagen. Bitte probiere es erneut.');

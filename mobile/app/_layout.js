@@ -8,31 +8,35 @@ export default function RootLayout() {
 
   useEffect(() => {
     (async () => {
-      const token = await AsyncStorage.getItem('token');
-      const interests = await AsyncStorage.getItem('userInterests');
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const interestsJson = await AsyncStorage.getItem('userInterests');
+        const interests = interestsJson ? JSON.parse(interestsJson) : null;
 
-      if (!token) {
-        setInitialRoute('/(auth)/LoginScreen');
-      } else if (!interests) {
-        setInitialRoute('/(onboarding)/WelcomeScreen');
-      } else {
-        setInitialRoute('/(tabs)/index'); // <<--- IMMER EXPLIZIT AUF INDEX
+        if (!token) {
+          setInitialRoute('/(auth)/LoginScreen');           // Kein Token → Login
+        } else if (!interests || interests.length === 0) {
+          setInitialRoute('/(onboarding)/WelcomeScreen');   // Token da, aber keine Interessen → Onboarding
+        } else {
+          setInitialRoute('/(tabs)');                        // Alles da → Tabs starten
+        }
+      } catch (e) {
+        console.error('Fehler beim Lesen von AsyncStorage:', e);
+        setInitialRoute('/(auth)/LoginScreen');             // Im Fehlerfall auch Login
       }
     })();
   }, []);
 
   if (initialRoute === undefined) {
-    return null;
+    return null;  // Ladezustand
   }
 
+  // Redirect nur wenn wir uns auf Root- oder Layoutpfaden befinden, nicht permanent
   if (
     pathname === '/' ||
-    pathname === '/(tabs)' ||
-    pathname === '/(tabs)/index' ||
-    pathname === '/(onboarding)' ||
-    pathname === '/(auth)' ||
-    pathname === '/(onboarding)/WelcomeScreen' ||
-    pathname === '/(auth)/LoginScreen'
+    pathname.startsWith('/(auth)') ||
+    pathname.startsWith('/(onboarding)') ||
+    pathname.startsWith('/(tabs)')
   ) {
     if (pathname !== initialRoute) {
       return (

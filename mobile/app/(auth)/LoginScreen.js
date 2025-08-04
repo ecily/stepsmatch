@@ -28,7 +28,8 @@ export default function LoginScreen() {
       }
       // 👉 Saubere Weiterleitung nach Login!
       InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)/index');
+        router.replace('/(tabs)');
+
       });
     } catch (err) {
       setError(err?.response?.data?.message || 'Login fehlgeschlagen. Bitte prüfe deine Daten.');

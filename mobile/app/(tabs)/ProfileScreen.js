@@ -9,9 +9,13 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const handleReset = async () => {
-    // Lösche ALLES, inkl. Token, UserId, Interessen etc.
-    await AsyncStorage.clear();
-    router.replace('/(onboarding)/WelcomeScreen');
+    try {
+      await AsyncStorage.clear(); // Alle gespeicherten Daten löschen
+      router.replace('/(auth)/LoginScreen'); // Direkt zum Login navigieren
+    } catch (e) {
+      console.error('Fehler beim Logout:', e);
+      // Optional: Fehlerbehandlung/UI-Feedback
+    }
   };
 
   return (

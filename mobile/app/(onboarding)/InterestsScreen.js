@@ -28,10 +28,17 @@ export default function InterestsScreen() {
   };
 
   const handleContinue = async () => {
-    await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-    InteractionManager.runAfterInteractions(() => {
-      router.replace('/(tabs)');
-    });
+    try {
+      await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
+      const check = await AsyncStorage.getItem('userInterests');
+      console.log('Gespeicherte Interessen:', check);
+
+      InteractionManager.runAfterInteractions(() => {
+        router.replace('/(tabs)');
+      });
+    } catch (e) {
+      console.error('Fehler beim Speichern der Interessen:', e);
+    }
   };
 
   return (
