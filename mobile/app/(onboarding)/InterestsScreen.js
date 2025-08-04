@@ -29,7 +29,7 @@ export default function InterestsScreen() {
 
   const handleContinue = async () => {
     await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-    router.replace('/(tabs)'); // Passe das Ziel ggf. an!
+    router.replace('/(tabs)'); // <- Das ist jetzt sicher und zukunftsfähig!
   };
 
   return (

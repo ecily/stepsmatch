@@ -1,30 +1,40 @@
-import { Stack, Redirect } from 'expo-router';
+import { Stack, Redirect, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 
 export default function RootLayout() {
   const [initialRoute, setInitialRoute] = useState(undefined);
+  const pathname = usePathname();
 
   useEffect(() => {
     (async () => {
       const interests = await AsyncStorage.getItem('userInterests');
-      if (interests) {
-        setInitialRoute('/(tabs)/HomeScreen');
-      } else {
-        setInitialRoute('/(onboarding)/WelcomeScreen');
-      }
+      setInitialRoute(interests ? '/(tabs)' : '/(onboarding)/WelcomeScreen');
     })();
   }, []);
 
-  // Während des Ladens: Splash, Ladeanimation, oder null
   if (initialRoute === undefined) {
-    return null;
+    return null; // Ladezustand
   }
 
-  return (
-    <>
-      {initialRoute && <Redirect href={initialRoute} />}
-      <Stack screenOptions={{ headerShown: false }} />
-    </>
-  );
+  // Redirect NUR beim echten Start oder falscher Route (nie wenn User schon am Ziel ist)
+  if (
+    pathname === '/' ||
+    pathname === '/(tabs)/HomeScreen' ||
+    pathname === '/(tabs)' ||
+    pathname === '/(onboarding)' ||
+    pathname === '/(onboarding)/WelcomeScreen'
+  ) {
+    if (pathname !== initialRoute) {
+      return (
+        <>
+          <Redirect href={initialRoute} />
+          <Stack screenOptions={{ headerShown: false }} />
+        </>
+      );
+    }
+  }
+
+  // Stack für alles andere (Tabs und Onboarding laufen dann normal)
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
