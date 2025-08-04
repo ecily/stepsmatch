@@ -1,9 +1,6 @@
-// /mobile/app/(onboarding)/InterestsScreen.js
-
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import colors from '../../theme/colors';
-import fonts from '../../theme/fonts';
 import { useRouter } from 'expo-router';
 
 const INTERESTS = [
@@ -89,13 +86,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headline: {
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 25,
     color: colors.primary,
     marginBottom: 8,
   },
   subheadline: {
-    fontFamily: fonts.regular,
+    // fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
     textAlign: 'center',
@@ -122,7 +120,8 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
-    fontFamily: fonts.medium,
+    // fontFamily: fonts.medium,
+    fontWeight: '500',
     color: colors.text,
     fontSize: 15,
   },
@@ -143,7 +142,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.white,
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 18,
     letterSpacing: 0.2,
   },

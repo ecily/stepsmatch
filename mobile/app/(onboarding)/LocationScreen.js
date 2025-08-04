@@ -1,10 +1,7 @@
-// /mobile/app/(onboarding)/LocationScreen.js
-
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import * as Location from 'expo-location';
 import colors from '../../theme/colors';
-import fonts from '../../theme/fonts';
 import { useRouter } from 'expo-router';
 
 export default function LocationScreen() {
@@ -60,13 +57,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   headline: {
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 25,
     color: colors.primary,
     marginBottom: 18,
   },
   subheadline: {
-    fontFamily: fonts.regular,
+    // fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
     textAlign: 'center',
@@ -86,7 +84,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.white,
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 18,
     letterSpacing: 0.2,
   },
@@ -95,7 +94,8 @@ const styles = StyleSheet.create({
   },
   laterText: {
     color: colors.accent,
-    fontFamily: fonts.medium,
+    // fontFamily: fonts.medium,
+    fontWeight: '500',
     fontSize: 16,
     textDecorationLine: 'underline',
   },

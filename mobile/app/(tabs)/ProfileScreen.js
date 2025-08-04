@@ -1,9 +1,6 @@
-// /mobile/app/(tabs)/ProfileScreen.js
-
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import colors from '../../theme/colors';
-import fonts from '../../theme/fonts';
 
 export default function ProfileScreen() {
   return (
@@ -26,13 +23,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   headline: {
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 23,
     color: colors.primary,
     marginBottom: 14,
   },
   subheadline: {
-    fontFamily: fonts.regular,
+    // fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
     textAlign: 'center',

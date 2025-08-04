@@ -1,10 +1,6 @@
-// /mobile/app/(tabs)/HomeScreen.js
-
 import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import colors from '../../theme/colors';
-import fonts from '../../theme/fonts';
-console.log('FONTS in HomeScreen.js:', fonts);
 
 export default function HomeScreen() {
   return (
@@ -36,13 +32,14 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   headline: {
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 23,
     color: colors.primary,
     marginBottom: 14,
   },
   subheadline: {
-    fontFamily: fonts.regular,
+    // fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
     textAlign: 'center',

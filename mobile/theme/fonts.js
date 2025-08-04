@@ -1,10 +1,5 @@
 // /mobile/theme/fonts.js
 
-const fonts = {
-  regular: 'Inter-Regular',
-  medium: 'Inter-Medium',
-  bold: 'Inter-Bold',
-  logo: 'Manrope-Bold', // Beispiel: für das Stepsmatch-Logo/Slogan
-};
-
+// Vorübergehend leer – für spätere Custom-Font-Reaktivierung
+const fonts = {};
 export default fonts;

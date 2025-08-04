@@ -1,10 +1,6 @@
-// /mobile/app/(onboarding)/WelcomeScreen.js
-
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import colors from '../../theme/colors';
-import fonts from '../../theme/fonts';
-console.log('FONTS in WelcomeScreen.js:', fonts);
 import { useRouter } from 'expo-router';
 
 export default function WelcomeScreen() {
@@ -46,14 +42,15 @@ const styles = StyleSheet.create({
     marginBottom: 36,
   },
   headline: {
-    fontFamily: fonts.logo,
+    // fontFamily: fonts.logo,
+    fontWeight: 'bold',
     fontSize: 30,
     color: colors.primary,
     marginBottom: 18,
     letterSpacing: 0.5,
   },
   subheadline: {
-    fontFamily: fonts.regular,
+    // fontFamily: fonts.regular,
     fontSize: 17,
     color: colors.text,
     textAlign: 'center',
@@ -72,7 +69,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.white,
-    fontFamily: fonts.bold,
+    // fontFamily: fonts.bold,
+    fontWeight: 'bold',
     fontSize: 18,
     letterSpacing: 0.2,
   },
