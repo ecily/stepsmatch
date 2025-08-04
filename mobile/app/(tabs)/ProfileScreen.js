@@ -9,7 +9,8 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const handleReset = async () => {
-    await AsyncStorage.removeItem('userInterests');
+    // Lösche ALLES, inkl. Token, UserId, Interessen etc.
+    await AsyncStorage.clear();
     router.replace('/(onboarding)/WelcomeScreen');
   };
 
@@ -20,7 +21,7 @@ export default function ProfileScreen() {
         Hier kannst du deine persönlichen Einstellungen anpassen.
       </Text>
       <Button
-        title="Interessen & Onboarding zurücksetzen"
+        title="Logout & App zurücksetzen"
         onPress={handleReset}
         color={colors.primary}
       />

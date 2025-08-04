@@ -8,22 +8,31 @@ export default function RootLayout() {
 
   useEffect(() => {
     (async () => {
+      const token = await AsyncStorage.getItem('token');
       const interests = await AsyncStorage.getItem('userInterests');
-      setInitialRoute(interests ? '/(tabs)' : '/(onboarding)/WelcomeScreen');
+
+      if (!token) {
+        setInitialRoute('/(auth)/LoginScreen');
+      } else if (!interests) {
+        setInitialRoute('/(onboarding)/WelcomeScreen');
+      } else {
+        setInitialRoute('/(tabs)/index'); // <<--- IMMER EXPLIZIT AUF INDEX
+      }
     })();
   }, []);
 
   if (initialRoute === undefined) {
-    return null; // Ladezustand
+    return null;
   }
 
-  // Redirect NUR beim echten Start oder falscher Route (nie wenn User schon am Ziel ist)
   if (
     pathname === '/' ||
-    pathname === '/(tabs)/HomeScreen' ||
     pathname === '/(tabs)' ||
+    pathname === '/(tabs)/index' ||
     pathname === '/(onboarding)' ||
-    pathname === '/(onboarding)/WelcomeScreen'
+    pathname === '/(auth)' ||
+    pathname === '/(onboarding)/WelcomeScreen' ||
+    pathname === '/(auth)/LoginScreen'
   ) {
     if (pathname !== initialRoute) {
       return (
@@ -35,6 +44,5 @@ export default function RootLayout() {
     }
   }
 
-  // Stack für alles andere (Tabs und Onboarding laufen dann normal)
   return <Stack screenOptions={{ headerShown: false }} />;
 }

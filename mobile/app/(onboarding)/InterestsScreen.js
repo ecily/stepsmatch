@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Text, Button, FlatList, TouchableOpacity } from 'react-native';
+import { Text, Button, FlatList, TouchableOpacity, InteractionManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -29,7 +29,9 @@ export default function InterestsScreen() {
 
   const handleContinue = async () => {
     await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-    router.replace('/(tabs)'); // <- Das ist jetzt sicher und zukunftsfähig!
+    InteractionManager.runAfterInteractions(() => {
+      router.replace('/(tabs)');
+    });
   };
 
   return (
