@@ -11,7 +11,7 @@ export default function ProfileScreen() {
   const handleReset = async () => {
     try {
       await AsyncStorage.clear(); // Alle gespeicherten Daten löschen
-      router.replace('/(auth)/LoginScreen'); // Direkt zum Login navigieren
+      router.replace('/(auth)/LoginScreen'); // Direkt zum Login navigieren (korrekter, absoluter Pfad)
     } catch (e) {
       console.error('Fehler beim Logout:', e);
       // Optional: Fehlerbehandlung/UI-Feedback

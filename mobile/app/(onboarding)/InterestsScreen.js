@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Text, Button, FlatList, TouchableOpacity, InteractionManager } from 'react-native';
+import { Text, Button, FlatList, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import axios from 'axios';
+
+const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
 const INTERESTS = [
   'Sport', 'Musik', 'Essen', 'Technik', 'Kunst', 'Reisen'
@@ -30,12 +33,18 @@ export default function InterestsScreen() {
   const handleContinue = async () => {
     try {
       await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-      const check = await AsyncStorage.getItem('userInterests');
-      console.log('Gespeicherte Interessen:', check);
-
-      InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)');
-      });
+      // --- Backend updaten ---
+      const token = await AsyncStorage.getItem('token');
+      const userId = await AsyncStorage.getItem('userId');
+      if (token && userId) {
+        await axios.patch(
+          `${API_URL}/users/${userId}`,
+          { interests: selected },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+      // --- Routing ---
+      router.replace('/(tabs)');
     } catch (e) {
       console.error('Fehler beim Speichern der Interessen:', e);
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, InteractionManager } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import colors from '../../theme/colors';
 import axios from 'axios';
@@ -35,10 +35,15 @@ export default function RegisterScreen() {
         if (res.data.user.interests) {
           await AsyncStorage.setItem('userInterests', JSON.stringify(res.data.user.interests));
         }
-        // Korrekte Weiterleitung zur Tabs-Route (ohne /index)
-        InteractionManager.runAfterInteractions(() => {
-          router.replace('/(tabs)');
-        });
+        // Sicherstellen, dass alles gespeichert wurde, dann ins Onboarding/WelcomeScreen leiten:
+        setTimeout(async () => {
+          const confirmToken = await AsyncStorage.getItem('token');
+          if (confirmToken) {
+            router.replace('/(onboarding)/WelcomeScreen');
+          } else {
+            setError('Registrierung erfolgreich, aber Token nicht gespeichert. Bitte nochmal versuchen.');
+          }
+        }, 200);
       } else {
         setError('Registrierung fehlgeschlagen. Bitte probiere es erneut.');
       }

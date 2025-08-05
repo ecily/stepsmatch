@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, InteractionManager } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import colors from '../../theme/colors';
 import axios from 'axios';
@@ -19,18 +19,23 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
     try {
-      // ✅ KORREKTE ROUTE!
       const res = await axios.post(`${API_URL}/users/login`, { email, password });
       await AsyncStorage.setItem('token', res.data.token);
       await AsyncStorage.setItem('userId', res.data.user._id);
       if (res.data.user.interests) {
         await AsyncStorage.setItem('userInterests', JSON.stringify(res.data.user.interests));
       }
-      // 👉 Saubere Weiterleitung nach Login!
-      InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)');
 
-      });
+      // Nach dem Schreiben noch einmal explizit prüfen und erst dann weiterleiten
+      setTimeout(async () => {
+        const confirmToken = await AsyncStorage.getItem('token');
+        if (confirmToken) {
+          router.replace('/(tabs)');
+        } else {
+          setError('Fehler beim Anmelden. Bitte versuche es erneut.');
+        }
+      }, 200); // 200ms Delay reicht in fast allen Fällen
+
     } catch (err) {
       setError(err?.response?.data?.message || 'Login fehlgeschlagen. Bitte prüfe deine Daten.');
       console.log('Login error:', err?.response?.data);
