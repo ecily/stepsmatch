@@ -1,24 +1,19 @@
 import { Stack, Redirect, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, ActivityIndicator, View } from 'react-native';
 
 export default function RootLayout() {
   const [initialRoute, setInitialRoute] = useState(undefined);
   const pathname = usePathname();
 
-  // Reload Auth/Interests beim App-Fokus (z.B. nach Login, Register, Onboarding)
   useEffect(() => {
     const fetchAuth = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
-        const interestsJson = await AsyncStorage.getItem('userInterests');
-        const interests = interestsJson ? JSON.parse(interestsJson) : null;
-
+        // --- Pitch-Version: Nur Token zählt! ---
         if (!token) {
           setInitialRoute('/(auth)/LoginScreen');
-        } else if (!interests || interests.length === 0) {
-          setInitialRoute('/(onboarding)/WelcomeScreen');
         } else {
           setInitialRoute('/(tabs)');
         }
@@ -30,7 +25,6 @@ export default function RootLayout() {
 
     fetchAuth();
 
-    // AppState Listener für Re-Focus (nach Login/Register/Interessenwahl)
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') fetchAuth();
     });
@@ -39,8 +33,12 @@ export default function RootLayout() {
   }, []);
 
   if (initialRoute === undefined) {
-    // Ladeanzeige für Auth-Check (kann durch <ActivityIndicator/> ersetzt werden)
-    return null;
+    // Zeige ActivityIndicator während Auth geprüft wird (bessere UX)
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#0062FF" />
+      </View>
+    );
   }
 
   // Redirect nur, wenn wir auf "/" sind und noch nicht am Ziel

@@ -22,19 +22,26 @@ export default function LoginScreen() {
       const res = await axios.post(`${API_URL}/users/login`, { email, password });
       await AsyncStorage.setItem('token', res.data.token);
       await AsyncStorage.setItem('userId', res.data.user._id);
+
+      // Interessen immer initialisieren (auch wenn leer!)
       if (res.data.user.interests) {
         await AsyncStorage.setItem('userInterests', JSON.stringify(res.data.user.interests));
+      } else {
+        await AsyncStorage.setItem('userInterests', JSON.stringify([]));
       }
 
-      // Nach dem Schreiben noch einmal explizit prüfen und erst dann weiterleiten
+      // Nach dem Schreiben explizit prüfen und erst dann weiterleiten
       setTimeout(async () => {
         const confirmToken = await AsyncStorage.getItem('token');
         if (confirmToken) {
+          console.log('Login erfolgreich, Token gespeichert, navigiere zu /(tabs)');
+          router.replace('/(tabs)');
+
           router.replace('/(tabs)');
         } else {
           setError('Fehler beim Anmelden. Bitte versuche es erneut.');
         }
-      }, 200); // 200ms Delay reicht in fast allen Fällen
+      }, 250); // 250ms Delay ist MVP-sicher
 
     } catch (err) {
       setError(err?.response?.data?.message || 'Login fehlgeschlagen. Bitte prüfe deine Daten.');
