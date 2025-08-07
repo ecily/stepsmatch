@@ -4,23 +4,21 @@ import React, { useEffect, useState } from 'react';
 import { AppState, ActivityIndicator, View } from 'react-native';
 
 export default function RootLayout() {
-  const [initialRoute, setInitialRoute] = useState(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const pathname = usePathname();
 
+  // Prüft Token bei Start und bei AppState-Wechsel
   useEffect(() => {
     const fetchAuth = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
-        // --- Pitch-Version: Nur Token zählt! ---
-        if (!token) {
-          setInitialRoute('/(auth)/LoginScreen');
-        } else {
-          setInitialRoute('/(tabs)');
-        }
+        setIsAuthenticated(!!token);
       } catch (e) {
         console.error('Fehler beim Lesen von AsyncStorage:', e);
-        setInitialRoute('/(auth)/LoginScreen');
+        setIsAuthenticated(false);
       }
+      setIsLoading(false);
     };
 
     fetchAuth();
@@ -32,8 +30,7 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, []);
 
-  if (initialRoute === undefined) {
-    // Zeige ActivityIndicator während Auth geprüft wird (bessere UX)
+  if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#0062FF" />
@@ -41,11 +38,19 @@ export default function RootLayout() {
     );
   }
 
-  // Redirect nur, wenn wir auf "/" sind und noch nicht am Ziel
-  if (pathname === '/' && pathname !== initialRoute) {
+  // Redirect abhängig vom Auth-Status und aktuellem Pfad
+  if (!isAuthenticated && !pathname.startsWith('/(auth)')) {
     return (
       <>
-        <Redirect href={initialRoute} />
+        <Redirect href="/(auth)/LoginScreen" />
+        <Stack screenOptions={{ headerShown: false }} />
+      </>
+    );
+  }
+  if (isAuthenticated && pathname.startsWith('/(auth)')) {
+    return (
+      <>
+        <Redirect href="/(tabs)" />
         <Stack screenOptions={{ headerShown: false }} />
       </>
     );

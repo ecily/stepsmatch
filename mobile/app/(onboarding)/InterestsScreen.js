@@ -1,83 +1,120 @@
-import React, { useState, useEffect } from 'react';
-import { Text, Button, FlatList, TouchableOpacity, InteractionManager } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// mobile/screens/InterestsScreen.jsx
+
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
+import colors from '../../theme/colors';
 
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
-
-const INTERESTS = [
-  'Sport', 'Musik', 'Essen', 'Technik', 'Kunst', 'Reisen'
+const MOCK_INTERESTS = [
+  { id: '1', label: 'Sport' },
+  { id: '2', label: 'Musik' },
+  { id: '3', label: 'Kunst & Kultur' },
+  { id: '4', label: 'Essen & Trinken' },
+  { id: '5', label: 'Reisen' },
+  { id: '6', label: 'Technik' },
+  { id: '7', label: 'Natur' },
+  { id: '8', label: 'Mode' },
 ];
 
 export default function InterestsScreen() {
-  const [selected, setSelected] = useState([]);
   const router = useRouter();
+  const [selected, setSelected] = useState([]);
 
+  // Beim Mounten: bisherige Auswahl laden (falls vorhanden)
   useEffect(() => {
-    (async () => {
-      const saved = await AsyncStorage.getItem('userInterests');
-      if (saved) setSelected(JSON.parse(saved));
-    })();
+    AsyncStorage.getItem('userInterests').then((data) => {
+      if (data) setSelected(JSON.parse(data));
+    });
   }, []);
 
-  const toggleInterest = (interest) => {
-    setSelected((prev) =>
-      prev.includes(interest)
-        ? prev.filter((item) => item !== interest)
-        : [...prev, interest]
+  const toggleInterest = (id) => {
+    setSelected((curr) =>
+      curr.includes(id) ? curr.filter((x) => x !== id) : [...curr, id]
     );
   };
 
-  const handleContinue = async () => {
-    try {
-      await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-      // --- Backend-Update ---
-      const token = await AsyncStorage.getItem('token');
-      const userId = await AsyncStorage.getItem('userId');
-      if (token && userId) {
-        await axios.patch(
-          `${API_URL}/users/${userId}`,
-          { interests: selected },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      }
-      // --- Routing: 100% stabil auf Startseite der Tabs ---
-      InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)/index');
-      });
-    } catch (e) {
-      console.error('Fehler beim Speichern der Interessen:', e);
-    }
+  const handleSave = async () => {
+    await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
+    router.replace('/(tabs)');
   };
 
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={[
+        styles.chip,
+        selected.includes(item.id) && styles.chipSelected,
+      ]}
+      onPress={() => toggleInterest(item.id)}
+    >
+      <Text style={[
+        styles.chipText,
+        selected.includes(item.id) && styles.chipTextSelected,
+      ]}>
+        {item.label}
+      </Text>
+    </TouchableOpacity>
+  );
+
   return (
-    <SafeAreaView style={{ flex: 1, padding: 24 }}>
-      <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 16 }}>Was interessiert dich?</Text>
+    <View style={styles.container}>
+      <Text style={styles.headline}>Wähle deine Interessen</Text>
       <FlatList
-        data={INTERESTS}
-        keyExtractor={(item) => item}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={{
-              padding: 16,
-              marginVertical: 8,
-              backgroundColor: selected.includes(item) ? '#0062FF' : '#eee',
-              borderRadius: 10,
-            }}
-            onPress={() => toggleInterest(item)}
-          >
-            <Text style={{ color: selected.includes(item) ? '#fff' : '#222' }}>{item}</Text>
-          </TouchableOpacity>
-        )}
+        data={MOCK_INTERESTS}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        numColumns={2}
       />
-      <Button
-        title="Weiter"
-        onPress={handleContinue}
+      <TouchableOpacity
+        style={[
+          styles.saveButton,
+          selected.length === 0 && { backgroundColor: '#ccc' },
+        ]}
+        onPress={handleSave}
         disabled={selected.length === 0}
-        color="#0062FF"
-      />
-    </SafeAreaView>
+      >
+        <Text style={styles.saveText}>Auswahl speichern</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 28, backgroundColor: colors.background },
+  headline: { fontSize: 24, fontWeight: 'bold', color: colors.primary, marginBottom: 22, textAlign: 'center' },
+  list: { alignItems: 'center', justifyContent: 'center' },
+  chip: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    margin: 8,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+  },
+  chipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 16,
+    color: '#444',
+  },
+  chipTextSelected: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  saveButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 36,
+  },
+  saveText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+});
