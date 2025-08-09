@@ -17,7 +17,12 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ecily.mobile"
+      "package": "com.ecily.mobile",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB8nxrj1AEWJwtJSCD3aKbVB4_GgopCTOs"
+        }
+      }
     },
     "web": {
       "bundler": "metro",

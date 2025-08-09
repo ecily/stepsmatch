@@ -1,36 +1,38 @@
-// mobile/screens/InterestsScreen.jsx
-
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import axios from 'axios';
 import colors from '../../theme/colors';
 
-const MOCK_INTERESTS = [
-  { id: '1', label: 'Sport' },
-  { id: '2', label: 'Musik' },
-  { id: '3', label: 'Kunst & Kultur' },
-  { id: '4', label: 'Essen & Trinken' },
-  { id: '5', label: 'Reisen' },
-  { id: '6', label: 'Technik' },
-  { id: '7', label: 'Natur' },
-  { id: '8', label: 'Mode' },
-];
+const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
 export default function InterestsScreen() {
   const router = useRouter();
+  const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Beim Mounten: bisherige Auswahl laden (falls vorhanden)
   useEffect(() => {
+    const fetchCats = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/categories`);
+        setCategories(res.data || []);
+      } catch (err) {
+        setCategories([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCats();
     AsyncStorage.getItem('userInterests').then((data) => {
       if (data) setSelected(JSON.parse(data));
     });
   }, []);
 
-  const toggleInterest = (id) => {
+  const toggleInterest = (interest) => {
     setSelected((curr) =>
-      curr.includes(id) ? curr.filter((x) => x !== id) : [...curr, id]
+      curr.includes(interest) ? curr.filter((x) => x !== interest) : [...curr, interest]
     );
   };
 
@@ -39,33 +41,41 @@ export default function InterestsScreen() {
     router.replace('/(tabs)');
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.chip,
-        selected.includes(item.id) && styles.chipSelected,
-      ]}
-      onPress={() => toggleInterest(item.id)}
-    >
-      <Text style={[
-        styles.chipText,
-        selected.includes(item.id) && styles.chipTextSelected,
-      ]}>
-        {item.label}
-      </Text>
-    </TouchableOpacity>
-  );
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <Text style={styles.headline}>Wähle deine Interessen</Text>
-      <FlatList
-        data={MOCK_INTERESTS}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        numColumns={2}
-      />
+      {categories.map((cat) => (
+        <View key={cat._id} style={styles.categorySection}>
+          <Text style={styles.categoryTitle}>{cat.name}</Text>
+          <View style={styles.subcatRow}>
+            {(cat.subcategories || []).map((subcat) => (
+              <TouchableOpacity
+                key={subcat}
+                style={[
+                  styles.chip,
+                  selected.includes(subcat) && styles.chipSelected,
+                ]}
+                onPress={() => toggleInterest(subcat)}
+              >
+                <Text style={[
+                  styles.chipText,
+                  selected.includes(subcat) && styles.chipTextSelected,
+                ]}>
+                  {subcat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ))}
       <TouchableOpacity
         style={[
           styles.saveButton,
@@ -76,20 +86,24 @@ export default function InterestsScreen() {
       >
         <Text style={styles.saveText}>Auswahl speichern</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 28, backgroundColor: colors.background },
-  headline: { fontSize: 24, fontWeight: 'bold', color: colors.primary, marginBottom: 22, textAlign: 'center' },
-  list: { alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { padding: 28, paddingBottom: 64 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  headline: { fontSize: 24, fontWeight: 'bold', color: colors.primary, marginBottom: 18, textAlign: 'center' },
+  categorySection: { marginBottom: 28 },
+  categoryTitle: { fontSize: 19, fontWeight: 'bold', color: colors.accent || colors.primary, marginBottom: 7 },
+  subcatRow: { flexDirection: 'row', flexWrap: 'wrap' },
   chip: {
     backgroundColor: '#f0f0f0',
     borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    margin: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    margin: 6,
     borderWidth: 2,
     borderColor: '#e0e0e0',
   },
@@ -98,7 +112,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#444',
   },
   chipTextSelected: {
@@ -110,7 +124,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 36,
+    marginTop: 24,
+    marginBottom: 12,
   },
   saveText: {
     color: '#fff',
