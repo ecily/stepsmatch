@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   GoogleMap,
-  Marker,
   useLoadScript,
   Autocomplete,
 } from '@react-google-maps/api';
@@ -31,14 +30,19 @@ const AddProviderForm = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+
   const autocompleteRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+
   const navigate = useNavigate();
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: ['places'],
+    libraries: ['places', 'marker'], // "marker" Library ist für AdvancedMarker nötig
   });
 
+  // User-Standort beim Laden holen
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -54,6 +58,29 @@ const AddProviderForm = () => {
       }
     );
   }, []);
+
+  // AdvancedMarkerElement initialisieren oder updaten
+  useEffect(() => {
+    if (isLoaded && mapRef.current && window.google?.maps?.marker) {
+      if (markerRef.current) {
+        markerRef.current.map = null; // alten Marker entfernen
+      }
+
+      markerRef.current = new window.google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position: markerPosition,
+        title: 'Standort',
+        gmpDraggable: true,
+      });
+
+      markerRef.current.addListener('dragend', (e) => {
+        setMarkerPosition({
+          lat: e.latLng.lat(),
+          lng: e.latLng.lng(),
+        });
+      });
+    }
+  }, [isLoaded, markerPosition]);
 
   const handlePlaceChanged = () => {
     const place = autocompleteRef.current.getPlace();
@@ -129,12 +156,13 @@ const AddProviderForm = () => {
           mapContainerStyle={mapContainerStyle}
           center={markerPosition}
           zoom={14}
+          onLoad={(map) => (mapRef.current = map)}
           onClick={(e) => setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
-        >
-          <Marker position={markerPosition} draggable onDragEnd={(e) => setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })} />
-        </GoogleMap>
+        />
 
-        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Anbieter speichern</button>
+        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+          Anbieter speichern
+        </button>
       </form>
     </div>
   );
