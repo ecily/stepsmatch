@@ -21,7 +21,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"
         }
-      }
+      },
+      "permissions": ["VIBRATE"]
     },
     "web": {
       "bundler": "metro",
