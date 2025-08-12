@@ -13,6 +13,10 @@ import userAuthRoutes from './routes/userAuth.js';
 import uploadRoutes from './routes/uploads.js';
 import matchRoutes from './routes/match.js';
 
+// ⬇️ Neu: Push- und Location-Routen
+import pushRoutes from './routes/push.js';
+import locationRoutes from './routes/location.js';
+
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,6 +60,10 @@ app.use('/api/providers', providerRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/match', matchRoutes); // ✅ aktualisiert: statt /match-check
+
+// ⬇️ Neu: Token-Registrierung & Geofencing-Enter
+app.use('/api/push', pushRoutes);          // z. B. POST /api/push/register
+app.use('/api/location', locationRoutes);  // z. B. POST /api/location/geofence-enter
 
 // ✅ Ping-Route für Serverstatus
 app.get('/api/ping', (req, res) => {
