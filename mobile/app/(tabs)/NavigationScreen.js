@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, Platform } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
@@ -32,7 +32,6 @@ function formatDistance(m) {
   if (m < 1000) return `${m} m`;
   return `${(m / 1000).toFixed(1)} km`;
 }
-// Bearing aus zwei GPS-Punkten (0..360, 0=N)
 function bearingDegrees(from, to) {
   const φ1 = toRad(from.latitude), φ2 = toRad(to.latitude);
   const λ1 = toRad(from.longitude), λ2 = toRad(to.longitude);
@@ -51,10 +50,67 @@ function smoothHeading(prev, next, alpha = 0.25) {
   return h;
 }
 
+// ---- Dotted-Route Helpers ----
+const lerpCoord = (p1, p2, t) => ({
+  latitude: p1.latitude + (p2.latitude - p1.latitude) * t,
+  longitude: p1.longitude + (p2.longitude - p1.longitude) * t,
+});
+const haversine = distanceMeters;
+const nearestOnPolyline = (pos, route) => {
+  if (!route || route.length < 2) return { index: 0, t: 0, point: route?.[0] ?? pos };
+  let best = { dist: Infinity, index: 0, t: 0, point: route[0] };
+  for (let i = 0; i < route.length - 1; i++) {
+    const a = route[i], b = route[i + 1];
+    const ax = a.longitude, ay = a.latitude;
+    const bx = b.longitude, by = b.latitude;
+    const px = pos.longitude, py = pos.latitude;
+    const abx = bx - ax, aby = by - ay;
+    const apx = px - ax, apy = py - ay;
+    const ab2 = abx * abx + aby * aby || 1e-12;
+    let t = (apx * abx + apy * aby) / ab2;
+    t = Math.max(0, Math.min(1, t));
+    const proj = { latitude: ay + aby * t, longitude: ax + abx * t };
+    const d = haversine(pos, proj);
+    if (d < best.dist) best = { dist: d, index: i, t, point: proj };
+  }
+  return best;
+};
+const remainingRouteFrom = (pos, fullRoute, snapAheadMeters = 10) => {
+  if (!fullRoute || fullRoute.length < 2 || !pos) return fullRoute ?? [];
+  const snap = nearestOnPolyline(pos, fullRoute);
+  const nextIdx = Math.min(snap.index + 1, fullRoute.length - 1);
+  const distToNext = haversine(pos, fullRoute[nextIdx]) ?? 0;
+  let head = lerpCoord(fullRoute[snap.index], fullRoute[snap.index + 1], snap.t);
+  let startIdx = snap.index + 1;
+  if (distToNext < snapAheadMeters) {
+    head = fullRoute[nextIdx];
+    startIdx = nextIdx + 1;
+  }
+  return [head, ...fullRoute.slice(startIdx)];
+};
+const sampleEvery = (route, stepMeters = 20, maxPoints = 400) => {
+  if (!route || route.length === 0) return [];
+  if (route.length === 1) return [route[0]];
+  const out = [];
+  let leftover = 0;
+  for (let i = 0; i < route.length - 1 && out.length < maxPoints; i++) {
+    const a = route[i], b = route[i + 1];
+    const segLen = haversine(a, b) ?? 0;
+    let dist = leftover;
+    while (dist <= segLen && out.length < maxPoints) {
+      const t = segLen === 0 ? 0 : dist / segLen;
+      out.push(lerpCoord(a, b, t));
+      dist += stepMeters;
+    }
+    leftover = dist - segLen;
+  }
+  if (out.length < maxPoints) out.push(route[route.length - 1]);
+  return out;
+};
+
 // ---- Konfiguration / Tuning ----
 const DIRECTIONS_KEY = process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY || '';
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
-
 const POSITION_UPDATE_MIN_DIST = 3;
 const ANIMATE_THROTTLE_MS = 600;
 const HEADING_UPDATE_EVERY_METERS = 100;
@@ -63,9 +119,9 @@ const REMAINING_TICK_MS = 1000;
 const ARRIVAL_THRESHOLD_METERS = 15;
 
 // ---- Haptik-Tuning ----
-const ARRIVAL_HAPTIC_BURSTS = 3;            // Anzahl Heavy-Bursts
-const ARRIVAL_HAPTIC_INTERVAL_MS = 120;     // Abstand zwischen Bursts
-const ARRIVAL_VIBRATION_PATTERN = [0, 220, 80, 260, 80, 300]; // Android-Pattern (ms)
+const ARRIVAL_HAPTIC_BURSTS = 3;
+const ARRIVAL_HAPTIC_INTERVAL_MS = 120;
+const ARRIVAL_VIBRATION_PATTERN = [0, 220, 80, 260, 80, 300];
 
 export default function NavigationScreen() {
   const { id } = useLocalSearchParams();
@@ -237,7 +293,7 @@ export default function NavigationScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Distanzanzeige 1x pro Sekunde (stabil)
+  // Distanzanzeige 1x pro Sekunde
   useEffect(() => {
     const t = setInterval(() => {
       const pos = lastPosRef.current;
@@ -255,31 +311,18 @@ export default function NavigationScreen() {
     if (remaining != null && remaining < ARRIVAL_THRESHOLD_METERS && !arrivalNotifiedRef.current) {
       arrivalNotifiedRef.current = true;
       setArrived(true);
-      console.log('[Arrival] threshold hit, remaining=', remaining);
-
       (async () => {
         try {
-          // Mehrfach kräftig hämmern
           for (let i = 0; i < ARRIVAL_HAPTIC_BURSTS; i++) {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
             await new Promise(r => setTimeout(r, ARRIVAL_HAPTIC_INTERVAL_MS));
           }
-          // Abschluss-Notification
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          console.log('[Haptics] multi-burst done');
-        } catch (e) {
-          console.log('[Haptics] error:', String(e));
-        }
-
-        // Booster/Fallback: kräftiges Vibrationsmuster
+        } catch {}
         try { Vibration.vibrate(ARRIVAL_VIBRATION_PATTERN); } catch {}
-
-        // Sound dazu
         await playBeep();
       })();
-
-      // TODO: später Arrival-Event ans Backend senden
-      // await sendArrivalEventSafely();
+      // await sendArrivalEventSafely(); // später
     }
   }, [remaining]);
 
@@ -314,15 +357,23 @@ export default function NavigationScreen() {
     loadRoute();
   }, [offerPos, userLocation]);
 
-  async function sendArrivalEventSafely() {
-    try {
-      // Beispiel – später mit axiosInstance + Auth:
-      // await axiosInstance.post(`/offers/${id}/arrival`, { ts: Date.now() });
-    } catch (e) {
-      console.log('Arrival-Event failed (non-blocking):', String(e));
+  // ---- Verbleibende Route & Dotted Sampling (OBERHALB der Early-Returns!) ----
+  const remainingRoute = useMemo(() => {
+    if (routeCoords.length > 1 && userLocation) {
+      return remainingRouteFrom(userLocation, routeCoords, 10);
     }
-  }
+    if (userLocation && offerPos) {
+      return [userLocation, offerPos]; // Fallback: direkte Linie
+    }
+    return [];
+  }, [routeCoords, userLocation, offerPos]);
 
+  const dottedRoute = useMemo(
+    () => sampleEvery(remainingRoute, 20, 400), // alle 20 m ein Punkt
+    [remainingRoute]
+  );
+
+  // ----- Early Returns -----
   if (!offer && loading) {
     return (
       <View style={styles.center}>
@@ -359,8 +410,7 @@ export default function NavigationScreen() {
               await new Promise(r => setTimeout(r, ARRIVAL_HAPTIC_INTERVAL_MS));
             }
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            console.log('[Dev] haptics burst ok');
-          } catch (e) { console.log('[Dev] haptics error', String(e)); }
+          } catch {}
           try { Vibration.vibrate(ARRIVAL_VIBRATION_PATTERN); } catch {}
         }}
         style={[styles.devBtn, { marginRight: 8 }]}
@@ -390,20 +440,24 @@ export default function NavigationScreen() {
         zoomEnabled
         pitchEnabled
         rotateEnabled
-        onMapReady={() => console.log('Nav map ready')}
+        onMapReady={() => console.log('Map ready')}
         onError={(e) => console.log('Nav map error', e?.nativeEvent)}
       >
         {offerPos && (
           <Marker coordinate={offerPos} title={offer?.name || 'Ziel'} pinColor="#0077FF" />
         )}
 
-        {routeCoords.length > 1 && (
-          <Polyline coordinates={routeCoords} strokeWidth={6} />
-        )}
-
-        {!routeCoords.length && userLocation && offerPos && (
-          <Polyline coordinates={[userLocation, offerPos]} strokeWidth={4} />
-        )}
+        {/* Dotted remaining route */}
+        {dottedRoute.map((pt, i) => (
+          <Circle
+            key={`dot-${i}-${pt.latitude}-${pt.longitude}`}
+            center={pt}
+            radius={2.2}
+            strokeWidth={0}
+            fillColor="rgba(0,122,255,1)"
+            zIndex={2}
+          />
+        ))}
       </MapView>
 
       {/* HUD oben */}
