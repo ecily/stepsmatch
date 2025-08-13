@@ -17,12 +17,18 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.ecily.mobile",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"
         }
       },
-      "permissions": ["VIBRATE"]
+      "permissions": [
+        "VIBRATE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -39,7 +45,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/sounds/arrival.mp3"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
