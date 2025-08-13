@@ -12,7 +12,7 @@ const router = express.Router();
 /**
  * In-Memory Cooldown gegen Push-Spam:
  * Key = `${recipientKey}::${offerId}`
- * TTL = 10 Minuten (MVP). Später gerne per DB (ArrivalLog) persistieren.
+ * TTL = 10 Minuten (MVP)
  */
 const lastPushAt = new Map(); // Map<string, number>
 const COOLDOWN_MS = 10 * 60 * 1000;
@@ -29,12 +29,6 @@ function shouldSendNow(key) {
 /**
  * POST /api/location/geofence-enter
  * Body: { offerId: string, lat: number, lng: number, eventType?: 'enter'|'exit', token?: string }
- *
- * Ablauf:
- * 1) Angebot laden & Distanz prüfen (Haversine).
- * 2) Empfänger ermitteln (inline token > user tokens).
- * 3) Cooldown prüfen (pro Empfänger×Offer).
- * 4) Push senden (Titel/Body/Deep-Link) ODER "cooldown-active".
  */
 router.post('/geofence-enter', async (req, res) => {
   try {
@@ -52,7 +46,6 @@ router.post('/geofence-enter', async (req, res) => {
       offerId,
       'location radius name provider subcategory'
     ).lean();
-
     if (!offer) {
       return res.status(404).json({ success: false, error: 'Angebot nicht gefunden' });
     }
@@ -88,13 +81,11 @@ router.post('/geofence-enter', async (req, res) => {
       recipientKey = `user:${req.user._id}`;
     }
 
-    // Logging
     console.log(
       '[GEOFENCE_ENTER] offerId=%s inside=%s d=%dm radius=%dm eventType=%s recipients=%d',
       offerId, inside, Math.round(distanceMeters), Math.round(radius), eventType, tokens.length
     );
 
-    // Nicht im Radius oder keine Empfänger -> kein Push
     if (!inside || tokens.length === 0) {
       return res.json({
         success: true,
@@ -123,10 +114,12 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // --- Push senden ---
+    // --- Push senden: direkt auf deinen echten Screen navigieren ---
+    // ⬇ Hier der wichtige Fix: wir schicken die reale Route deines Screens
+    const url = `/(tabs)/OfferScreen?id=${offerId}`;
+
     const title = 'Angebot in deiner Nähe';
     const body = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
-    const url = `/offers/${offerId}`; // expo-router Deep-Link
 
     const tickets = await sendOffersPushAsync(tokens, {
       title,
