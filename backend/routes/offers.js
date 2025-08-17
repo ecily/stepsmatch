@@ -1,7 +1,7 @@
 import express from 'express';
 import Offer from '../models/Offer.js';
 import haversine from 'haversine-distance';
-import cloudinary from '../utils/cloudinary.js';
+import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
 
 const router = express.Router();
 
@@ -19,62 +19,113 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage mit Interessenfilter (mit Bildern)
+// ✅ GEO-Abfrage mit Interessenfilter (schnell via $geoNear)
 router.post('/nearby', async (req, res) => {
   try {
-    const { lat, lng, interests } = req.body;
+    const {
+      lat,
+      lng,
+      interests,
+      maxDistance = 5000, // Meter (anpassbar)
+      limit = 30          // Anzahl Ergebnisse (anpassbar)
+    } = req.body;
 
-    if (!lat || !lng || !interests || !Array.isArray(interests)) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Array.isArray(interests) || interests.length === 0) {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find(
-      {},
-      'name description category subcategory location radius validDays validTimes validDates provider images'
-    );
-    const userLocation = { lat, lng };
-    const normalizedInterests = interests.map((i) => i.toLowerCase().trim());
+    // Normalisierte Subkategorien (lowercase, getrimmt)
+    const norm = interests
+      .map(i => String(i || '').toLowerCase().trim())
+      .filter(Boolean);
 
-    const filtered = allOffers.filter((offer) => {
-      const coords = offer.location?.coordinates;
-      const subcategory = offer.subcategory;
-      if (!coords || coords.length !== 2 || !subcategory || !offer.radius) return false;
-      const distance = haversine(userLocation, { lat: coords[1], lng: coords[0] });
-      return distance <= offer.radius && normalizedInterests.includes(subcategory.toLowerCase().trim());
-    });
+    const docs = await Offer.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [longitude, latitude] },
+          distanceField: 'distanceMeters',
+          maxDistance: Number(maxDistance),
+          spherical: true
+        }
+      },
+      // nur valide Datensätze mit Radius & Subkategorie
+      { $match: { radius: { $gt: 0 }, subcategory: { $exists: true, $ne: null } } },
+      // case-insensitive Filter für Interessen
+      { $addFields: { sub_lc: { $toLower: '$subcategory' } } },
+      { $match: { sub_lc: { $in: norm } } },
+      // Payload klein halten
+      {
+        $project: {
+          name: 1,
+          description: 1,
+          category: 1,
+          subcategory: 1,
+          location: 1,
+          radius: 1,
+          images: { $slice: ['$images', 3] },
+          distanceMeters: { $round: ['$distanceMeters', 0] }
+        }
+      },
+      { $sort: { distanceMeters: 1 } },
+      { $limit: Number(limit) }
+    ]);
 
-    res.json(filtered);
+    res.json(docs);
   } catch (err) {
-    console.error('Fehler bei Nearby-Abfrage:', err);
+    console.error('nearby error:', err);
     res.status(500).json({ error: 'Serverfehler bei Nearby-Abfrage' });
   }
 });
 
-// ✅ Öffentliche Nearby-Route ohne Interessenfilter (mit Bildern)
+// ✅ Öffentliche Nearby-Route ohne Interessenfilter (ebenfalls $geoNear)
 router.post('/nearby-noauth', async (req, res) => {
   try {
-    const { lat, lng } = req.body;
+    const {
+      lat,
+      lng,
+      maxDistance = 5000, // Meter
+      limit = 30
+    } = req.body;
 
-    if (!lat || !lng) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const allOffers = await Offer.find(
-      {},
-      'name description category subcategory location radius validDays validTimes validDates provider images'
-    );
-    const userLocation = { lat, lng };
+    const docs = await Offer.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [longitude, latitude] },
+          distanceField: 'distanceMeters',
+          maxDistance: Number(maxDistance),
+          spherical: true
+        }
+      },
+      { $match: { radius: { $gt: 0 } } },
+      {
+        $project: {
+          name: 1,
+          description: 1,
+          category: 1,
+          subcategory: 1,
+          location: 1,
+          radius: 1,
+          images: { $slice: ['$images', 3] },
+          distanceMeters: { $round: ['$distanceMeters', 0] }
+        }
+      },
+      { $sort: { distanceMeters: 1 } },
+      { $limit: Number(limit) }
+    ]);
 
-    const filtered = allOffers.filter((offer) => {
-      const coords = offer.location?.coordinates;
-      if (!coords || coords.length !== 2 || !offer.radius) return false;
-      const distance = haversine(userLocation, { lat: coords[1], lng: coords[0] });
-      return distance <= offer.radius;
-    });
-
-    res.json(filtered);
+    res.json(docs);
   } catch (err) {
-    console.error('Fehler bei Nearby-NoAuth-Abfrage:', err);
+    console.error('nearby-noauth error:', err);
     res.status(500).json({ error: 'Serverfehler bei Nearby-NoAuth' });
   }
 });
