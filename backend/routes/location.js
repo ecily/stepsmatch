@@ -74,8 +74,8 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // ⬇ WICHTIG: Keine Gruppen in der URL
-    const url = `/OfferScreen?id=${offerId}`;
+    // ⬇ WICHTIG: Pfad, den deine App wirklich hat (siehe Sitemap): /offers/[id]
+    const url = `/offers/${offerId}`;
 
     const title = 'Angebot in deiner Nähe';
     const body  = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
