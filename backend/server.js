@@ -3,6 +3,10 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 
+// Performance / Security (gzip + Headers) – inline
+import compression from 'compression';
+import helmet from 'helmet';
+
 import connectDB from './config/db.js';
 import offerRoutes from './routes/offers.js';
 import providerRoutes from './routes/providers.js';
@@ -16,9 +20,6 @@ import matchRoutes from './routes/match.js';
 import pushRoutes from './routes/push.js';
 import locationRoutes from './routes/location.js';
 
-// ⬇️ Performance / Security (gzip + Headers)
-import applyPerf from './middleware/perf.js';
-
 dotenv.config();
 
 const app = express();
@@ -26,7 +27,9 @@ const PORT = process.env.PORT || 5000;
 
 // ─────────────────────────────────────────────────────────────
 // Performance & Security (gzip/Brotli + Security Headers)
-applyPerf(app);
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression());
+app.set('trust proxy', 1);
 
 // Body-Parser (große Payloads erlauben)
 app.use(express.json({ limit: '50mb' }));
