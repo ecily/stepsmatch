@@ -31,7 +31,7 @@ const providerSchema = new mongoose.Schema({
   },
 });
 
+// ✅ Geo-Index für Near-Queries
+providerSchema.index({ location: '2dsphere' });
+
 export default mongoose.model('Provider', providerSchema);
-
-
-
