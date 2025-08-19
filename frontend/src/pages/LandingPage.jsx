@@ -1,68 +1,18 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import logoIcon from "../assets/stepsmatch-icon.svg"; // ⬅️ neues Icon-Logo
+import Navbar from "../components/Navbar";
+import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
 import heroBg from "../assets/hero-bg-urban.png";
 
 const LandingPage = () => {
   return (
     <div className="bg-white min-h-screen flex flex-col font-sans text-gray-900">
       {/* ───────── NAVBAR ───────── */}
-      <nav className="fixed top-0 inset-x-0 z-40 backdrop-blur bg-white/60 border-b border-gray-200/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 grid grid-cols-2 md:grid-cols-3 items-center">
-          <div className="flex items-center gap-3">
-            <img src={logoIcon} alt="StepsMatch Logo" className="h-9 w-9 rounded-lg shadow-sm" />
-            <span className="font-extrabold tracking-tight text-lg">
-              stepsmatch<span className="text-blue-600">.com</span>
-            </span>
-          </div>
-
-          <div className="hidden md:flex justify-center gap-8 text-sm">
-            <a href="#features" className="hover:text-blue-700 transition">Features</a>
-            <a href="#how" className="hover:text-blue-700 transition">So funktioniert’s</a>
-            <a href="#trust" className="hover:text-blue-700 transition">Für Anbieter</a>
-          </div>
-
-          <div className="flex justify-end items-center gap-2">
-            {/* Pitch-Button (Navbar) */}
-            <Link
-              to="/pitch"
-              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition"
-              title="Pitch: Produkt in 1 Minute"
-            >
-              Pitch
-            </Link>
-
-            {/* Admin-Demo Button (Pitch) */}
-            <Link
-              to="/admin/offers"
-              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition"
-              title="Admin-Demo: Angebote auf der Karte"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <path d="M3 5h18v2H3V5zm0 6h12v2H3v-2zm0 6h18v2H3v-2z" />
-              </svg>
-              Admin-Demo
-            </Link>
-
-            <Link
-              to="/login"
-              className="rounded-full px-3.5 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition"
-            >
-              Login
-            </Link>
-            <Link
-              to="/register"
-              className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition"
-            >
-              Registrieren
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* ───────── HERO ───────── */}
       <header
-        className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
+        className="relative w-full min-h[92vh] md:min-h-screen bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
       >
         {/* Overlay */}
@@ -106,7 +56,7 @@ const LandingPage = () => {
               >
                 Pitch ansehen
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.42 7.41L13 18l4-4H5z"/>
+                  <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z"/>
                 </svg>
               </Link>
 
@@ -352,7 +302,17 @@ const LandingPage = () => {
             </Link>
             <Link to="/pitch" className="hover:text-gray-900">Pitch</Link>
           </div>
-          <div>Ein Projekt von ecily / Webentwicklung</div>
+          <div>
+  Ein Projekt von{" "}
+  <a
+    href="https://www.ecily.com"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="hover:underline"
+  >
+    ecily / Webentwicklung
+  </a>
+</div>
         </div>
       </footer>
     </div>

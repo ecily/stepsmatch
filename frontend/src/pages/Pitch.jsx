@@ -1,41 +1,19 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import logoIcon from "../assets/stepsmatch-icon.svg"; // ⬅️ neues Icon-Logo
+import Navbar from "../components/Navbar";
+import logoIcon from "../assets/stepsmatch-icon.svg"; // für Footer
 import heroBg from "../assets/hero-bg-pitch2.png";
-import navMockup from "../assets/navigation-preview.png"; // <- Mockup-Bild ablegen unter: frontend/src/assets/navigation-preview.png
+import navMockup from "../assets/navigation-preview.png"; // Mockup-Bild
 
 export default function Pitch() {
   return (
     <div className="min-h-screen w-full bg-white text-gray-900">
-      {/* Topbar */}
-      <div className="sticky top-0 z-40 backdrop-blur bg-white/70 border-b border-gray-200/60">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src={logoIcon} alt="StepsMatch" className="h-8 w-8 rounded-md" />
-            <span className="font-extrabold text-sm md:text-base tracking-tight">
-              stepsmatch<span className="text-blue-600">.com</span>
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/admin/offers"
-              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition"
-            >
-              Admin-Demo
-            </Link>
-            <Link
-              to="/"
-              className="rounded-full px-3.5 py-1.5 text-xs md:text-sm font-semibold text-gray-700 hover:bg-gray-100 transition"
-            >
-              Landing
-            </Link>
-          </div>
-        </div>
-      </div>
+      {/* ───────── NAVBAR ───────── */}
+      <Navbar />
 
       {/* Hero */}
       <header
-        className="relative w-full bg-cover bg-center"
+        className="relative w-full bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/30" />
@@ -267,7 +245,17 @@ export default function Pitch() {
               Admin-Demo
             </Link>
           </div>
-          <div>Ein Projekt von ecily / Webentwicklung</div>
+          <div>
+  Ein Projekt von{" "}
+  <a
+    href="https://www.ecily.com"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="hover:underline"
+  >
+    ecily / Webentwicklung
+  </a>
+</div>
         </div>
       </footer>
     </div>
