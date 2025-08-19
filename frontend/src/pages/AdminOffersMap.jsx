@@ -4,6 +4,11 @@ import { GoogleMap, MarkerF, InfoWindowF, useLoadScript } from "@react-google-ma
 
 const mapContainerStyle = { width: "100%", height: "380px" };
 
+// Konstanten
+const WEEKDAYS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DATE_FMT_AT = new Intl.DateTimeFormat("de-AT", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+// ---- helpers ----
 const pad2 = (n) => String(n).padStart(2, "0");
 const coordsToLatLng = (coordinates) => {
   if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
@@ -38,7 +43,10 @@ const makeLocalDateTime = (dateVal, timeVal) => {
   const { h, m, s } = parseTimeHM(timeVal);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, s, 0);
 };
-const fmtDate = (val) => { const d = parseDateFlexible(val); return d ? d.toLocaleDateString("de-AT") : "—"; };
+const fmtDate = (val) => {
+  const d = parseDateFlexible(val);
+  return d ? DATE_FMT_AT.format(d) : "—";
+};
 const fmtTime = (val) => { if (!val) return "—"; const { h, m } = parseTimeHM(val, { h: 0, m: 0, s: 0 }); return `${pad2(h)}:${pad2(m)}`; };
 const computeRemainingDHMS = (offer) => {
   try {
@@ -57,59 +65,45 @@ const computeRemainingDHMS = (offer) => {
   } catch { return "—"; }
 };
 
-const isObjectIdString = (v) => typeof v === "string" && /^[a-f\d]{24}$/i.test(v);
-const providerIsEmbedded = (p) => p && typeof p === "object" && (p.name || p._id);
+/** Prüft, ob das Angebot JETZT aktiv ist (Datum, Wochentag, Tageszeit). */
+const isOfferActiveNow = (offer, now = new Date()) => {
+  if (!offer) return false;
 
-// sammelt alle potenziellen Provider-IDs aus einem Offer
-const collectProviderCandidateIds = (offer) => {
-  const candidates = new Set();
+  // 1) Datumsspanne (inklusive Tagesgrenzen)
+  const from = parseDateFlexible(offer?.validDates?.from);
+  const to   = parseDateFlexible(offer?.validDates?.to);
 
-  // direkt bekannte Felder
-  const direct = [offer?.provider, offer?.providerId, offer?.provider_id, offer?.user, offer?.owner, offer?.createdBy, offer?.created_by];
-  direct.forEach((v) => { if (typeof v === "string" && v) candidates.add(v); });
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-  // eingebetteter Provider
-  if (offer?.provider && typeof offer.provider === "object") {
-    const p = offer.provider;
-    if (p._id) candidates.add(String(p._id));
-    if (p.id) candidates.add(String(p.id));
-    if (p.user) candidates.add(String(p.user));
+  if (from) {
+    const fromStart = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0, 0);
+    if (todayEnd < fromStart) return false; // noch zu früh
+  }
+  if (to) {
+    const toEnd = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
+    if (todayStart > toEnd) return false; // bereits vorbei
   }
 
-  // manche APIs liefern { provider: { _id: "..."} } ODER { user: { _id: "..." } }
-  const maybeNested = [offer?.user, offer?.owner, offer?.createdBy];
-  maybeNested.forEach((obj) => {
-    if (obj && typeof obj === "object") {
-      if (obj._id) candidates.add(String(obj._id));
-      if (obj.id) candidates.add(String(obj.id));
-    }
-  });
+  // 2) Wochentag
+  const validDays = Array.isArray(offer?.validDays) ? offer.validDays : [];
+  if (validDays.length > 0) {
+    const todayName = WEEKDAYS_EN[now.getDay()];
+    if (!validDays.includes(todayName)) return false;
+  }
 
-  // nur plausible 24-hex Strings zulassen
-  return [...candidates].filter(isObjectIdString);
-};
+  // 3) Tageszeitfenster (standard: 00:00–23:59)
+  const { h: sh, m: sm, s: ss } = parseTimeHM(offer?.validTimes?.start, { h: 0, m: 0, s: 0 });
+  const { h: eh, m: em, s: es } = parseTimeHM(offer?.validTimes?.end,   { h: 23, m: 59, s: 59 });
 
-// Provider sowohl unter Provider-_id als auch unter user-ID indexieren
-const indexProviderIntoMap = (map, p) => {
-  if (!p || typeof p !== "object") return;
-  const pid = p._id || p.id;
-  if (pid) map[String(pid)] = p;
-  const userId = p.user;
-  if (userId) map[String(userId)] = p;
-};
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sh, sm, ss, 0);
+  const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), eh, em, es, 999);
 
-const normalizeProviderResponse = (raw) => {
-  if (!raw) return null;
-  if (raw._id || raw.id || raw.name) return raw;
-  if (raw.provider && (raw.provider._id || raw.provider.name)) return raw.provider;
-  if (raw.data && (raw.data._id || raw.data.name)) return raw.data;
-  if (Array.isArray(raw) && raw.length && (raw[0]?._id || raw[0]?.name)) return raw[0];
-  return raw;
+  return now >= start && now <= end;
 };
 
 export default function AdminOffersMap() {
   const [offers, setOffers] = useState([]);
-  const [providersById, setProvidersById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -122,85 +116,21 @@ export default function AdminOffersMap() {
 
   useEffect(() => {
     let mounted = true;
-
-    const buildMapFromArray = (arr) => {
-      const map = {};
-      for (const p of Array.isArray(arr) ? arr : []) indexProviderIntoMap(map, p);
-      return map;
-    };
-
-    async function fetchProvidersBatch(ids) {
-      try {
-        const r = await axiosInstance.get("/providers", { params: { ids: ids.join(",") } });
-        const data = r?.data;
-        if (Array.isArray(data)) return buildMapFromArray(data);
-        const normalized = normalizeProviderResponse(data);
-        if (Array.isArray(normalized)) return buildMapFromArray(normalized);
-      } catch {}
-
-      try {
-        const rAll = await axiosInstance.get("/providers");
-        const dataAll = rAll?.data;
-        if (Array.isArray(dataAll)) return buildMapFromArray(dataAll);
-      } catch {}
-
-      const perId = {};
-      await Promise.all(ids.map(async (pid) => {
-        try {
-          const r1 = await axiosInstance.get(`/providers/${pid}`);
-          const p1 = normalizeProviderResponse(r1?.data);
-          if (p1) { indexProviderIntoMap(perId, p1); return; }
-        } catch {}
-        try {
-          const r2 = await axiosInstance.get(`/provider/${pid}`);
-          const p2 = normalizeProviderResponse(r2?.data);
-          if (p2) { indexProviderIntoMap(perId, p2); return; }
-        } catch { perId[String(pid)] = null; }
-      }));
-      return perId;
-    }
-
-    async function load() {
+    (async () => {
       try {
         setLoading(true);
         setError("");
-
-        const offersRes = await axiosInstance.get("/offers");
-        const offersData = Array.isArray(offersRes.data) ? offersRes.data : [];
+        // nur noch Offers inkl. embedded provider laden
+        const res = await axiosInstance.get("/offers", { params: { withProvider: 1 } });
         if (!mounted) return;
-        setOffers(offersData);
-
-        // Kandidaten-IDs aus ALLEN Offers einsammeln
-        const ids = new Set();
-        const embedded = {};
-        for (const o of offersData) {
-          // embedded provider direkt eintragen
-          if (providerIsEmbedded(o?.provider)) indexProviderIntoMap(embedded, o.provider);
-
-          // IDs sammeln (egal aus welchem Feld)
-          for (const id of collectProviderCandidateIds(o)) ids.add(id);
-        }
-
-        const fetched = ids.size ? await fetchProvidersBatch(Array.from(ids)) : {};
-        if (!mounted) return;
-
-        const finalMap = { ...embedded, ...fetched };
-        setProvidersById(finalMap);
-
-        // DEBUG — zeigt dir exakt was passiert
-        console.debug("🌐 axios base:", axiosInstance.defaults.baseURL);
-        console.debug("📊 offers:", offersData.length);
-        console.debug("🔎 collected candidate IDs:", Array.from(ids));
-        console.debug("🗺️ providersById keys:", Object.keys(finalMap));
+        setOffers(Array.isArray(res.data) ? res.data : []);
       } catch (e) {
         console.error(e);
-        setError("Fehler beim Laden der Angebote/Anbieter.");
+        setError("Fehler beim Laden der Angebote.");
       } finally {
         if (mounted) setLoading(false);
       }
-    }
-
-    load();
+    })();
     return () => { mounted = false; };
   }, []);
 
@@ -234,19 +164,7 @@ export default function AdminOffersMap() {
 
   if (loadError) return <div className="p-4 text-red-600">Fehler beim Laden der Karte.</div>;
 
-  const todayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
-  const resolveProviderForOffer = (o) => {
-    // 1) eingebettet
-    if (providerIsEmbedded(o?.provider)) return o.provider;
-
-    // 2) beliebige Kandidaten-IDs gegeneinander prüfen
-    const candidates = collectProviderCandidateIds(o);
-    for (const id of candidates) {
-      const hit = providersById[String(id)];
-      if (hit) return hit;
-    }
-    return null;
-  };
+  const getProviderForOffer = (o) => (o && typeof o.provider === "object" ? o.provider : null);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -268,7 +186,7 @@ export default function AdminOffersMap() {
             {selectedOfferId && (() => {
               const sel = markers.find((m) => m.offer._id === selectedOfferId);
               if (!sel) return null;
-              const provider = resolveProviderForOffer(sel.offer);
+              const provider = getProviderForOffer(sel.offer);
               return (
                 <InfoWindowF position={sel.latLng} onCloseClick={() => setSelectedOfferId(null)}>
                   <div className="text-sm">
@@ -304,30 +222,25 @@ export default function AdminOffersMap() {
           </thead>
           <tbody>
             {offers.map((o) => {
-              const provider = resolveProviderForOffer(o);
+              const provider = getProviderForOffer(o);
               const remaining = computeRemainingDHMS(o);
-              const todayValid = Array.isArray(o.validDays) && o.validDays.length > 0
-                ? o.validDays.includes(todayName)
-                : true;
+              const activeNow = isOfferActiveNow(o);
 
               return (
                 <tr key={o._id} data-offer-row={o._id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => onMarkerClick(o._id)}>
-                  <td className="px-4 py-2">
-                    {provider?.name || (
-                      <span className="text-gray-500">
-                        {String(o?.provider || o?.providerId || o?.user || "—")}
-                        <span className="ml-2 text-[10px] px-1 py-0.5 rounded bg-gray-100 align-middle">loading</span>
-                      </span>
-                    )}
-                  </td>
+                  <td className="px-4 py-2">{provider?.name || "—"}</td>
                   <td className="px-4 py-2">{o.name || "—"}</td>
                   <td className="px-4 py-2">{o.category || "—"}</td>
                   <td className="px-4 py-2">{o.subcategory || "—"}</td>
-                  <td className="px-4 py-2">{fmtDate(o?.validDates?.from)} {fmtTime(o?.validTimes?.start)}</td>
-                  <td className="px-4 py-2">{fmtDate(o?.validDates?.to)} {fmtTime(o?.validTimes?.end)}</td>
+                  <td className="px-4 py-2">
+                    {fmtDate(o?.validDates?.from)} {fmtTime(o?.validTimes?.start)}
+                  </td>
+                  <td className="px-4 py-2">
+                    {fmtDate(o?.validDates?.to)} {fmtTime(o?.validTimes?.end)}
+                  </td>
                   <td className="px-4 py-2">{remaining}</td>
                   <td className="px-4 py-2">
-                    {todayValid
+                    {activeNow
                       ? <span className="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">heute gültig</span>
                       : <span className="inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-700">heute nicht gültig</span>}
                   </td>
