@@ -6,7 +6,7 @@ import AddProviderForm from './components/AddProviderForm';
 import AddOfferForm from './components/AddOfferForm';
 import EditOfferForm from './components/EditOfferForm';
 import ProviderDashboard from './components/ProviderDashboard';
-
+import Pitch from "./pages/Pitch";
 import Register from './pages/Register';
 import Login from './pages/Login';
 import LandingPage from './pages/LandingPage';
@@ -32,6 +32,7 @@ const App = () => {
         <Route path="/dashboard/:providerId" element={<ProviderDashboard />} />
         <Route path="/admin/categories" element={<AdminCategoryPage />} />
         <Route path="/admin/offers" element={<AdminOffersMap />} />
+        <Route path="/pitch" element={<Pitch />} />
         <Route path="*" element={<p className="p-8 text-center text-red-500">404 – Seite nicht gefunden</p>} />
       </Routes>
     </Router>
