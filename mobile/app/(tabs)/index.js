@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import colors from '../../theme/colors';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-// ---------- Helpers -----------------------------------------------------------
+/* ───────────────────────── Helpers ───────────────────────── */
 
 function withTimeout(promise, ms, label = 'operation') {
   let timer;
@@ -31,104 +31,127 @@ function withTimeout(promise, ms, label = 'operation') {
   ]).finally(() => clearTimeout(timer));
 }
 
-function getDistanceMeters(lat1, lng1, lat2, lng2) {
-  const toRad = (x) => x * Math.PI / 180;
-  const R = 6371e3;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+const api = axios.create({ baseURL: API_URL, timeout: 12000 });
 
-// EN/DE Wochentage akzeptieren
-const WEEKDAY_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const WEEKDAY_DE = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
-function normalizeDays(arr) {
-  if (!Array.isArray(arr)) return [];
-  return arr.map((d) => {
-    const iDe = WEEKDAY_DE.indexOf(d);
-    return iDe >= 0 ? WEEKDAY_EN[iDe] : d;
-  });
-}
-
-function isOfferValidNow(offer) {
-  const now = new Date();
-  const weekdayNow = WEEKDAY_EN[now.getDay()];
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-
-  const validDays = normalizeDays(offer.validDays || []);
-  if (validDays.length && !validDays.includes(weekdayNow)) return false;
-
-  if (offer.validTimes?.start && offer.validTimes?.end) {
-    const nowMinutes = hours * 60 + minutes;
-    const [fromH, fromM] = String(offer.validTimes.start).split(':').map(Number);
-    const [toH, toM] = String(offer.validTimes.end).split(':').map(Number);
-    const fromMinutes = (fromH || 0) * 60 + (fromM || 0);
-    const toMinutes = (toH || 0) * 60 + (toM || 0);
-    if (!(nowMinutes >= fromMinutes && nowMinutes <= toMinutes)) return false;
+function groupByCategory(list) {
+  const m = {};
+  for (const o of list) {
+    const cat = o.category || 'Andere';
+    if (!m[cat]) m[cat] = [];
+    m[cat].push(o);
   }
-
-  if (offer.validDates?.from && offer.validDates?.to) {
-    const nowDate = now.toISOString().slice(0, 10);
-    const fromDate = String(offer.validDates.from).slice(0, 10);
-    const toDate = String(offer.validDates.to).slice(0, 10);
-    if (!(nowDate >= fromDate && nowDate <= toDate)) return false;
-  }
-  return true;
+  return m;
 }
 
-function shallowOffersEqual(a, b) {
-  if (a === b) return true;
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i]?._id !== b[i]?._id || a[i]?.__distanceM !== b[i]?.__distanceM) return false;
-  }
-  return true;
+/* ───────────────────────── Skeletons ─────────────────────── */
+
+function SkeletonCard() {
+  return (
+    <View style={[styles.card, { overflow: 'hidden' }]}>
+      <View style={[styles.skel, { width: 80, height: 12, marginBottom: 8 }]} />
+      <View style={[styles.skel, { width: 160, height: 16, marginBottom: 8 }]} />
+      <View style={[styles.skel, { width: 200, height: 12, marginBottom: 10 }]} />
+      <View style={{ flexDirection: 'row', marginTop: 6 }}>
+        <View style={styles.skelImg} />
+        <View style={styles.skelImg} />
+        <View style={styles.skelImg} />
+      </View>
+    </View>
+  );
 }
 
-// ---------- API Client --------------------------------------------------------
+function SkeletonSection({ titleWidth = 140 }) {
+  return (
+    <View style={styles.categoryBlock}>
+      <View style={[styles.skel, { width: titleWidth, height: 20, marginBottom: 10 }]} />
+      <FlatList
+        data={[1, 2, 3, 4]}
+        keyExtractor={(i) => `skel-${i}`}
+        renderItem={() => <SkeletonCard />}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.horizontalList}
+        style={{ marginBottom: 26 }}
+      />
+    </View>
+  );
+}
 
-const apiBase = axios.create({ baseURL: API_URL, timeout: 8000 });
-
-// ---------- Screen ------------------------------------------------------------
+/* ───────────────────────── Screen ───────────────────────── */
 
 export default function HomeTab() {
-  const router = useRouter();
+  const router = useRouter(); // <-- EINMAL hier
 
+  // Data
   const [offers, setOffers] = useState([]);
   const [grouped, setGrouped] = useState({});
+  // Paging
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [hasMore, setHasMore] = useState(false);
+  // Loading
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Error/Info
   const [err, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // Refs
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
   const abortRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const lastFocusAtRef = useRef(0);
   const appState = useRef(AppState.currentState);
+  const lastQueryRef = useRef({ lat: null, lng: null, interestsCSV: '' });
 
-  const groupByCategory = useCallback((list) => {
-    const m = {};
-    for (const o of list) {
-      const cat = o.category || 'Andere';
-      if (!m[cat]) m[cat] = [];
-      m[cat].push(o);
-    }
-    return m;
+  const interestsCSVFromStorage = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem('userInterests');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr) && arr.length) {
+        return arr.join(',');
+      }
+    } catch {}
+    return '';
   }, []);
 
-  const fetchAndSetOffers = useCallback(
-    async (mode = 'auto') => {
-      // mode: 'initial' | 'pull' | 'auto'
-      if (inFlightRef.current) return; // Entprellen
+  const getLocation = useCallback(async () => {
+    const { status } = await withTimeout(
+      Location.requestForegroundPermissionsAsync(),
+      5000,
+      'location permission'
+    );
+    if (status !== 'granted') throw new Error('Location permission denied');
+
+    let pos = await Location.getLastKnownPositionAsync();
+    if (!pos) {
+      pos = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        7000,
+        'getCurrentPosition'
+      );
+    }
+    return {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+    };
+  }, []);
+
+  const fetchPage = useCallback(
+    async ({ pageToLoad = 1, mode = 'initial' } = {}) => {
+      if (inFlightRef.current) return;
       inFlightRef.current = true;
+
+      // Abort vorheriger Request
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {}
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       if (mode === 'initial') {
         setInitialLoading(true);
@@ -138,147 +161,143 @@ export default function HomeTab() {
         setRefreshing(true);
         setError(null);
       }
-
-      // Vorherige Requests abbrechen
-      if (abortRef.current) {
-        try { abortRef.current.abort(); } catch {}
+      if (mode === 'more') {
+        setLoadingMore(true);
       }
-      const controller = new AbortController();
-      abortRef.current = controller;
 
       try {
-        // API Request sofort (parallel zur Location)
-        const reqPromise = apiBase.get('/offers', {
-          params: { withProvider: 1 },
-          signal: controller.signal,
-        });
+        // 1) Interests + Location parallel ermitteln
+        const [interestsCSV, loc] = await Promise.all([
+          interestsCSVFromStorage(),
+          getLocation(),
+        ]);
 
-        // Permissions (mit Timeout) + Location (lastKnown -> ggf. fresh)
-        const { status } = await withTimeout(
-          Location.requestForegroundPermissionsAsync(),
-          5000,
-          'location permission'
+        // 2) Request auf neue GET /offers mit Geo/Pagination
+        const params = {
+          lat: loc.lat,
+          lng: loc.lng,
+          maxDistanceM: 1500,                 // anpassbar
+          activeNow: 1,
+          withProvider: 1,
+          page: pageToLoad,
+          limit,
+          // Schlanke Felder (distance kommt vom Server, falls geo)
+          fields: '_id,name,description,category,subcategory,location,images,provider,distance',
+        };
+        if (interestsCSV) params.interests = interestsCSV;
+
+        // Perf: Zeit messen
+        const t0 = performance.now();
+        const res = await api.get('/offers', { params, signal: controller.signal });
+        const t1 = performance.now();
+
+        const payload = res?.data || {};
+        const newData = Array.isArray(payload.data) ? payload.data : [];
+        const serverHasMore = !!payload.hasMore;
+
+        // 3) State aktualisieren
+        if (!mountedRef.current) return;
+
+        setLastUpdated(new Date());
+        setHasMore(serverHasMore);
+        setPage(pageToLoad);
+
+        // Ersetzen vs. Anhängen
+        if (pageToLoad === 1) {
+          setOffers(newData);
+          setGrouped(groupByCategory(newData));
+        } else {
+          const merged = [...offers, ...newData];
+          setOffers(merged);
+          setGrouped(groupByCategory(merged));
+        }
+
+        // Cache letzte Query (für spätere Vergleiche/Debug)
+        lastQueryRef.current = { lat: loc.lat, lng: loc.lng, interestsCSV };
+
+        // Perf Logs
+        const netMs = (t1 - t0).toFixed(0);
+        console.log(
+          `[HomeTab] GET /offers p=${pageToLoad} n=${newData.length} hasMore=${serverHasMore} ` +
+          `net=${netMs}ms took=${payload.tookMs ?? '—'}ms`
         );
-        if (status !== 'granted') throw new Error('Location permission denied');
-
-        let pos = await Location.getLastKnownPositionAsync();
-        if (!pos) {
-          pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            6000,
-            'getCurrentPosition'
-          );
-        }
-        const { latitude: lat, longitude: lng } = pos.coords;
-
-        // Interessen lesen
-        let interests = [];
-        try {
-          const raw = await AsyncStorage.getItem('userInterests');
-          interests = raw ? JSON.parse(raw) : [];
-        } catch {}
-
-        // Serverantwort holen
-        const res = await withTimeout(reqPromise, 8000, 'offers request');
-        const all = Array.isArray(res.data) ? res.data : [];
-
-        // Filtern
-        const filtered = all
-          .map((o) => {
-            const coords = o?.location?.coordinates;
-            if (!coords || coords.length < 2) return null;
-            const [lngO, latO] = coords;
-            const dist = getDistanceMeters(lat, lng, latO, lngO);
-            const radiusM = Number(o.radius) || 0;
-            if (Array.isArray(interests) && interests.length > 0) {
-              if (o.subcategory && !interests.includes(o.subcategory)) return null;
-            }
-            if (!isOfferValidNow(o)) return null;
-            if (radiusM > 0 && dist > radiusM) return null;
-            return { ...o, __distanceM: Math.round(dist) };
-          })
-          .filter(Boolean)
-          .sort((a, b) => (a.__distanceM || 0) - (b.__distanceM || 0));
-
-        // Nur updaten, wenn sich was geändert hat
-        if (mountedRef.current) {
-          setError(null);
-          setLastUpdated(new Date());
-          if (!shallowOffersEqual(filtered, offers)) {
-            setOffers(filtered);
-            setGrouped(groupByCategory(filtered));
-          }
-        }
       } catch (e) {
         if (mountedRef.current) {
-          setError(
-            e?.message?.includes('timeout')
-              ? 'Zeitüberschreitung – bitte erneut versuchen.'
-              : 'Fehler beim Laden der Angebote.'
-          );
-          console.warn('[OffersTab] fetch failed:', e?.message || e);
+          const msg = e?.message?.includes('timeout')
+            ? 'Zeitüberschreitung – bitte erneut versuchen.'
+            : 'Fehler beim Laden der Angebote.';
+          setError(msg);
+          console.warn('[HomeTab] fetch error:', e?.message || e);
         }
       } finally {
         inFlightRef.current = false;
-        if (mountedRef.current) {
-          if (mode === 'initial') setInitialLoading(false);
-          if (mode === 'pull') setRefreshing(false);
-        }
+        if (!mountedRef.current) return;
+        if (mode === 'initial') setInitialLoading(false);
+        if (mode === 'pull') setRefreshing(false);
+        if (mode === 'more') setLoadingMore(false);
       }
     },
-    [groupByCategory, offers]
+    [limit, interestsCSVFromStorage, getLocation, offers]
   );
 
-  // Initial
+  /* Initial load */
   useEffect(() => {
     mountedRef.current = true;
-    fetchAndSetOffers('initial');
+    fetchPage({ pageToLoad: 1, mode: 'initial' });
     return () => {
       mountedRef.current = false;
       if (abortRef.current) try { abortRef.current.abort(); } catch {}
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
-  }, [fetchAndSetOffers]);
+  }, [fetchPage]);
 
-  // Pull-to-Refresh
+  /* Pull-to-Refresh */
   const onRefresh = useCallback(() => {
-    fetchAndSetOffers('pull');
-  }, [fetchAndSetOffers]);
+    fetchPage({ pageToLoad: 1, mode: 'pull' });
+  }, [fetchPage]);
 
-  // Auto-Refresh: App kommt in den Vordergrund (debounced) + Intervall
+  /* Auto-Refresh: App wieder im Vordergrund + Intervall */
   useEffect(() => {
     const handleAppState = (next) => {
       const prev = appState.current;
       appState.current = next;
       if (prev?.match(/inactive|background/) && next === 'active') {
         const now = Date.now();
-        if (now - lastFocusAtRef.current > 5000) { // 5s Debounce
+        if (now - lastFocusAtRef.current > 5000) {
           lastFocusAtRef.current = now;
-          fetchAndSetOffers('auto');
+          fetchPage({ pageToLoad: 1, mode: 'auto' });
         }
       }
     };
     const sub = AppState.addEventListener('change', handleAppState);
 
     refreshTimerRef.current = setInterval(() => {
-      fetchAndSetOffers('auto');
-    }, 180000); // 3 min
+      fetchPage({ pageToLoad: 1, mode: 'auto' });
+    }, 180000); // alle 3 Minuten
 
     return () => {
       sub.remove();
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
-  }, [fetchAndSetOffers]);
+  }, [fetchPage]);
 
-  // ---------- UI -------------------------------------------------------------
+  /* UI */
 
-  const OfferCard = ({ item }) => {
-    const distance = typeof item.__distanceM === 'number' ? `${item.__distanceM} m entfernt` : '';
+  const OfferCard = useCallback(({ item }) => {
+    const distance =
+      typeof item.distance === 'number'
+        ? (item.distance < 1000 ? `${Math.round(item.distance)} m` : `${(item.distance / 1000).toFixed(1)} km`)
+        : '';
+
     return (
       <TouchableOpacity style={styles.card} onPress={() => router.push(`/offers/${item._id}`)}>
-        <Text style={styles.distanceText}>{distance}</Text>
+        {!!distance && <Text style={styles.distanceText}>{distance} entfernt</Text>}
         <Text style={styles.title}>{item.name}</Text>
-        <Text style={styles.desc} numberOfLines={3}>{item.description}</Text>
+        {!!item.description && (
+          <Text style={styles.desc} numberOfLines={3}>
+            {item.description}
+          </Text>
+        )}
         <View style={styles.imagesRow}>
           {(item.images || []).slice(0, 3).map((src, i) =>
             src ? (
@@ -290,12 +309,18 @@ export default function HomeTab() {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [router]);
+
+  const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
 
   if (initialLoading) {
     return (
-      <View style={styles.containerCenter}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.categoryContainer}>
+          <SkeletonSection titleWidth={140} />
+          <SkeletonSection titleWidth={120} />
+          <SkeletonSection titleWidth={160} />
+        </ScrollView>
       </View>
     );
   }
@@ -305,8 +330,9 @@ export default function HomeTab() {
       <View style={styles.containerCenter}>
         <Text style={styles.error}>{err}</Text>
         <TouchableOpacity
-          onPress={() => fetchAndSetOffers('pull')}
+          onPress={() => fetchPage({ pageToLoad: 1, mode: 'pull' })}
           style={[styles.card, { marginTop: 16, paddingVertical: 12, width: 220, alignItems: 'center' }]}
+          activeOpacity={0.9}
         >
           <Text style={{ color: colors.primary, fontWeight: '700' }}>Erneut versuchen</Text>
         </TouchableOpacity>
@@ -316,24 +342,18 @@ export default function HomeTab() {
 
   return (
     <View style={styles.container}>
-      {offers.length === 0 ? (
-        <ScrollView
-          contentContainerStyle={[styles.categoryContainer, { flexGrow: 1, justifyContent: 'center', alignItems: 'center' }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
+      <ScrollView
+        contentContainerStyle={styles.categoryContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {lastUpdated && (
+          <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>
+        )}
+
+        {groupedEntries.length === 0 ? (
           <Text style={styles.empty}>Zurzeit leider keine passenden Angebote in deiner Nähe!</Text>
-        </ScrollView>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.categoryContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {lastUpdated && (
-            <Text style={styles.updatedHint}>
-              Aktualisiert: {lastUpdated.toLocaleTimeString()}
-            </Text>
-          )}
-          {Object.entries(grouped).map(([category, catOffers]) => (
+        ) : (
+          groupedEntries.map(([category, catOffers]) => (
             <View key={category} style={styles.categoryBlock}>
               <Text style={styles.categoryTitle}>{category}</Text>
               <FlatList
@@ -346,14 +366,31 @@ export default function HomeTab() {
                 style={{ marginBottom: 26 }}
               />
             </View>
-          ))}
-        </ScrollView>
-      )}
+          ))
+        )}
+
+        {/* Pagination Footer */}
+        {hasMore && (
+          <View style={{ alignItems: 'center', marginTop: 4 }}>
+            {loadingMore ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => fetchPage({ pageToLoad: page + 1, mode: 'more' })}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.loadMoreText}>Mehr laden</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
-// ---------- Styles ------------------------------------------------------------
+/* ───────────────────────── Styles ───────────────────────── */
 
 const IMAGE_WIDTH = 90;
 const IMAGE_HEIGHT = 70;
@@ -388,10 +425,55 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: 'bold', color: colors.primary, marginBottom: 6 },
   desc: { fontSize: 15, color: '#555', marginBottom: 8 },
 
-  imagesRow: { flexDirection: 'row', marginTop: 10, justifyContent: 'flex-start', alignItems: 'center', minHeight: IMAGE_HEIGHT },
-  offerImage: { width: IMAGE_WIDTH, height: IMAGE_HEIGHT, borderRadius: 8, backgroundColor: '#eee', marginRight: IMAGE_MARGIN },
-  offerImagePlaceholder: { width: IMAGE_WIDTH, height: IMAGE_HEIGHT, borderRadius: 8, backgroundColor: '#e0e0e0', marginRight: IMAGE_MARGIN, opacity: 0.35 },
+  imagesRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    minHeight: IMAGE_HEIGHT,
+  },
+  offerImage: {
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: '#eee',
+    marginRight: IMAGE_MARGIN,
+  },
+  offerImagePlaceholder: {
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: '#e0e0e0',
+    marginRight: IMAGE_MARGIN,
+    opacity: 0.35,
+  },
+
+  /* Skeleton */
+  skel: {
+    backgroundColor: '#e9eef5',
+    borderRadius: 8,
+  },
+  skelImg: {
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: '#e9eef5',
+    marginRight: IMAGE_MARGIN,
+  },
+
+  /* Footer */
+  loadMoreBtn: {
+    marginTop: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#eef2ff',
+  },
+  loadMoreText: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
 
   error: { color: 'red', marginTop: 30, textAlign: 'center' },
-  empty: { color: '#999', marginTop: 50, textAlign: 'center', fontSize: 17 },
+  empty: { color: '#999', marginTop: 20, textAlign: 'center', fontSize: 16 },
 });

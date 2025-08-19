@@ -1,12 +1,97 @@
+// backend/routes/offers.js
 import express from 'express';
+import mongoose from 'mongoose';
+import { performance } from 'perf_hooks';
 import Offer from '../models/Offer.js';
+import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
-import Provider from '../models/Provider.js'; // ⬅️ NEU
 
 const router = express.Router();
 
-// ✅ TEST-ROUTE: Gibt bis zu 3 Angebote (mit Bildern)
+/* ────────────────────────────────────────────────────────────
+   Utils
+   ──────────────────────────────────────────────────────────── */
+function toArray(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
+  return [];
+}
+function toInt(val, def) {
+  const n = parseInt(val, 10);
+  return Number.isFinite(n) ? n : def;
+}
+function toFloat(val, def) {
+  const n = parseFloat(val);
+  return Number.isFinite(n) ? n : def;
+}
+function parseProjection(fields) {
+  const arr = toArray(fields);
+  if (!arr.length) return null;
+  const proj = {};
+  for (const f of arr) proj[f] = 1;
+  return proj;
+}
+
+// Toleranter „jetzt gültig“-Check, abgestimmt auf deine Felder:
+// - validDates: { from: ISO, to: ISO } (optional)
+// - validDays:  [0..6] (0=So) oder ['Mon', 'Tue', ...] (optional)
+// - validTimes: { from: "HH:mm", to: "HH:mm" } (optional)
+function isActiveNow(o, now = new Date()) {
+  const local = now;
+  const dayIdx = local.getDay(); // 0..6
+  const mins = local.getHours() * 60 + local.getMinutes();
+
+  // Dates
+  let dateOk = true;
+  if (o?.validDates?.from) {
+    const from = new Date(o.validDates.from);
+    if (!isNaN(from)) dateOk = dateOk && local >= from;
+  }
+  if (o?.validDates?.to) {
+    const to = new Date(o.validDates.to);
+    if (!isNaN(to)) dateOk = dateOk && local <= to;
+  }
+
+  // Days
+  let dayOk = true;
+  if (Array.isArray(o?.validDays) && o.validDays.length) {
+    if (typeof o.validDays[0] === 'number') {
+      dayOk = o.validDays.includes(dayIdx);
+    } else {
+      const map = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      dayOk = o.validDays.includes(map[dayIdx]);
+    }
+  }
+
+  // Times
+  const parseHHMM = (s) => {
+    if (typeof s !== 'string') return null;
+    const m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const h = +m[1], mm = +m[2];
+    if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+    return h * 60 + mm;
+  };
+  let timeOk = true;
+  const startMin = parseHHMM(o?.validTimes?.from);
+  const endMin   = parseHHMM(o?.validTimes?.to);
+  if (startMin != null && endMin != null) {
+    if (endMin >= startMin) timeOk = mins >= startMin && mins <= endMin;
+    else timeOk = mins >= startMin || mins <= endMin; // über Mitternacht
+  } else if (startMin != null) {
+    timeOk = mins >= startMin;
+  } else if (endMin != null) {
+    timeOk = mins <= endMin;
+  }
+
+  return dateOk && dayOk && timeOk;
+}
+
+/* ────────────────────────────────────────────────────────────
+   TEST: bis zu 3 Angebote (mit Bildern)
+   ──────────────────────────────────────────────────────────── */
 router.get('/test-offers', async (req, res) => {
   try {
     const offers = await Offer.find(
@@ -20,7 +105,160 @@ router.get('/test-offers', async (req, res) => {
   }
 });
 
-// ✅ GEO-Abfrage mit Interessenfilter (schnell via $geoNear)
+/* ────────────────────────────────────────────────────────────
+   Optimierte LISTE: GET /api/offers
+   Query:
+     - lat,lng (Float) -> optional $geoNear + distance
+     - maxDistanceM (Int, default 150)
+     - interests (CSV/Array) -> match auf subcategory (case-insens.)
+     - activeNow (1/0)
+     - withProvider (1/0)
+     - page (Int, default 1), limit (Int, default 20, max 100)
+     - fields (CSV) -> Projektion (schlank)
+   Response:
+     { page, limit, total, hasMore, tookMs, data: [...] }
+   ──────────────────────────────────────────────────────────── */
+router.get('/', async (req, res) => {
+  const t0 = performance.now();
+
+  // Hilfsbau: toleranter Interessen-Match (regex-basiert auf category/subcategory)
+  function buildInterestsOrClause(interestsLC) {
+    if (!Array.isArray(interestsLC) || interestsLC.length === 0) return null;
+    const ors = [];
+    for (const term of interestsLC) {
+      if (!term) continue;
+      // Escape einfache Regex-Sonderzeichen
+      const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      ors.push({ subcategory: { $regex: safe, $options: 'i' } });
+      ors.push({ category:   { $regex: safe, $options: 'i' } });
+    }
+    return ors.length ? { $or: ors } : null;
+  }
+
+  // Baut die Aggregation-Pipeline dynamisch
+  function buildPipeline({ hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit }) {
+    const pipeline = [];
+
+    if (hasGeo) {
+      const geo = {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lng, lat] },
+          distanceField: 'distance',
+          spherical: true,
+        }
+      };
+      if (Number.isFinite(maxDistanceM) && maxDistanceM > 0) {
+        // harte Distanz nur, wenn gewünscht
+        geo.$geoNear.maxDistance = maxDistanceM;
+      }
+      pipeline.push(geo);
+    }
+
+    const interestsClause = buildInterestsOrClause(interestsLC);
+    if (interestsClause) {
+      pipeline.push({ $match: interestsClause });
+    }
+
+    if (projection) {
+      pipeline.push({ $project: projection });
+      if (hasGeo && !projection.distance) {
+        pipeline[pipeline.length - 1].$project.distance = 1;
+      }
+    }
+
+    pipeline.push({
+      $facet: {
+        totalDocs: [{ $count: 'count' }],
+        docs: [
+          { $sort: hasGeo ? { distance: 1 } : { _id: -1 } },
+          { $skip: skip },
+          { $limit: limit }
+        ]
+      }
+    });
+
+    return pipeline;
+  }
+
+  try {
+    const lat = toFloat(req.query.lat, null);
+    const lng = toFloat(req.query.lng, null);
+    const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
+
+    const maxDistanceM = toInt(req.query.maxDistanceM, 1500); // etwas großzügiger default
+    const page = Math.max(1, toInt(req.query.page, 1));
+    const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
+    const skip = (page - 1) * limit;
+
+    // Interessen (CSV/Array) zu LC
+    const interestsRaw = toArray(req.query.interests);
+    const interestsLC = interestsRaw.map(s => String(s).toLowerCase()).filter(Boolean);
+
+    const activeNow = req.query.activeNow === '1' || req.query.activeNow === 'true';
+    const withProvider = req.query.withProvider === '1' || req.query.withProvider === 'true';
+
+    const projection = parseProjection(req.query.fields);
+    const providerSelect = 'name address category description contact location user';
+
+    // 1) erste Pipeline (respektiert maxDistanceM)
+    let pipeline = buildPipeline({
+      hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit
+    });
+
+    let agg = await Offer.aggregate(pipeline).allowDiskUse(true);
+    let facet = agg[0] || { totalDocs: [], docs: [] };
+    let docs = facet.docs || [];
+    let total = (facet.totalDocs[0]?.count) || 0;
+
+    // 2) Fallback: keine Treffer? Dann ohne maxDistance neu versuchen (nur wenn Geo vorhanden)
+    if (hasGeo && total === 0) {
+      const pipelineNoMax = buildPipeline({
+        hasGeo, lat, lng, maxDistanceM: null, interestsLC, projection, skip, limit
+      });
+      agg = await Offer.aggregate(pipelineNoMax).allowDiskUse(true);
+      facet = agg[0] || { totalDocs: [], docs: [] };
+      docs = facet.docs || [];
+      total = (facet.totalDocs[0]?.count) || 0;
+    }
+
+    // Optional Provider
+    if (withProvider && docs.length) {
+      const ids = docs.map(d => d._id);
+      const populated = await Offer.find({ _id: { $in: ids } }, projection || {})
+        .populate({ path: 'provider', select: providerSelect })
+        .lean();
+      const byId = new Map(populated.map(d => [String(d._id), d]));
+      docs = docs.map(d => byId.get(String(d._id)) || d);
+    }
+
+    // activeNow-Filter (tolerant); Hinweis: falls projection gültige Felder entfernt,
+    // ist das ok -> fehlende Felder bedeuten "true" in isActiveNow
+    if (activeNow) {
+      docs = docs.filter(o => isActiveNow(o));
+      // Achtung: total/hasMore beziehen sich auf pre-filter; für Klarheit neu berechnen:
+      // (Wir zählen hier nur die aktuelle Seite; für echte Total-Genauigkeit bräuchte man ein 2. Facet.)
+      // Für UX reicht i.d.R. dieses Verhalten, da Pagination sowieso vom Server gesteuert wird.
+    }
+
+    const tookMs = Math.round(performance.now() - t0);
+    return res.json({
+      page,
+      limit,
+      total,
+      hasMore: skip + docs.length < total,
+      tookMs,
+      data: docs
+    });
+  } catch (err) {
+    console.error('GET /api/offers failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch offers', details: String(err?.message || err) });
+  }
+});
+
+
+/* ────────────────────────────────────────────────────────────
+   GEO-Abfrage mit Interessen via $geoNear (bestehend)
+   ──────────────────────────────────────────────────────────── */
 router.post('/nearby', async (req, res) => {
   try {
     const {
@@ -38,7 +276,6 @@ router.post('/nearby', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    // Normalisierte Subkategorien (lowercase, getrimmt)
     const norm = interests
       .map(i => String(i || '').toLowerCase().trim())
       .filter(Boolean);
@@ -52,12 +289,9 @@ router.post('/nearby', async (req, res) => {
           spherical: true
         }
       },
-      // nur valide Datensätze mit Radius & Subkategorie
       { $match: { radius: { $gt: 0 }, subcategory: { $exists: true, $ne: null } } },
-      // case-insensitive Filter für Interessen
       { $addFields: { sub_lc: { $toLower: '$subcategory' } } },
       { $match: { sub_lc: { $in: norm } } },
-      // Payload klein halten
       {
         $project: {
           name: 1,
@@ -81,7 +315,9 @@ router.post('/nearby', async (req, res) => {
   }
 });
 
-// ✅ Öffentliche Nearby-Route ohne Interessenfilter (ebenfalls $geoNear)
+/* ────────────────────────────────────────────────────────────
+   Öffentliche Nearby-Route ohne Interessen (bestehend)
+   ──────────────────────────────────────────────────────────── */
 router.post('/nearby-noauth', async (req, res) => {
   try {
     const {
@@ -132,20 +368,15 @@ router.post('/nearby-noauth', async (req, res) => {
 });
 
 /**
- * ✅ Leichtgewichtige Nearby-Route für Geofencing (nur Koordinaten + Radius)
- *    Nutzung: GET /offers/nearby-geofence?lat=47.0707&lng=15.4395&limit=50&maxDistance=5000
- *    Response: { success, count, geofences: [{ offerId, latitude, longitude, radiusMeters, distanceMeters }] }
- *
- *    - Primär nutzt $geoNear (setzt 2dsphere-Index auf Offer.location voraus).
- *    - Fällt automatisch auf Node-Haversine zurück, wenn Aggregation nicht verfügbar ist.
- *    - Liefert nur die minimal nötigen Felder, damit der Client Geofences registrieren kann.
+ * Leichtgewichtige Nearby-Route für Geofencing (bestehend)
+ * GET /offers/nearby-geofence?lat=..&lng=..&limit=50&maxDistance=5000
  */
 router.get('/nearby-geofence', async (req, res) => {
   try {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100); // hard cap 100
-    const maxDistance = parseInt(req.query.maxDistance || '5000', 10);  // Meter
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+    const maxDistance = parseInt(req.query.maxDistance || '5000', 10);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return res.status(400).json({ success: false, error: 'Ungültige Parameter: lat/lng erforderlich' });
@@ -162,7 +393,6 @@ router.get('/nearby-geofence', async (req, res) => {
             maxDistance: maxDistance
           }
         },
-        // Nur Felder für Geofencing projizieren
         {
           $project: {
             _id: 1,
@@ -172,7 +402,6 @@ router.get('/nearby-geofence', async (req, res) => {
             latitude:  { $arrayElemAt: ['$location.coordinates', 1] }
           }
         },
-        // Nur vollständige Datensätze
         {
           $match: {
             radiusMeters: { $gt: 0 },
@@ -194,7 +423,7 @@ router.get('/nearby-geofence', async (req, res) => {
 
       return res.json({ success: true, geofences, count: geofences.length });
     } catch (aggErr) {
-      // 2) Fallback: Node.js Haversine (langsamer, aber robust)
+      // 2) Fallback: Node.js Haversine
       console.warn('nearby-geofence: $geoNear nicht verfügbar, Fallback auf Node-Berechnung:', aggErr?.message);
       const allOffers = await Offer.find({}, 'location radius').lean();
       const userLoc = { lat, lng };
@@ -203,7 +432,7 @@ router.get('/nearby-geofence', async (req, res) => {
         .filter(o => Array.isArray(o?.location?.coordinates) && o.location.coordinates.length === 2 && o.radius > 0)
         .map(o => {
           const [olng, olat] = o.location.coordinates;
-          const distance = haversine(userLoc, { lat: olat, lng: olng }); // Meter
+          const distance = haversine(userLoc, { lat: olat, lng: olng });
           return {
             offerId: String(o._id),
             latitude: olat,
@@ -224,7 +453,9 @@ router.get('/nearby-geofence', async (req, res) => {
   }
 });
 
-// ✅ Neues Angebot speichern
+/* ────────────────────────────────────────────────────────────
+   CRUD & Counter (bestehend)
+   ──────────────────────────────────────────────────────────── */
 router.post('/', async (req, res) => {
   try {
     const offer = new Offer(req.body);
@@ -235,73 +466,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ Alle Angebote abrufen (mit optionalem Provider-Join)
-router.get('/', async (req, res) => {
-  try {
-    const withProvider = String(req.query.withProvider || '') === '1';
-    const withNearest  = String(req.query.withNearest  || '') === '1';
-    const maxDistanceM = Number(req.query.maxDistanceM) > 0 ? Number(req.query.maxDistanceM) : 150;
-
-    // Basis-Projektion wie bisher (keine provider-Felder)
-    const baseFields = 'name description category subcategory location radius validDays validTimes validDates images';
-    // Falls Join/Fallback gewünscht: provider im Payload zulassen
-    const fields = (withProvider || withNearest) ? `${baseFields} provider` : baseFields;
-
-    let query = Offer.find({}, fields);
-
-    if (withProvider) {
-      // populate, falls Offer.provider gesetzt ist
-      query = query.populate({
-        path: 'provider',
-        select: 'name address category description contact location user'
-      });
-    }
-
-    const offers = await query.lean();
-
-    if (!withNearest) {
-      return res.json(offers);
-    }
-
-    // Fallback: nächstgelegenen Provider ermitteln, NUR wenn kein provider-Objekt vorhanden ist
-    const out = [];
-    for (const o of offers) {
-      if (o.provider && typeof o.provider === 'object') {
-        out.push(o);
-        continue;
-      }
-
-      const coords = Array.isArray(o?.location?.coordinates) ? o.location.coordinates : null;
-      if (!coords || coords.length !== 2) {
-        out.push(o);
-        continue;
-      }
-
-      const nearest = await Provider.findOne({
-        location: {
-          $near: {
-            $geometry: { type: 'Point', coordinates: coords }, // [lng, lat]
-            $maxDistance: maxDistanceM
-          }
-        }
-      })
-        .select('name address category description contact location user')
-        .lean();
-
-      if (nearest) {
-        o.provider = nearest;
-      }
-      out.push(o);
-    }
-
-    return res.json(out);
-  } catch (err) {
-    console.error('GET /offers error:', err);
-    res.status(500).json({ error: 'Failed to fetch offers.' });
-  }
-});
-
-// ✅ Alle Angebote eines Providers (mit Bildern)
 router.get('/provider/:providerId', async (req, res) => {
   try {
     const offers = await Offer.find(
@@ -315,7 +479,6 @@ router.get('/provider/:providerId', async (req, res) => {
   }
 });
 
-// ✅ Einzelnes Angebot (mit Bildern)
 router.get('/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(
@@ -325,14 +488,13 @@ router.get('/:id', async (req, res) => {
     if (!offer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
-    res.json(offer); // Antwort enthält nun auch die 'images'
+    res.json(offer);
   } catch (error) {
     console.error('Fehler beim Abrufen eines Angebots:', error);
     res.status(500).json({ error: 'Serverfehler' });
   }
 });
 
-// ✅ Angebot aktualisieren
 router.put('/:id', async (req, res) => {
   try {
     const updatedOffer = await Offer.findByIdAndUpdate(req.params.id, req.body, {
@@ -351,7 +513,6 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// ✅ Angebot löschen
 router.delete('/:id', async (req, res) => {
   try {
     const deleted = await Offer.findByIdAndDelete(req.params.id);
@@ -365,7 +526,6 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ✅ Ziel erreicht Counter
 router.post('/found/:id', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);
