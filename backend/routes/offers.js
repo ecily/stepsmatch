@@ -2,6 +2,7 @@ import express from 'express';
 import Offer from '../models/Offer.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
+import Provider from '../models/Provider.js'; // ⬅️ NEU
 
 const router = express.Router();
 
@@ -234,16 +235,69 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ Alle Angebote abrufen (mit Bildern)
+// ✅ Alle Angebote abrufen (mit optionalem Provider-Join)
 router.get('/', async (req, res) => {
   try {
-    const offers = await Offer.find(
-      {},
-      'name description category subcategory location radius validDays validTimes validDates images'
-    );
-    res.json(offers);
+    const withProvider = String(req.query.withProvider || '') === '1';
+    const withNearest  = String(req.query.withNearest  || '') === '1';
+    const maxDistanceM = Number(req.query.maxDistanceM) > 0 ? Number(req.query.maxDistanceM) : 150;
+
+    // Basis-Projektion wie bisher (keine provider-Felder)
+    const baseFields = 'name description category subcategory location radius validDays validTimes validDates images';
+    // Falls Join/Fallback gewünscht: provider im Payload zulassen
+    const fields = (withProvider || withNearest) ? `${baseFields} provider` : baseFields;
+
+    let query = Offer.find({}, fields);
+
+    if (withProvider) {
+      // populate, falls Offer.provider gesetzt ist
+      query = query.populate({
+        path: 'provider',
+        select: 'name address category description contact location user'
+      });
+    }
+
+    const offers = await query.lean();
+
+    if (!withNearest) {
+      return res.json(offers);
+    }
+
+    // Fallback: nächstgelegenen Provider ermitteln, NUR wenn kein provider-Objekt vorhanden ist
+    const out = [];
+    for (const o of offers) {
+      if (o.provider && typeof o.provider === 'object') {
+        out.push(o);
+        continue;
+      }
+
+      const coords = Array.isArray(o?.location?.coordinates) ? o.location.coordinates : null;
+      if (!coords || coords.length !== 2) {
+        out.push(o);
+        continue;
+      }
+
+      const nearest = await Provider.findOne({
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: coords }, // [lng, lat]
+            $maxDistance: maxDistanceM
+          }
+        }
+      })
+        .select('name address category description contact location user')
+        .lean();
+
+      if (nearest) {
+        o.provider = nearest;
+      }
+      out.push(o);
+    }
+
+    return res.json(out);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /offers error:', err);
+    res.status(500).json({ error: 'Failed to fetch offers.' });
   }
 });
 
