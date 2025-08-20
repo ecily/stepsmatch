@@ -1,3 +1,4 @@
+// src/components/AddOfferForm.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axios';
@@ -65,21 +66,13 @@ export default function AddOfferForm() {
     setFormData((prev) => ({ ...prev, provider: resolvedProviderId }));
   }, [resolvedProviderId]);
 
-  // Kategorien laden (Debug-Log bleibt hilfreich)
+  // Kategorien laden
   useEffect(() => {
-    console.log('📡 Starte API-Request zu /categories...');
     axiosInstance
-      .get('/categories')
-      .then((res) => {
-        console.log('✅ /categories Antwort:', res.data);
-        setCategories(Array.isArray(res.data) ? res.data : []);
-      })
+      .get('categories')
+      .then((res) => setCategories(Array.isArray(res.data) ? res.data : []))
       .catch((err) => {
         console.error('❌ Fehler bei /categories:', err.message);
-        if (err.response) {
-          console.error('↪️ Status:', err.response.status);
-          console.error('↪️ Daten:', err.response.data);
-        }
       });
   }, []);
 
@@ -89,36 +82,25 @@ export default function AddOfferForm() {
       setError('Kein Anbieter ausgewählt. Rufe die Seite als /offers/add/:providerId auf.');
       return;
     }
-
-    // In Dev mit StrictMode kann useEffect doppelt feuern – optional entprellen:
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
-    console.log('🔗 Lade Provider:', resolvedProviderId);
     axiosInstance
-      .get(`/providers/${resolvedProviderId}`)
+      .get(`providers/${resolvedProviderId}`)
       .then((res) => {
         const provider = res?.data;
         if (!provider?._id) {
           setError('Anbieter nicht gefunden.');
           return;
         }
-        if (String(provider._id) !== String(resolvedProviderId)) {
-          console.warn('⚠️ Antwort-ID weicht von der angefragten ID ab:', provider._id, 'vs', resolvedProviderId);
-        }
 
         const coords = provider?.location?.coordinates;
-        console.log('🏷️ Provider Name:', provider?.name);
-        console.log('📍 Provider Adresse:', provider?.address);
-        console.log('🔎 Provider raw coordinates (GeoJSON [lng,lat]):', coords);
-
         const ll = geoJsonToLatLng(coords);
         if (!ll) {
           setError('Ungültige Geo-Koordinaten des Anbieters (erwartet GeoJSON [lng, lat]).');
           return;
         }
 
-        console.log('✅ Provider parsed lat/lng:', ll);
         setProviderLocation(ll);
         setProviderMeta({ name: provider?.name, address: provider?.address });
       })
@@ -170,9 +152,7 @@ export default function AddOfferForm() {
         files.map(async (file) => {
           const uploadData = new FormData();
           uploadData.append('image', file);
-          const res = await axiosInstance.post('/uploads', uploadData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
+          const res = await axiosInstance.post('uploads', uploadData);
           return res.data.url;
         })
       );
@@ -180,9 +160,11 @@ export default function AddOfferForm() {
         ...prev,
         images: [...prev.images, ...uploadedUrls],
       }));
+      toast.success('Bilder hochgeladen.');
     } catch (err) {
       console.error('Fehler beim Hochladen:', err);
       setError('Fehler beim Hochladen der Bilder.');
+      toast.error('Fehler beim Hochladen der Bilder.');
     } finally {
       setUploading(false);
     }
@@ -191,14 +173,17 @@ export default function AddOfferForm() {
   const removeImage = async (index) => {
     const imageUrl = formData.images[index];
     try {
-      await axiosInstance.delete('/uploads', { data: { url: imageUrl } });
+      // WICHTIG: kein führender Slash, Methode DELETE mit Body
+      await axiosInstance.delete('uploads', { data: { url: imageUrl } });
       setFormData((prev) => ({
         ...prev,
         images: prev.images.filter((_, i) => i !== index),
       }));
+      toast.success('Bild entfernt.');
     } catch (err) {
       console.error('Fehler beim Löschen des Bildes:', err);
-      toast.error('Fehler beim Löschen des Bildes.');
+      const serverMsg = err?.response?.data?.error || 'Fehler beim Löschen des Bildes.';
+      toast.error(serverMsg);
     }
   };
 
@@ -237,12 +222,13 @@ export default function AddOfferForm() {
     };
 
     try {
-      await axiosInstance.post('/offers', payload);
+      await axiosInstance.post('offers', payload);
       toast.success('✅ Angebot erfolgreich gespeichert!');
       navigate(`/dashboard/${resolvedProviderId}`);
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Fehler beim Speichern');
+      toast.error(err.response?.data?.error || 'Fehler beim Speichern');
     }
   };
 

@@ -67,7 +67,7 @@ function extractPublicIdFromUrl(url) {
 
     const afterUpload = parts.slice(uploadIdx + 1);
 
-    // Transformationen überspringen (Segmente mit Kommas, z. B. "c_fill,w_400")
+    // Transformationen überspringen (Segmente mit Kommas)
     let i = 0;
     while (i < afterUpload.length && /[,]/.test(afterUpload[i])) i++;
 
@@ -92,8 +92,7 @@ function extractPublicIdFromUrl(url) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   DEV: Debug‑Ping (zeigt ob Cloudinary konfiguriert ist)
-   GET /api/uploads/_debug  -> { configured: true/false }
+   DEV: Debug‑Ping
    ───────────────────────────────────────────────────────────── */
 router.get('/_debug', (req, res) => {
   if (process.env.NODE_ENV === 'production') {
@@ -109,15 +108,12 @@ router.get('/_debug', (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────
-   POST /api/uploads
+   POST /api/uploads  (ein einzelnes Bild)
    Body: multipart/form-data  (field: "image")
-   Response: { url: string }
-   Multer-Errors werden sauber beantwortet.
    ───────────────────────────────────────────────────────────── */
 router.post('/', (req, res) => {
   upload.single('image')(req, res, async (err) => {
     if (err) {
-      // Multer-spezifische Fehler (z.B. LIMIT_FILE_SIZE)
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
           return res
@@ -126,7 +122,6 @@ router.post('/', (req, res) => {
         }
         return res.status(400).json({ error: `Upload-Fehler: ${err.code}` });
       }
-      // Allgemeine Filter-/Validierungsfehler
       return res.status(400).json({ error: err.message || 'Ungültige Datei' });
     }
 
@@ -134,8 +129,6 @@ router.post('/', (req, res) => {
       if (!req.file || !req.file.buffer?.length) {
         return res.status(400).json({ error: 'Kein Bild erhalten.' });
       }
-
-      // Optional: einfache "leere Datei"-Wache
       if (req.file.size === 0) {
         return res.status(400).json({ error: 'Leere Datei.' });
       }
@@ -153,11 +146,9 @@ router.post('/', (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────
-   DELETE /api/uploads
-   Body (JSON): { url: string }
-   Response: { success: true }
+   Gemeinsame Lösch-Logik
    ───────────────────────────────────────────────────────────── */
-router.delete('/', async (req, res) => {
+async function handleDelete(req, res) {
   try {
     const { url } = req.body || {};
     if (!url || typeof url !== 'string') {
@@ -182,6 +173,13 @@ router.delete('/', async (req, res) => {
       .status(500)
       .json({ error: 'Serverfehler beim Löschen', detail: isDev ? String(error?.message || error) : undefined });
   }
-});
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DELETE /api/uploads          (offizielle Route)
+   POST   /api/uploads/delete   (Kompatibilitäts-Alias)
+   ───────────────────────────────────────────────────────────── */
+router.delete('/', handleDelete);
+router.post('/delete', handleDelete);
 
 export default router;
