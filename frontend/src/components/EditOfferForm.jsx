@@ -1,19 +1,22 @@
 // src/components/EditOfferForm.jsx
-// vollständige EditOfferForm.jsx mit Mongo-Kategorien
+// Korrigierte EditOfferForm.jsx mit stabilen Uploads & ohne doppeltes Google Maps Laden
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axios';
-import { GoogleMap, Circle, useLoadScript } from '@react-google-maps/api';
+import { GoogleMap, Circle } from '@react-google-maps/api';
 
 const mapContainerStyle = {
   width: '100%',
   height: '300px',
 };
 
+const MAX_IMAGES = 3;
+
 const EditOfferForm = () => {
   const { offerId } = useParams();
   const navigate = useNavigate();
-  const [providerLocation, setProviderLocation] = useState(null);
+
+  const [providerLocation, setProviderLocation] = useState(null); // GeoJSON [lng, lat]
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -35,25 +38,27 @@ const EditOfferForm = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-  });
+  // Verhindere Doppel-Laden der Google Maps JS API:
+  // Diese Komponente lädt NICHT mehr selbst das Script.
+  const isGoogleLoaded =
+    typeof window !== 'undefined' && typeof window.google !== 'undefined' && window.google.maps;
 
   const formatDateInput = (dateString) => {
     if (!dateString) return '';
+    // Falls bereits YYYY-MM-DD, zurückgeben:
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return dateString;
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '';
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
-    // Hinweis: Wenn dateString bereits 'YYYY-MM-DD' ist, bleibt es gültig.
   };
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        // kein führender Slash → baseURL + /api/… bleibt erhalten
-        const res = await axiosInstance.get('categories');
+        const res = await axiosInstance.get('categories'); // → /api/categories
         setCategories(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error('Fehler beim Laden der Kategorien:', err);
@@ -62,8 +67,8 @@ const EditOfferForm = () => {
 
     const fetchOffer = async () => {
       try {
-        const res = await axiosInstance.get(`offers/${offerId}`);
-        const data = res.data;
+        const res = await axiosInstance.get(`offers/${offerId}`); // → /api/offers/:id
+        const data = res.data || {};
 
         const providerId = data.provider || '';
         setFormData({
@@ -71,9 +76,12 @@ const EditOfferForm = () => {
           category: data.category || '',
           subcategory: data.subcategory || '',
           description: data.description || '',
-          radius: data.radius || 100,
-          validDays: data.validDays || [],
-          validTimes: data.validTimes || { start: '', end: '' },
+          radius: data.radius ?? 100,
+          validDays: Array.isArray(data.validDays) ? data.validDays : [],
+          validTimes: {
+            start: data.validTimes?.start || '',
+            end: data.validTimes?.end || '',
+          },
           validDates: {
             from: formatDateInput(data.validDates?.from),
             to: formatDateInput(data.validDates?.to),
@@ -83,8 +91,10 @@ const EditOfferForm = () => {
           provider: providerId,
         });
 
-        // GeoJSON: [lng, lat] – wir speichern das Array roh
-        setProviderLocation(data.location?.coordinates || null);
+        // GeoJSON: [lng, lat]
+        setProviderLocation(
+          Array.isArray(data.location?.coordinates) ? data.location.coordinates : null
+        );
       } catch (err) {
         console.error(err);
         setError('Angebot konnte nicht geladen werden.');
@@ -97,7 +107,12 @@ const EditOfferForm = () => {
 
   useEffect(() => {
     const selected = categories.find((c) => c.name === formData.category);
-    setSubcategories(selected?.subcategories || []);
+    const subs = Array.isArray(selected?.subcategories) ? selected.subcategories : [];
+    setSubcategories(subs);
+    // Wenn aktuelle Subkategorie nicht (mehr) existiert, zurücksetzen
+    if (formData.subcategory && !subs.includes(formData.subcategory)) {
+      setFormData((prev) => ({ ...prev, subcategory: '' }));
+    }
   }, [formData.category, categories]);
 
   const handleChange = (e) => {
@@ -108,6 +123,9 @@ const EditOfferForm = () => {
         ...prev,
         [parent]: { ...prev[parent], [child]: value },
       }));
+    } else if (name === 'radius') {
+      const n = Number(value);
+      setFormData((prev) => ({ ...prev, radius: Number.isFinite(n) ? n : prev.radius }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -122,39 +140,51 @@ const EditOfferForm = () => {
     }));
   };
 
+  // ✔️ Korrigiert: Multi-Upload-Route + Feldname "images", API antwortet { ok, images: [{url,...}] }
   const handleImageChange = async (e) => {
-    const files = Array.from(e.target.files).slice(0, 3 - formData.images.length);
+    const incoming = Array.from(e.target.files || []);
+    if (incoming.length === 0) return;
+
+    const remaining = Math.max(0, MAX_IMAGES - formData.images.length);
+    const files = incoming.slice(0, remaining);
+
+    if (files.length === 0) {
+      setError(`Maximal ${MAX_IMAGES} Bilder erlaubt.`);
+      return;
+    }
+
     try {
       setUploading(true);
-      const uploadedUrls = await Promise.all(
-        files.map(async (file) => {
-          const uploadData = new FormData();
-          uploadData.append('image', file);
-          // kein führender Slash, keinen manuellen Content-Type (Axios setzt boundary automatisch)
-          const res = await axiosInstance.post('uploads', uploadData);
-          return res.data.url;
-        })
-      );
-      setFormData((prev) => ({
-        ...prev,
-        images: [...prev.images, ...uploadedUrls],
-      }));
+      const form = new FormData();
+      files.forEach((file) => form.append('images', file)); // Feldname MUSS "images" sein
+
+      const res = await axiosInstance.post('uploads/images?folder=offers', form);
+      if (res.data?.ok && Array.isArray(res.data.images)) {
+        const urls = res.data.images.map((i) => i.url).filter(Boolean);
+        setFormData((prev) => ({
+          ...prev,
+          images: [...prev.images, ...urls].slice(0, MAX_IMAGES),
+        }));
+      } else {
+        throw new Error(res.data?.error || 'Upload fehlgeschlagen.');
+      }
     } catch (err) {
       console.error('Fehler beim Hochladen der Bilder:', err);
       setError('Fehler beim Hochladen der Bilder.');
     } finally {
       setUploading(false);
+      // Reset file input, damit gleiches File erneut wählbar ist
+      e.target.value = '';
     }
   };
 
   const removeImage = async (index) => {
     const imageUrl = formData.images[index];
     try {
-      // Standardisieren: DELETE /api/uploads mit Body { url }
       await axiosInstance.delete('uploads', { data: { url: imageUrl } });
     } catch (err) {
       console.error('Fehler beim Löschen in Cloudinary:', err);
-      // Wir machen trotzdem optimistisches Entfernen, um die UX nicht zu blockieren
+      // optimistisch entfernen
     }
     setFormData((prev) => ({
       ...prev,
@@ -170,15 +200,15 @@ const EditOfferForm = () => {
       setError('Kategorie und Subkategorie müssen gewählt werden.');
       return;
     }
-    if (formData.description.length > 250) {
+    if ((formData.description || '').length > 250) {
       setError('Beschreibung darf maximal 250 Zeichen haben.');
       return;
     }
-    if (!formData.provider || formData.provider === '') {
+    if (!formData.provider) {
       setError('Provider-ID fehlt!');
       return;
     }
-    if (!providerLocation || !Array.isArray(providerLocation) || providerLocation.length !== 2) {
+    if (!Array.isArray(providerLocation) || providerLocation.length !== 2) {
       setError('Ungültige Geo-Koordinaten (GeoJSON [lng, lat])');
       return;
     }
@@ -186,6 +216,7 @@ const EditOfferForm = () => {
     try {
       const payload = {
         ...formData,
+        radius: Number(formData.radius) || 0,
         location: {
           type: 'Point',
           coordinates: providerLocation, // GeoJSON: [lng, lat]
@@ -202,11 +233,8 @@ const EditOfferForm = () => {
     }
   };
 
-  if (loadError) return <div>Fehler beim Laden der Karte.</div>;
-  if (!isLoaded) return <div>Lade Karte...</div>;
-
   const center =
-    providerLocation && Array.isArray(providerLocation) && providerLocation.length === 2
+    Array.isArray(providerLocation) && providerLocation.length === 2
       ? { lat: providerLocation[1], lng: providerLocation[0] }
       : null;
 
@@ -263,6 +291,7 @@ const EditOfferForm = () => {
           rows={3}
           className="w-full p-2 border rounded"
         />
+
         <input
           type="number"
           name="radius"
@@ -270,13 +299,14 @@ const EditOfferForm = () => {
           onChange={handleChange}
           placeholder="Radius (in m)"
           className="w-full p-2 border rounded"
+          min={0}
         />
 
-        {center && (
+        {center && isGoogleLoaded && (
           <GoogleMap mapContainerStyle={mapContainerStyle} zoom={14} center={center}>
             <Circle
               center={center}
-              radius={parseFloat(formData.radius) || 0}
+              radius={Number(formData.radius) || 0}
               options={{
                 fillColor: '#3b82f6',
                 fillOpacity: 0.2,
@@ -286,6 +316,11 @@ const EditOfferForm = () => {
               }}
             />
           </GoogleMap>
+        )}
+        {!isGoogleLoaded && (
+          <div className="p-3 rounded bg-gray-50 text-gray-600">
+            Karte nicht geladen (Google Maps Script wird zentral geladen).
+          </div>
         )}
 
         <div className="flex gap-4">
@@ -337,19 +372,25 @@ const EditOfferForm = () => {
         />
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Bilder (max. 3):</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Bilder (max. {MAX_IMAGES}):
+          </label>
           <input
             type="file"
             accept="image/*"
             multiple
             onChange={handleImageChange}
-            disabled={uploading}
+            disabled={uploading || formData.images.length >= MAX_IMAGES}
             className="w-full"
           />
           <div className="flex flex-wrap mt-2 gap-2">
             {formData.images.map((img, idx) => (
               <div key={idx} className="relative group">
-                <img src={img} alt={`Bild ${idx + 1}`} className="w-24 h-24 object-cover rounded shadow" />
+                <img
+                  src={img}
+                  alt={`Bild ${idx + 1}`}
+                  className="w-24 h-24 object-cover rounded shadow"
+                />
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
@@ -366,24 +407,32 @@ const EditOfferForm = () => {
         <div>
           <label className="block font-medium text-gray-700 mb-1">Gültige Tage:</label>
           <div className="flex flex-wrap gap-2">
-            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-              <button
-                type="button"
-                key={day}
-                onClick={() => toggleArrayItem('validDays', day)}
-                className={`px-3 py-1 rounded border ${
-                  formData.validDays.includes(day) ? 'bg-green-500 text-white' : 'bg-gray-100'
-                }`}
-              >
-                {day.slice(0, 2)}
-              </button>
-            ))}
+            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(
+              (day) => (
+                <button
+                  type="button"
+                  key={day}
+                  onClick={() => toggleArrayItem('validDays', day)}
+                  className={`px-3 py-1 rounded border ${
+                    formData.validDays.includes(day)
+                      ? 'bg-green-500 text-white'
+                      : 'bg-gray-100'
+                  }`}
+                >
+                  {day.slice(0, 2)}
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {success && <p className="text-green-600">✅ Angebot aktualisiert!</p>}
-        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-          Änderungen speichern
+        <button
+          type="submit"
+          disabled={uploading}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-60"
+        >
+          {uploading ? 'Lädt…' : 'Änderungen speichern'}
         </button>
       </form>
     </div>
