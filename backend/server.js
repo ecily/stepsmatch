@@ -22,97 +22,100 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─────────────────────────────────────────────────────────────
-// Performance & Security (gzip/Brotli + Security Headers)
-app.use(helmet({ contentSecurityPolicy: false }));
+/* ─────────────────────────────────────────────────────────────
+   Performance & Security
+   ───────────────────────────────────────────────────────────── */
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    // Falls du Bilder/Assets cross-origin laden willst und Probleme siehst:
+    // crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 app.use(compression());
 app.set("trust proxy", 1);
 
-// Body-Parser
+/* ─────────────────────────────────────────────────────────────
+   Body-Parser
+   ───────────────────────────────────────────────────────────── */
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// ─────────────────────────────────────────────────────────────
-// CORS (Web & Mobile)
-const allowedOrigins = [
+/* ─────────────────────────────────────────────────────────────
+   CORS (Web & Mobile) — EINHEITLICH und VOR ALLEN ROUTERN
+   ───────────────────────────────────────────────────────────── */
+const ALLOWED_ORIGINS = [
+  // Prod Frontend (DO Static Site)
+  "https://lobster-app-2-68c6f.ondigitalocean.app",
+  // API-Domain selbst (für Same-Origin-Fälle in DO)
+  "https://lobster-app-ie9a5.ondigitalocean.app",
+  // Dev
   "http://localhost:5173",
-  "http://localhost:19006",
-  "http://localhost:8081",
+  "http://127.0.0.1:5173",
+  "http://localhost:19006", // Expo web/dev
+  "http://localhost:8081",  // React Native packager
   "http://10.0.0.34:5173",
   "http://10.0.0.34:19006",
   "exp://10.0.0.34:19000",
-  // ⬇️ Deine DO-Static-Site (Frontend)
-  "https://lobster-app-2-68c6f.ondigitalocean.app",
-  // Später eigene Domain hier ergänzen, z. B.:
-  // "https://www.stepsmatch.com",
 ];
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Nicht erlaubter Ursprung: " + origin));
-    },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true, // nur nötig, wenn Cookies/Auth-Credentials verwendet werden
-  })
-);
+// Optional weitere Origins über ENV erlauben (kommagetrennt)
+if (process.env.CORS_ORIGINS) {
+  for (const o of process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (!ALLOWED_ORIGINS.includes(o)) ALLOWED_ORIGINS.push(o);
+  }
+}
 
-// Preflight explizit erlauben (hilft bei manchen Clients)
-app.options("*", cors());
+const corsOptions = {
+  origin(origin, callback) {
+    // Bei Server-zu-Server oder Curl ohne Origin: erlauben
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    return callback(new Error("CORS: Origin not allowed: " + origin), false);
+  },
+  credentials: true, // wichtig, da axiosInstance withCredentials: true nutzt
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["Content-Length"],
+};
 
-// ─────────────────────────────────────────────────────────────
-// Upload-Route mit separater CORS-Whitelist (Web-Uploads)
-app.use(
-  "/api/uploads",
-  cors({
-    origin(origin, callback) {
-      const uploadAllowed = [
-        "http://localhost:5173",
-        "https://lobster-app-2-68c6f.ondigitalocean.app",
-      ];
-      if (!origin || uploadAllowed.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Nicht erlaubter Upload-Ursprung: " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-  uploadRoutes
-);
+// Preflight global & mit gleichen Optionen beantworten
+app.options("*", cors(corsOptions));
+app.use(cors(corsOptions));
 
-// ─────────────────────────────────────────────────────────────
-// API-Routen
-app.use("/api/users", userAuthRoutes); // /register, /login, /push-token, /preferences
+/* ─────────────────────────────────────────────────────────────
+   API-Routen
+   ───────────────────────────────────────────────────────────── */
+// WICHTIG: Keine separaten, konkurrierenden CORS-Middlewares mehr
+// für /api/uploads — globale CORS-Regeln greifen bereits.
+app.use("/api/users", userAuthRoutes);       // /register, /login, /push-token, /preferences
 app.use("/api/providers", providerRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/match", matchRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/location", locationRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 // Healthcheck
 app.get("/api/ping", (req, res) => {
   res.status(200).send("pong");
 });
 
-// ─────────────────────────────────────────────────────────────
-// MongoDB-Verbindung & Serverstart
+/* ─────────────────────────────────────────────────────────────
+   MongoDB-Verbindung & Serverstart
+   ───────────────────────────────────────────────────────────── */
 connectDB()
   .then(() => {
     app.listen(PORT, "0.0.0.0", () => {
       const hostLocal = `http://localhost:${PORT}`;
       const hostLan = `http://10.0.0.34:${PORT}`;
       console.log("🚀 Server läuft:");
-      console.log(`→ lokal:      ${hostLocal}`);
+      console.log(`→ lokal:       ${hostLocal}`);
       console.log(`→ im Netzwerk: ${hostLan}`);
       console.log(`→ Geräte im WLAN erreichen: ${hostLan}/api`);
       console.log(`NODE_ENV=${process.env.NODE_ENV || "development"}`);
+      console.log("CORS erlaubt für:", ALLOWED_ORIGINS.join(", "));
     });
   })
   .catch((err) => {

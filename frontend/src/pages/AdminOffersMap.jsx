@@ -1,15 +1,18 @@
+// src/pages/AdminOffersMap.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axiosInstance from "../api/axios";
-import { GoogleMap, MarkerF, InfoWindowF, useLoadScript } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindowF, CircleF, useLoadScript } from "@react-google-maps/api";
 
 const mapContainerStyle = { width: "100%", height: "380px" };
 
 // Konstanten
 const WEEKDAYS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS_EN_3 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DATE_FMT_AT = new Intl.DateTimeFormat("de-AT", { year: "numeric", month: "2-digit", day: "2-digit" });
 
 // ---- helpers ----
 const pad2 = (n) => String(n).padStart(2, "0");
+
 const coordsToLatLng = (coordinates) => {
   if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
   const [lngRaw, latRaw] = coordinates;
@@ -22,14 +25,19 @@ const coordsToLatLng = (coordinates) => {
 const parseDateFlexible = (val) => {
   if (!val) return null;
   if (val instanceof Date && !isNaN(val)) return val;
-  if (typeof val === "number") { const d = new Date(val); return isNaN(d) ? null : d; }
+  if (typeof val === "number") {
+    const d = new Date(val);
+    return isNaN(d) ? null : d;
+  }
   if (typeof val === "string") {
     const m = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], 0, 0, 0, 0);
-    const d = new Date(val); return isNaN(d) ? null : d;
+    const d = new Date(val);
+    return isNaN(d) ? null : d;
   }
   return null;
 };
+
 const parseTimeHM = (val, fb = { h: 23, m: 59, s: 0 }) => {
   if (typeof val !== "string") return fb;
   const m1 = val.match(/^(\d{1,2}):(\d{2})$/);
@@ -38,16 +46,25 @@ const parseTimeHM = (val, fb = { h: 23, m: 59, s: 0 }) => {
   if (m2) return { h: +m2[1], m: +m2[2], s: +m2[3] };
   return fb;
 };
+
 const makeLocalDateTime = (dateVal, timeVal) => {
-  const d = parseDateFlexible(dateVal); if (!d) return null;
+  const d = parseDateFlexible(dateVal);
+  if (!d) return null;
   const { h, m, s } = parseTimeHM(timeVal);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, s, 0);
 };
+
 const fmtDate = (val) => {
   const d = parseDateFlexible(val);
   return d ? DATE_FMT_AT.format(d) : "—";
 };
-const fmtTime = (val) => { if (!val) return "—"; const { h, m } = parseTimeHM(val, { h: 0, m: 0, s: 0 }); return `${pad2(h)}:${pad2(m)}`; };
+
+const fmtTime = (val) => {
+  if (!val) return "—";
+  const { h, m } = parseTimeHM(val, { h: 0, m: 0, s: 0 });
+  return `${pad2(h)}:${pad2(m)}`;
+};
+
 const computeRemainingDHMS = (offer) => {
   try {
     const toDate = offer?.validDates?.to;
@@ -62,7 +79,9 @@ const computeRemainingDHMS = (offer) => {
     const hours = Math.floor((diffMs % 86400000) / 3600000);
     const minutes = Math.floor((diffMs % 3600000) / 60000);
     return `${days}:${pad2(hours)}:${pad2(minutes)}`;
-  } catch { return "—"; }
+  } catch {
+    return "—";
+  }
 };
 
 /** Prüft, ob das Angebot JETZT aktiv ist (Datum, Wochentag, Tageszeit). */
@@ -71,10 +90,10 @@ const isOfferActiveNow = (offer, now = new Date()) => {
 
   // 1) Datumsspanne (inklusive Tagesgrenzen)
   const from = parseDateFlexible(offer?.validDates?.from);
-  const to   = parseDateFlexible(offer?.validDates?.to);
+  const to = parseDateFlexible(offer?.validDates?.to);
 
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
   if (from) {
     const fromStart = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0, 0);
@@ -85,19 +104,27 @@ const isOfferActiveNow = (offer, now = new Date()) => {
     if (todayStart > toEnd) return false; // bereits vorbei
   }
 
-  // 2) Wochentag
+  // 2) Wochentag (unterstützt Number 0..6, 'Sun'..'Sat', 'Sunday'..'Saturday')
   const validDays = Array.isArray(offer?.validDays) ? offer.validDays : [];
   if (validDays.length > 0) {
-    const todayName = WEEKDAYS_EN[now.getDay()];
-    if (!validDays.includes(todayName)) return false;
+    const todayIdx = now.getDay(); // 0..6
+    const todayName = WEEKDAYS_EN[todayIdx];
+    const todayName3 = WEEKDAYS_EN_3[todayIdx];
+
+    const hasDay =
+      validDays.includes(todayIdx) ||
+      validDays.includes(todayName3) ||
+      validDays.includes(todayName);
+
+    if (!hasDay) return false;
   }
 
   // 3) Tageszeitfenster (standard: 00:00–23:59)
   const { h: sh, m: sm, s: ss } = parseTimeHM(offer?.validTimes?.start, { h: 0, m: 0, s: 0 });
-  const { h: eh, m: em, s: es } = parseTimeHM(offer?.validTimes?.end,   { h: 23, m: 59, s: 59 });
+  const { h: eh, m: em, s: es } = parseTimeHM(offer?.validTimes?.end, { h: 23, m: 59, s: 59 });
 
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sh, sm, ss, 0);
-  const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), eh, em, es, 999);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), eh, em, es, 999);
 
   return now >= start && now <= end;
 };
@@ -120,18 +147,29 @@ export default function AdminOffersMap() {
       try {
         setLoading(true);
         setError("");
+
         // nur noch Offers inkl. embedded provider laden
-        const res = await axiosInstance.get("/offers", { params: { withProvider: 1 } });
+        const res = await axiosInstance.get("offers", { params: { withProvider: 1, limit: 200 } });
+
         if (!mounted) return;
-        setOffers(Array.isArray(res.data) ? res.data : []);
+
+        const payload = res?.data;
+        const rows =
+          Array.isArray(payload?.data) ? payload.data : // paginiertes Format
+          (Array.isArray(payload) ? payload : []);       // Fallback (rohes Array)
+
+        setOffers(rows);
       } catch (e) {
         console.error(e);
         setError("Fehler beim Laden der Angebote.");
+        setOffers([]);
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const markers = useMemo(() => {
@@ -144,13 +182,32 @@ export default function AdminOffersMap() {
       .filter(Boolean);
   }, [offers]);
 
+  // Fit-Bounds inkl. Radius
   useEffect(() => {
     if (!isLoaded || !mapRef.current || markers.length === 0) return;
-    const bounds = new window.google.maps.LatLngBounds();
-    markers.forEach((m) => bounds.extend(m.latLng));
+    const { google } = window;
+    const bounds = new google.maps.LatLngBounds();
+
+    markers.forEach(({ offer, latLng }) => {
+      const r = Number(offer?.radius) || 0; // Meter
+      if (r > 0 && google?.maps?.Circle) {
+        // virtueller Kreis nur für Bounds
+        const circle = new google.maps.Circle({ center: latLng, radius: r });
+        const cb = circle.getBounds();
+        if (cb) bounds.union(cb);
+        else bounds.extend(latLng);
+      } else {
+        bounds.extend(latLng);
+      }
+    });
+
     if (markers.length === 1) {
-      mapRef.current.setCenter(markers[0].latLng);
-      mapRef.current.setZoom(15);
+      mapRef.current.fitBounds(bounds);
+      const listener = google.maps.event.addListenerOnce(mapRef.current, "bounds_changed", () => {
+        const currentZoom = mapRef.current.getZoom();
+        if (currentZoom > 17) mapRef.current.setZoom(17); // optionaler Max-Zoom
+      });
+      return () => google.maps.event.removeListener(listener);
     } else {
       mapRef.current.fitBounds(bounds);
     }
@@ -179,26 +236,52 @@ export default function AdminOffersMap() {
             onLoad={(map) => (mapRef.current = map)}
             options={{ streetViewControl: false, fullscreenControl: false, mapTypeControl: true, zoomControl: true }}
           >
+            {/* Marker */}
             {markers.map(({ offer, latLng }) => (
               <MarkerF key={offer._id} position={latLng} onClick={() => onMarkerClick(offer._id)} />
             ))}
 
-            {selectedOfferId && (() => {
-              const sel = markers.find((m) => m.offer._id === selectedOfferId);
-              if (!sel) return null;
-              const provider = getProviderForOffer(sel.offer);
+            {/* Radius-Kreise (in Metern) */}
+            {markers.map(({ offer, latLng }) => {
+              const r = Number(offer?.radius) || 0; // Meter
+              if (r <= 0) return null;
               return (
-                <InfoWindowF position={sel.latLng} onCloseClick={() => setSelectedOfferId(null)}>
-                  <div className="text-sm">
-                    <div className="font-semibold">{sel.offer?.name || "Angebot"}</div>
-                    <div className="text-gray-700">{provider?.name || "—"}</div>
-                    <div className="text-gray-500">
-                      {(sel.offer?.category || "—")} / {(sel.offer?.subcategory || "—")}
-                    </div>
-                  </div>
-                </InfoWindowF>
+                <CircleF
+                  key={`${offer._id}-radius`}
+                  center={latLng}
+                  radius={r}
+                  options={{
+                    strokeColor: "#3b82f6",      // blue-500
+                    strokeOpacity: 0.7,
+                    strokeWeight: 1,
+                    fillColor: "#3b82f6",
+                    fillOpacity: 0.12,
+                    clickable: false,
+                    draggable: false,
+                    editable: false,
+                    zIndex: 1,
+                  }}
+                />
               );
-            })()}
+            })}
+
+            {selectedOfferId &&
+              (() => {
+                const sel = markers.find((m) => m.offer._id === selectedOfferId);
+                if (!sel) return null;
+                const provider = getProviderForOffer(sel.offer);
+                return (
+                  <InfoWindowF position={sel.latLng} onCloseClick={() => setSelectedOfferId(null)}>
+                    <div className="text-sm">
+                      <div className="font-semibold">{sel.offer?.name || "Angebot"}</div>
+                      <div className="text-gray-700">{provider?.name || "—"}</div>
+                      <div className="text-gray-500">
+                        {(sel.offer?.category || "—")} / {(sel.offer?.subcategory || "—")}
+                      </div>
+                    </div>
+                  </InfoWindowF>
+                );
+              })()}
           </GoogleMap>
         )}
       </div>
@@ -227,7 +310,12 @@ export default function AdminOffersMap() {
               const activeNow = isOfferActiveNow(o);
 
               return (
-                <tr key={o._id} data-offer-row={o._id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => onMarkerClick(o._id)}>
+                <tr
+                  key={o._id}
+                  data-offer-row={o._id}
+                  className="border-t hover:bg-gray-50 cursor-pointer"
+                  onClick={() => onMarkerClick(o._id)}
+                >
                   <td className="px-4 py-2">{provider?.name || "—"}</td>
                   <td className="px-4 py-2">{o.name || "—"}</td>
                   <td className="px-4 py-2">{o.category || "—"}</td>
@@ -240,16 +328,24 @@ export default function AdminOffersMap() {
                   </td>
                   <td className="px-4 py-2">{remaining}</td>
                   <td className="px-4 py-2">
-                    {activeNow
-                      ? <span className="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">heute gültig</span>
-                      : <span className="inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-700">heute nicht gültig</span>}
+                    {activeNow ? (
+                      <span className="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        heute gültig
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-700">
+                        heute nicht gültig
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
             })}
             {offers.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-gray-500">Keine Angebote gefunden.</td>
+                <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
+                  Keine Angebote gefunden.
+                </td>
               </tr>
             )}
           </tbody>
