@@ -11,7 +11,11 @@ import Register from './pages/Register';
 import Login from './pages/Login';
 import LandingPage from './pages/LandingPage';
 import AdminCategoryPage from './pages/AdminCategoryPage';
-import AdminOffersMap from './pages/AdminOffersMap'; // ✅ korrekt
+import AdminOffersMap from './pages/AdminOffersMap';
+
+// ✅ Gate + NDA
+import TesterGate from './pages/TesterGate';
+import NDA from './pages/NDA';
 
 const App = () => {
   console.log('🌐 Aktive API Base URL:', import.meta.env.VITE_API_BASE_URL);
@@ -23,7 +27,16 @@ const App = () => {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        {/* Gate als Startseite */}
+        <Route path="/" element={<TesterGate />} />
+
+        {/* Echte NDA-Seite */}
+        <Route path="/nda" element={<NDA />} />
+
+        {/* frühere Root-Seite jetzt unter /home */}
+        <Route path="/home" element={<LandingPage />} />
+
+        {/* bestehende Routen */}
         <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
         <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />
         <Route path="/add-provider" element={<AddProviderForm />} />
@@ -33,6 +46,8 @@ const App = () => {
         <Route path="/admin/categories" element={<AdminCategoryPage />} />
         <Route path="/admin/offers" element={<AdminOffersMap />} />
         <Route path="/pitch" element={<Pitch />} />
+
+        {/* 404 */}
         <Route path="*" element={<p className="p-8 text-center text-red-500">404 – Seite nicht gefunden</p>} />
       </Routes>
     </Router>

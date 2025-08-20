@@ -17,6 +17,9 @@ import matchRoutes from "./routes/match.js";
 import pushRoutes from "./routes/push.js";
 import locationRoutes from "./routes/location.js";
 
+// ✅ NEU: Tester-Gate (Validate + Accept)
+import testerRoutes from "./routes/testers.js";
+
 dotenv.config();
 
 const app = express();
@@ -73,7 +76,7 @@ const corsOptions = {
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     return callback(new Error("CORS: Origin not allowed: " + origin), false);
   },
-  credentials: true, // wichtig, da axiosInstance withCredentials: true nutzt
+  credentials: true, // wichtig, falls axios/fetch mit Cookies arbeitet
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   exposedHeaders: ["Content-Length"],
@@ -96,6 +99,11 @@ app.use("/api/match", matchRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/uploads", uploadRoutes);
+
+// ✅ NEU: Tester-Gate Endpunkte
+//  • POST /api/testers/validate
+//  • POST /api/testers/accept
+app.use("/api/testers", testerRoutes);
 
 // Healthcheck
 app.get("/api/ping", (req, res) => {
