@@ -52,6 +52,9 @@ const ALLOWED_ORIGINS = [
   "https://lobster-app-2-68c6f.ondigitalocean.app",
   // API-Domain selbst (für Same-Origin-Fälle in DO)
   "https://lobster-app-ie9a5.ondigitalocean.app",
+  // ✅ Deine Domain (beide Varianten!)
+  "https://www.stepsmatch.com",
+  "https://stepsmatch.com",
   // Dev
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -61,6 +64,7 @@ const ALLOWED_ORIGINS = [
   "http://10.0.0.34:19006",
   "exp://10.0.0.34:19000",
 ];
+
 
 // Optional weitere Origins über ENV erlauben (kommagetrennt)
 if (process.env.CORS_ORIGINS) {
