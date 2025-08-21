@@ -105,38 +105,119 @@ function formatRemaining(diffMs) {
   return `Rest: ${h}\u00A0h ${m}\u00A0min`;
 }
 
-/* ───────────── Skeletons ───────────── */
+/* ───────────── Filter-Helfer (Interessen & Radius & Zeit) ───────────── */
 
-function SkeletonCard() {
-  return (
-    <View style={[styles.card, { overflow: 'hidden' }]}>
-      <View style={[styles.skel, { width: 80, height: 12, marginBottom: 10 }]} />
-      <View style={[styles.skel, { width: 160, height: 16, marginBottom: 8 }]} />
-      <View style={[styles.skel, { width: 200, height: 12, marginBottom: 12 }]} />
-      <View style={{ flexDirection: 'row', marginTop: 8 }}>
-        <View style={styles.skelImg} />
-        <View style={styles.skelImg} />
-        <View style={styles.skelImg} />
-      </View>
-    </View>
-  );
+const normalizeToken = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+function csvToSet(csv) {
+  if (!csv) return new Set();
+  return new Set(csv.split(',').map(normalizeToken).filter(Boolean));
 }
 
-function SkeletonSection({ titleWidth = 140 }) {
-  return (
-    <View style={styles.categoryBlock}>
-      <View style={[styles.skel, { width: titleWidth, height: 20, marginBottom: 12 }]} />
-      <FlatList
-        data={[1, 2, 3, 4]}
-        keyExtractor={(i) => `skel-${i}`}
-        renderItem={() => <SkeletonCard />}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-        style={{ marginBottom: 26 }}
-      />
-    </View>
-  );
+function matchesInterests(offer, interestSet) {
+  if (!interestSet || interestSet.size === 0) return true;
+  const cat = normalizeToken(offer?.category);
+  const sub = normalizeToken(offer?.subcategory);
+  const name = normalizeToken(offer?.name);
+  for (const t of interestSet) {
+    if (!t) continue;
+    if ((cat && (cat === t || cat.includes(t))) ||
+        (sub && (sub === t || sub.includes(t))) ||
+        (name && name.includes(t))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function pickOfferLatLng(item) {
+  // GeoJSON: { type:"Point", coordinates:[lng, lat] }
+  const coords =
+    item?.location?.coordinates ||
+    item?.provider?.location?.coordinates ||
+    null;
+  if (Array.isArray(coords) && coords.length >= 2) {
+    const [lng, lat] = coords;
+    const latN = Number(lat), lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) return { lat: latN, lng: lngN };
+  }
+  return null;
+}
+
+function pickRadiusMeters(item) {
+  const r1 = toNumber(item?.radius);
+  if (r1 != null && isFinite(r1) && r1 >= 0) return r1;
+  const r2 = toNumber(item?.provider?.radius);
+  if (r2 != null && isFinite(r2) && r2 >= 0) return r2;
+  return null; // ohne Radius → AUS
+}
+
+/** Robust gegen verschiedene Felder/Strukturen. Wenn keine Angaben vorhanden → true (gilt). */
+function isOfferActiveNow(offer, now = new Date()) {
+  // 1) Datumsfenster
+  const vd = offer?.validDates || offer?.dates || null;
+  if (vd && typeof vd === 'object') {
+    const fromRaw = vd.from ?? vd.start ?? vd.fromDate ?? vd.startDate;
+    const toRaw   = vd.to   ?? vd.end   ?? vd.toDate   ?? vd.endDate;
+    const from = fromRaw ? new Date(fromRaw) : null;
+    const to   = toRaw   ? new Date(toRaw)   : null;
+    if ((from && isNaN(from)) || (to && isNaN(to))) {
+      // ignorieren, wenn nicht parsebar
+    } else {
+      if (from && now < from) return false;
+      if (to && now > to) return false;
+    }
+  }
+
+  // 2) Wochentage
+  const vdDays = offer?.validDays || offer?.days || null;
+  if (Array.isArray(vdDays) && vdDays.length) {
+    const day = now.getDay(); // 0 So … 6 Sa
+    const norm = vdDays.map((d) => {
+      if (typeof d === 'number') return d;
+      const s = normalizeToken(d);
+      const map = { 'so':0,'sonntag':0,'su':0,'sun':0,
+                    'mo':1,'montag':1,'mon':1,
+                    'di':2,'dienstag':2,'tue':2,
+                    'mi':3,'mittwoch':3,'wed':3,
+                    'do':4,'donnerstag':4,'thu':4,
+                    'fr':5,'freitag':5,'fri':5,
+                    'sa':6,'samstag':6,'sat':6 };
+      return map[s];
+    }).filter((n) => Number.isInteger(n));
+    if (norm.length && !norm.includes(day)) return false;
+  }
+
+  // 3) Tageszeit (HH:mm[:ss]) ggf. über Mitternacht
+  const vt = offer?.validTimes || offer?.times || null;
+  if (vt && typeof vt === 'object') {
+    const parseHM = (x) => {
+      if (!x) return null;
+      const m = String(x).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (!m) return null;
+      const h = Number(m[1]), min = Number(m[2]), s = Number(m[3] || 0);
+      if (h<0||h>23||min<0||min>59||s<0||s>59) return null;
+      return h*3600 + min*60 + s;
+    };
+    const fromS = parseHM(vt.from ?? vt.start ?? vt.fromTime);
+    const toS   = parseHM(vt.to   ?? vt.end   ?? vt.toTime);
+    if (fromS != null && toS != null) {
+      const nowS = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+      if (fromS <= toS) {
+        if (!(nowS >= fromS && nowS <= toS)) return false;
+      } else {
+        // Fenster über Mitternacht, z. B. 22:00–03:00
+        if (!(nowS >= fromS || nowS <= toS)) return false;
+      }
+    }
+  }
+
+  return true; // keine Einschränkungen gefunden → gültig
 }
 
 /* ───────────── Screen ───────────── */
@@ -149,7 +230,7 @@ export default function HomeTab() {
   const [grouped, setGrouped] = useState({});
   // Paging
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit] = useState(200); // breiter holen, lokal filtern
   const [hasMore, setHasMore] = useState(false);
   // Loading
   const [initialLoading, setInitialLoading] = useState(true);
@@ -159,7 +240,7 @@ export default function HomeTab() {
   // Error/Info
   const [err, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  // User Location (für Distanz‑Fallback)
+  // User Location (für Distanz-Fallback)
   const [userLoc, setUserLoc] = useState(null); // {lat,lng}
 
   // Refs
@@ -224,29 +305,85 @@ export default function HomeTab() {
           getLocation(),
         ]);
         setUserLoc(loc);
+        const interestSet = csvToSet(interestsCSV);
+        console.log('[HomeTab] Interests:', Array.from(interestSet));
 
+        // Wichtig: keine serverseitigen Filter, wir filtern lokal
         const params = {
-          lat: loc.lat,
-          lng: loc.lng,
-          maxDistanceM: 1500,
-          activeNow: 1,
           withProvider: 1,
           page: pageToLoad,
           limit,
-          // mögliche Endzeit-Felder + distance
-          fields:
-            '_id,name,description,category,subcategory,location,images,provider,distance,' +
-            'activeUntil,activeEnd,validUntil,endAt,validTo,dateTo,activeWindowEnd,endTime',
         };
-        if (interestsCSV) params.interests = interestsCSV;
 
         const t0 = performance.now();
         const res = await api.get('/offers', { params, signal: controller.signal });
         const t1 = performance.now();
 
-        const payload = res?.data || {};
-        const newData = Array.isArray(payload.data) ? payload.data : [];
-        const serverHasMore = !!payload.hasMore;
+        // robustes Payload-Parsing
+        const payload = res?.data ?? {};
+        let rows = [];
+        if (Array.isArray(payload)) rows = payload;
+        else if (Array.isArray(payload.data)) rows = payload.data;
+        else if (Array.isArray(payload.offers)) rows = payload.offers;
+        else if (Array.isArray(payload.items)) rows = payload.items;
+        else if (Array.isArray(payload.results)) rows = payload.results;
+        else if (payload?.data && Array.isArray(payload.data.data)) rows = payload.data.data;
+
+        const serverHasMore =
+          !!(payload?.hasMore ??
+             payload?.data?.hasMore ??
+             payload?.pagination?.hasMore ??
+             (payload?.nextPage != null) ??
+             (rows.length === limit));
+
+        if (rows[0]) {
+          console.log('[HomeTab] sample item keys:', Object.keys(rows[0]));
+        } else {
+          console.log('[HomeTab] WARN: no rows in payload. keys=', Object.keys(payload));
+        }
+
+        // ── deterministische Client-Filterung ───────────────────────────
+        const now = new Date();
+        const filtered = [];
+        for (const o of rows) {
+          // 1) Interesse
+          if (!matchesInterests(o, interestSet)) {
+            console.log('[HomeTab][interest OUT]', { id: o?._id, name: o?.name, cat: o?.category, sub: o?.subcategory });
+            continue;
+          }
+          // 2) Zeitfenster
+          const active = isOfferActiveNow(o, now);
+          if (!active) {
+            console.log('[HomeTab][time OUT]', { id: o?._id, name: o?.name });
+            continue;
+          }
+          // 3) Geometrie
+          const geo = pickOfferLatLng(o);
+          const radiusM = pickRadiusMeters(o);
+          if (!geo || !Number.isFinite(radiusM)) {
+            console.log('[HomeTab][geo OUT]', { id: o?._id, name: o?.name, geo: !!geo, radiusM });
+            continue;
+          }
+          const distanceM =
+            toNumber(o.distance) ??
+            haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng);
+
+          const inside = distanceM <= radiusM;
+          console.log('[HomeTab][calc]', {
+            id: o?._id, name: o?.name,
+            cat: o?.category, sub: o?.subcategory,
+            loc: geo, radiusM,
+            distanceM: Math.round(distanceM),
+            decision: inside ? 'IN' : 'OUT'
+          });
+          if (inside) filtered.push(o);
+        }
+
+        filtered.sort((a, b) => {
+          const da = toNumber(a.distance) ?? haversineMeters(loc.lat, loc.lng, pickOfferLatLng(a)?.lat ?? loc.lat, pickOfferLatLng(a)?.lng ?? loc.lng);
+          const db = toNumber(b.distance) ?? haversineMeters(loc.lat, loc.lng, pickOfferLatLng(b)?.lat ?? loc.lat, pickOfferLatLng(b)?.lng ?? loc.lng);
+          return da - db;
+        });
 
         if (!mountedRef.current) return;
 
@@ -256,12 +393,12 @@ export default function HomeTab() {
 
         if (pageToLoad === 1) {
           setOffers(() => {
-            setGrouped(groupByCategory(newData));
-            return newData;
+            setGrouped(groupByCategory(filtered));
+            return filtered;
           });
         } else {
           setOffers(prev => {
-            const merged = [...prev, ...newData];
+            const merged = [...prev, ...filtered];
             setGrouped(groupByCategory(merged));
             return merged;
           });
@@ -270,7 +407,7 @@ export default function HomeTab() {
         if (!hasLoadedOnce) setHasLoadedOnce(true);
 
         const netMs = (t1 - t0).toFixed(0);
-        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${newData.length} hasMore=${serverHasMore} net=${netMs}ms took=${payload.tookMs ?? '—'}ms`);
+        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${netMs}ms took=${payload.tookMs ?? '—'}ms`);
       } catch (e) {
         if (mountedRef.current) {
           const msg = e?.message?.includes('timeout')
@@ -443,7 +580,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
-  const isActiveNow = true; // weil wir mit activeNow=1 filtern
+  const isActiveNow = true; // wir zeigen nur aktive an
   const remainingMs = getRemainingMs(item); // kann null sein
   const remainingLabel = formatRemaining(remainingMs);
   const hurry = remainingMs != null && remainingMs <= 60 * 60 * 1000;
@@ -507,6 +644,40 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
         </View>
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+/* ───────────── Skeletons ───────────── */
+
+function SkeletonCard() {
+  return (
+    <View style={[styles.card, { overflow: 'hidden' }]}>
+      <View style={[styles.skel, { width: 80, height: 12, marginBottom: 10 }]} />
+      <View style={[styles.skel, { width: 160, height: 16, marginBottom: 8 }]} />
+      <View style={[styles.skel, { width: 200, height: 12, marginBottom: 12 }]} />
+      <View style={{ flexDirection: 'row', marginTop: 8 }}>
+        <View style={styles.skelImg} />
+        <View style={styles.skelImg} />
+        <View style={styles.skelImg} />
+      </View>
+    </View>
+  );
+}
+
+function SkeletonSection({ titleWidth = 140 }) {
+  return (
+    <View style={styles.categoryBlock}>
+      <View style={[styles.skel, { width: titleWidth, height: 20, marginBottom: 12 }]} />
+      <FlatList
+        data={[1, 2, 3, 4]}
+        keyExtractor={(i) => `skel-${i}`}
+        renderItem={() => <SkeletonCard />}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.horizontalList}
+        style={{ marginBottom: 26 }}
+      />
+    </View>
   );
 }
 
