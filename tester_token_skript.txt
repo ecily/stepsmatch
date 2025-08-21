@@ -1,6 +1,6 @@
 db.testers.insertOne({
-  key: "SM-2025-ALPHA-7K3X",
-  name: "Eva Pusnik",
+  key: "SM-2025-ALPHA-7K3I",
+  name: "Hugo Franz",
   email: "eva@eva.com",
   status: "pending"
 })

@@ -308,6 +308,10 @@ export default function HomeTab() {
         const interestSet = csvToSet(interestsCSV);
         console.log('[HomeTab] Interests:', Array.from(interestSet));
 
+        // ⬇️ NEU: Expo Push Token einmalig holen
+        let expoToken = null;
+        try { expoToken = await AsyncStorage.getItem('expoPushToken'); } catch {}
+
         // Wichtig: keine serverseitigen Filter, wir filtern lokal
         const params = {
           withProvider: 1,
@@ -376,7 +380,24 @@ export default function HomeTab() {
             distanceM: Math.round(distanceM),
             decision: inside ? 'IN' : 'OUT'
           });
-          if (inside) filtered.push(o);
+          if (inside) {
+            filtered.push(o);
+
+            // ⬇️ NEU: Geofence-Push an Backend melden (fire-and-forget, Server hat Cooldown)
+            if (expoToken) {
+              api.post('/location/geofence-enter', {
+                offerId: o._id,
+                lat: loc.lat,
+                lng: loc.lng,
+                token: expoToken,
+                eventType: 'enter',
+              }).then(() => {
+                console.log('[HomeTab] geofence-enter sent', o._id);
+              }).catch((err) => {
+                console.log('[HomeTab] geofence-enter error', err?.message || err);
+              });
+            }
+          }
         }
 
         filtered.sort((a, b) => {
@@ -525,7 +546,36 @@ export default function HomeTab() {
                     item={item}
                     index={index}
                     userLoc={userLoc}
-                    onPress={() => router.push(`/offers/${item._id}`)}
+                    onPress={() => {
+                      // ⬇️ Minimaler Eingriff: Param‑Hydration beim Navigieren
+                      try {
+                        const geo = pickOfferLatLng(item);
+                        const distanceMeters =
+                          toNumber(item.distance) ??
+                          (userLoc && geo ? haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng) : null);
+                        const heroImage = (Array.isArray(item.images) && item.images.length > 0) ? item.images[0] : '';
+
+                        console.log('[HomeTab] Navigate → /offers/[id]', {
+                          id: item?._id,
+                          name: item?.name,
+                          distanceM: distanceMeters != null ? Math.round(distanceMeters) : null
+                        });
+
+                        // expo-router mit Params
+                        router.push({
+                          pathname: `/offers/${item._id}`,
+                          params: {
+                            id: item._id,
+                            name: item.name || '',
+                            image: heroImage || '',
+                            distance: distanceMeters != null ? String(Math.round(distanceMeters)) : '',
+                          },
+                        });
+                      } catch (e) {
+                        console.warn('[HomeTab] navigate error:', e?.message || e);
+                        router.push(`/offers/${item._id}`);
+                      }
+                    }}
                   />
                 )}
                 horizontal
