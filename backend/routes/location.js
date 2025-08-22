@@ -8,11 +8,8 @@ import OfferVisibility, { OFFER_VISIBILITY_STATUS as VIS } from '../models/Offer
 
 const router = express.Router();
 
-/* ──────────────────────────────────────────────────────────────
- * Helpers
- * ────────────────────────────────────────────────────────────── */
+/* ───────── Helpers ───────── */
 
-// ENV → Millisekunden: "0", 0, "", "false", "off", "null" => 0
 function envMs(name, def) {
   const v = process.env[name];
   if (v === undefined) return def;
@@ -22,7 +19,6 @@ function envMs(name, def) {
   return Number.isFinite(n) ? n : def;
 }
 
-/* Haversine (Meter) */
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const toRad = (v) => (v * Math.PI) / 180;
   const R = 6371000;
@@ -35,52 +31,38 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-/* ──────────────────────────────────────────────────────────────
- * In‑Memory Guards (pro Prozess)
- * ────────────────────────────────────────────────────────────── */
+/* ───────── In‑Memory Guards ───────── */
 
-// ENV‑gesteuert, robust geparst
 const PAIR_COOLDOWN_MS = envMs('PAIR_COOLDOWN_MS', 10 * 60 * 1000);
 const MIN_PUSH_INTERVAL_MS = envMs('MIN_PUSH_INTERVAL_MS', 10_000);
 
-// Pair‑Guard (pro Empfänger×Offer)
-const pairLastPushAt = new Map(); // key: `${recipientKey}::${offerId}` -> ts
+const pairLastPushAt = new Map(); // `${recipientKey}::${offerId}` -> ts
+const anyLastPushAt  = new Map(); // recipientKey -> ts
+
 const isPairAllowed = (key) => {
   if (PAIR_COOLDOWN_MS <= 0) return true;
   const last = pairLastPushAt.get(key) || 0;
   return Date.now() - last >= PAIR_COOLDOWN_MS;
 };
-const markPairPushed = (key) => pairLastPushAt.set(key, Date.now());
-
-// Global‑Guard (pro Empfänger)
-const anyLastPushAt = new Map(); // key: recipientKey -> ts
 const isAnyAllowed = (recipientKey) => {
   if (MIN_PUSH_INTERVAL_MS <= 0) return true;
   const last = anyLastPushAt.get(recipientKey) || 0;
   return Date.now() - last >= MIN_PUSH_INTERVAL_MS;
 };
-const markAnyPushed = (recipientKey) => anyLastPushAt.set(recipientKey, Date.now());
+const markPairPushed = (key) => pairLastPushAt.set(key, Date.now());
+const markAnyPushed  = (recipientKey) => anyLastPushAt.set(recipientKey, Date.now());
 
-/* ──────────────────────────────────────────────────────────────
- * In‑Memory Telemetry
- * ────────────────────────────────────────────────────────────── */
+/* ───────── Telemetry ───────── */
+
 const bootAt = Date.now();
 const stats = {
-  received: 0,
-  sent: 0,
-  cooldown: 0,
-  perReload: 0,
-  seenOrMuted: 0,
-  outside: 0,
-  noRecipients: 0,
-  tokenDisabled: 0,
-  validationErrors: 0,
-  errors: 0,
+  received: 0, sent: 0, cooldown: 0, perReload: 0,
+  seenOrMuted: 0, outside: 0, noRecipients: 0, tokenDisabled: 0,
+  validationErrors: 0, errors: 0,
 };
 
-/**
- * GET /api/location/debug-stats
- */
+/* ───────── Debug ───────── */
+
 router.get('/debug-stats', (_req, res) => {
   res.json({
     ok: true,
@@ -97,10 +79,8 @@ router.get('/debug-stats', (_req, res) => {
   });
 });
 
-/**
- * POST /api/location/geofence-enter
- * Body: { offerId, lat, lng, eventType?, token? }
- */
+/* ───────── Route ───────── */
+
 router.post('/geofence-enter', async (req, res) => {
   stats.received += 1;
 
@@ -115,7 +95,6 @@ router.post('/geofence-enter', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Ungültige offerId' });
     }
 
-    // Offer minimal laden
     const offer = await Offer.findById(offerId, 'location radius name').lean();
     if (!offer) {
       stats.validationErrors += 1;
@@ -129,7 +108,6 @@ router.post('/geofence-enter', async (req, res) => {
       return res.status(422).json({ success: false, error: 'Angebot hat keine gültige Geoposition/Radius' });
     }
 
-    // Radius‑Check
     const distanceMeters = haversineMeters(lat, lng, coords[1], coords[0]);
     const inside = distanceMeters <= radius;
 
@@ -139,13 +117,9 @@ router.post('/geofence-enter', async (req, res) => {
     let deviceTokenDoc = null;
 
     if (typeof inlineToken === 'string' && inlineToken.trim()) {
-      // Token upsert
       deviceTokenDoc = await PushToken.findOneAndUpdate(
         { token: inlineToken.trim() },
-        {
-          $setOnInsert: { platform: 'android' },
-          $set: { disabled: false, lastSeenAt: new Date() },
-        },
+        { $setOnInsert: { platform: 'android' }, $set: { disabled: false, lastSeenAt: new Date() } },
         { new: true, upsert: true }
       ).exec();
 
@@ -202,7 +176,6 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // Sichtbarkeit/Zustand
     const deviceTokenId = deviceTokenDoc?._id;
     if (!deviceTokenId) {
       stats.noRecipients += 1;
@@ -214,6 +187,7 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
+    // Sichtbarkeit & Permission
     await OfferVisibility.upsertSeen(deviceTokenId, offerId);
 
     const now = new Date();
@@ -265,24 +239,65 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // Push senden
+    // Push vorbereiten
     const url = `/offers/${offerId}`;
     const title = 'Angebot in deiner Nähe';
     const body  = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
 
-    const meta = await sendOffersPushSafe(tokens, {
+    // Senden
+    const metaFull = await sendOffersPushSafe(tokens, {
       title, body, url, channelId: 'offers', sound: 'default'
     });
 
-    const notified = meta.sent > 0;
+    const notified = metaFull.sent > 0;
 
-    // Zustände & Guards nur bei Erfolg markieren
+    // Guards & Status nur bei Erfolg markieren
     if (notified) {
       await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
       markAnyPushed(recipientKey);
       markPairPushed(pairKey);
       stats.sent += 1;
     }
+
+    // Diagnose: klare Reason & kompaktes Meta zurückgeben
+    let reason = undefined;
+    if (!notified) {
+      // Ableitungen aus metaFull
+      const disabledCount =
+        (metaFull.disabledTokens?.length || metaFull.disabled?.length || 0);
+      if (disabledCount > 0 && disabledCount >= (tokens?.length || 1)) {
+        reason = 'device-token-disabled';
+        stats.tokenDisabled += 1;
+      } else if (Array.isArray(metaFull.errors) && metaFull.errors.length) {
+        reason = `push-service-error: ${String(metaFull.errors[0]?.message || metaFull.errors[0])}`.slice(0, 180);
+      } else if ((metaFull.tickets?.length || 0) === 0) {
+        reason = 'no-tickets';
+      } else {
+        reason = 'delivery-failed';
+      }
+
+      // Server‑Log für Deep‑Dive
+      console.warn('[geofence-enter] send failed', {
+        offerId: String(offerId),
+        recipient: recipientKey,
+        tokens: tokens.length,
+        reason,
+        meta: {
+          sent: metaFull.sent,
+          tickets: Array.isArray(metaFull.tickets) ? metaFull.tickets.slice(0, 2) : undefined,
+          errors: Array.isArray(metaFull.errors) ? metaFull.errors.slice(0, 2) : undefined,
+          disabled: metaFull.disabledTokens || metaFull.disabled || undefined,
+        }
+      });
+    }
+
+    // kompaktes Meta an Client
+    const meta = {
+      sent: metaFull.sent,
+      tickets: Array.isArray(metaFull.tickets) ? metaFull.tickets.length : undefined,
+      errors: Array.isArray(metaFull.errors) ? metaFull.errors.slice(0, 1) : undefined,
+      disabled: metaFull.disabledTokens || metaFull.disabled || undefined,
+    };
 
     return res.json({
       success: true,
@@ -292,7 +307,8 @@ router.post('/geofence-enter', async (req, res) => {
       radiusMeters: radius,
       eventType,
       pushSent: notified,
-      meta
+      ...(reason ? { reason } : {}),
+      meta,
     });
   } catch (err) {
     stats.errors += 1;

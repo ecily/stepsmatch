@@ -12,20 +12,82 @@ import {
   AppState,
   Animated,
   Easing,
+  Platform,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import colors from '../../theme/colors';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-/* ───────────── Autopush-Config ───────────── */
-// 👉 Baseline beim ersten Load deaktivieren, damit sofort gepostet wird:
-const BASELINE_ON_FIRST_LOAD = false; // <— DEV: auf true stellen, wenn du den alten Schutz zurück willst
-const SEEN_IDS_KEY = 'seenOfferIds_v1';
-const MAX_POSTS_PER_RELOAD = 1; // pro Reload maximal 1 Geofence-POST
+/* ─────────── PUSH: Handler (zeigt Banner auch im Vordergrund) ─────────── */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,      // ← wichtig: sonst kein Banner im Vordergrund
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+/* ─────────── PUSH: Setup (Channel + Permission + Token speichern) ─────────── */
+async function ensurePushReady() {
+  try {
+    // Android: Channel mit hoher Importance
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('offers', {
+        name: 'Offers',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: false,
+        showBadge: true,
+      });
+    }
+
+    // Permissions
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let status = existing;
+    if (existing !== 'granted') {
+      const req = await Notifications.requestPermissionsAsync();
+      status = req.status;
+    }
+    if (status !== 'granted') {
+      console.log('[Push] permission not granted');
+      return null;
+    }
+
+    // Expo Push Token (SDK 50): projectId muss gesetzt sein
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ??
+      Constants?.easConfig?.projectId ??
+      Constants?.expoConfig?.owner; // fallback (nicht ideal, aber harmless)
+
+    const tokenResp = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+    const token = tokenResp?.data || null;
+
+    if (token) {
+      const old = await AsyncStorage.getItem('expoPushToken');
+      if (old !== token) {
+        await AsyncStorage.setItem('expoPushToken', token);
+      }
+      console.log('[Push] Expo token', token);
+    } else {
+      console.log('[Push] no token received');
+    }
+
+    return token;
+  } catch (e) {
+    console.log('[Push] setup error', e?.message || e);
+    return null;
+  }
+}
 
 /* ───────────── Helpers ───────────── */
 
@@ -162,6 +224,7 @@ function pickRadiusMeters(item) {
   return null; // ohne Radius → AUS
 }
 
+/** Robust gegen verschiedene Felder/Strukturen. Wenn keine Angaben vorhanden → true (gilt). */
 function isOfferActiveNow(offer, now = new Date()) {
   const vd = offer?.validDates || offer?.dates || null;
   if (vd && typeof vd === 'object') {
@@ -257,9 +320,23 @@ export default function HomeTab() {
 
   const fetchFnRef = useRef(null);
 
-  /* ───────────── Gesehen-IDs (Persist) ───────────── */
-  const seenIdsRef = useRef(new Set());           // Set<string>
-  const baselineAppliedRef = useRef(BASELINE_ON_FIRST_LOAD); // <— Startwert folgt Flag
+  /* ───────── PUSH: Setup einmalig beim Mount ───────── */
+  useEffect(() => {
+    (async () => {
+      const token = await ensurePushReady();
+      if (!token) {
+        if (__DEV__) showDev('Push nicht bereit (Permissions/Token/Channel prüfen).');
+      }
+    })();
+  }, [showDev]);
+
+  /* ───────── Gesehen-IDs (Client) – unverändert aus deiner Version ───────── */
+  const SEEN_IDS_KEY = 'seenOfferIds_v1';
+  const BASELINE_ON_FIRST_LOAD = false;
+  const MAX_POSTS_PER_RELOAD = 1;
+
+  const seenIdsRef = useRef(new Set());
+  const baselineAppliedRef = useRef(BASELINE_ON_FIRST_LOAD);
 
   const loadSeenIds = useCallback(async () => {
     try {
@@ -279,12 +356,11 @@ export default function HomeTab() {
     } catch {}
   }, []);
 
-  // DEV: Reset per Long‑Press
   const resetSeenIds = useCallback(async () => {
     try {
       seenIdsRef.current = new Set();
       await AsyncStorage.removeItem(SEEN_IDS_KEY);
-      baselineAppliedRef.current = BASELINE_ON_FIRST_LOAD; // zurück auf Flag
+      baselineAppliedRef.current = BASELINE_ON_FIRST_LOAD;
       if (__DEV__) showDev('DEV: seenOfferIds reset.');
     } catch (e) {
       if (__DEV__) showDev(`DEV: reset error ${e?.message || e}`);
@@ -319,7 +395,7 @@ export default function HomeTab() {
     return { lat: pos.coords.latitude, lng: pos.coords.longitude };
   }, []);
 
-  // Fetch
+  // Fetch (deine bestehende Logik – unverändert, nur kürzer gezeigt)
   const fetchPage = useCallback(
     async ({ pageToLoad = 1, mode = 'initial' } = {}) => {
       if (inFlightRef.current) return;
@@ -375,28 +451,19 @@ export default function HomeTab() {
              (payload?.nextPage != null) ??
              (rows.length === limit));
 
-        if (rows[0]) {
-          console.log('[HomeTab] sample item keys:', Object.keys(rows[0]));
-        } else {
-          console.log('[HomeTab] WARN: no rows in payload. keys=', Object.keys(payload));
-        }
+        if (rows[0]) console.log('[HomeTab] sample item keys:', Object.keys(rows[0]));
 
         const now = new Date();
         const filtered = [];
         const newlySeenThisRun = [];
 
         for (const o of rows) {
-          if (!matchesInterests(o, interestSet)) {
-            continue;
-          }
-          if (!isOfferActiveNow(o, now)) {
-            continue;
-          }
+          if (!matchesInterests(o, interestSet)) continue;
+          if (!isOfferActiveNow(o, now)) continue;
           const geo = pickOfferLatLng(o);
           const radiusM = pickRadiusMeters(o);
-          if (!geo || !Number.isFinite(radiusM)) {
-            continue;
-          }
+          if (!geo || !Number.isFinite(radiusM)) continue;
+
           const distanceM =
             toNumber(o.distance) ?? haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng);
           const inside = distanceM <= radiusM;
@@ -407,8 +474,6 @@ export default function HomeTab() {
             if (expoToken && postsThisReload < MAX_POSTS_PER_RELOAD) {
               const id = String(o._id || '');
               const seenSet = seenIdsRef.current;
-
-              // 👉 Baseline AUS = wir posten sofort beim ersten passenden neuen Offer
               const isNew = id && !seenSet.has(id);
 
               if (isNew) {
@@ -435,7 +500,6 @@ export default function HomeTab() {
 
                 postsThisReload += 1;
               } else {
-                // deutlicher Log
                 console.log('[HomeTab][autopost] SKIP already seen', id, o.name);
               }
             }
@@ -471,8 +535,7 @@ export default function HomeTab() {
         const netMs = (t1 - t0).toFixed(0);
         console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${netMs}ms took=${payload.tookMs ?? '—'}ms`);
 
-        // 🔁 Baseline nur, wenn Flag aktiv
-        if (mode === 'initial' && !baselineAppliedRef.current && BASELINE_ON_FIRST_LOAD) {
+        if (mode === 'initial' && !baselineAppliedRef.current && false /* Baseline AUS */) {
           for (const o of filtered) {
             const id = String(o._id || '');
             if (id) seenIdsRef.current.add(id);
@@ -546,7 +609,7 @@ export default function HomeTab() {
     };
   }, []);
 
-  // DEV: Test Arrival (unchanged) – Long‑Press = Reset
+  /* DEV: „Test Arrival“ (Long‑Press = Reset) */
   const triggerTestArrival = useCallback(async () => {
     try {
       const expoToken = await AsyncStorage.getItem('expoPushToken');
@@ -574,7 +637,7 @@ export default function HomeTab() {
         offerId: best._id,
         lat: userLoc.lat,
         lng: userLoc.lng,
-        token: await AsyncStorage.getItem('expoPushToken'),
+        token: expoToken,
         eventType: 'enter',
       });
       const d = res?.data || {};
@@ -588,7 +651,7 @@ export default function HomeTab() {
     }
   }, [offers, userLoc, showDev]);
 
-  /* UI */
+  /* UI (unverändert) */
 
   const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
 
@@ -631,7 +694,6 @@ export default function HomeTab() {
           <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>
         )}
 
-        {/* DEV: Test Arrival (Long‑Press = Reset Seen‑IDs) */}
         {__DEV__ && (
           <>
             <TouchableOpacity
@@ -797,7 +859,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   );
 }
 
-/* ───────────── Dev‑Banner & Skeletons & Styles (unverändert) ───────────── */
+/* ───────────── Dev‑Banner & Skeletons & Styles (wie gehabt) ───────────── */
 
 function DevBanner({ msg, onClose }) {
   return (
@@ -815,7 +877,7 @@ function SkeletonCard() {
       <View style={[styles.skel, { width: 200, height: 12, marginBottom: 12 }]} />
       <View style={{ flexDirection: 'row', marginTop: 8 }}>
         <View style={styles.skelImg} />
-        <View className="styles.skelImg" />
+        <View style={styles.skelImg} />
         <View style={styles.skelImg} />
       </View>
     </View>
