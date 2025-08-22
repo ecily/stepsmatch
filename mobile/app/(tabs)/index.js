@@ -21,6 +21,12 @@ import colors from '../../theme/colors';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
+/* ───────────── Autopush-Config ───────────── */
+// 👉 Baseline beim ersten Load deaktivieren, damit sofort gepostet wird:
+const BASELINE_ON_FIRST_LOAD = false; // <— DEV: auf true stellen, wenn du den alten Schutz zurück willst
+const SEEN_IDS_KEY = 'seenOfferIds_v1';
+const MAX_POSTS_PER_RELOAD = 1; // pro Reload maximal 1 Geofence-POST
+
 /* ───────────── Helpers ───────────── */
 
 function withTimeout(promise, ms, label = 'operation') {
@@ -105,7 +111,7 @@ function formatRemaining(diffMs) {
   return `Rest: ${h}\u00A0h ${m}\u00A0min`;
 }
 
-/* ───────────── Filter-Helfer (Interessen & Radius & Zeit) ───────────── */
+/* ───────────── Filter-Helfer ───────────── */
 
 const normalizeToken = (s) =>
   String(s || '')
@@ -136,7 +142,6 @@ function matchesInterests(offer, interestSet) {
 }
 
 function pickOfferLatLng(item) {
-  // GeoJSON: { type:"Point", coordinates:[lng, lat] }
   const coords =
     item?.location?.coordinates ||
     item?.provider?.location?.coordinates ||
@@ -157,9 +162,7 @@ function pickRadiusMeters(item) {
   return null; // ohne Radius → AUS
 }
 
-/** Robust gegen verschiedene Felder/Strukturen. Wenn keine Angaben vorhanden → true (gilt). */
 function isOfferActiveNow(offer, now = new Date()) {
-  // 1) Datumsfenster
   const vd = offer?.validDates || offer?.dates || null;
   if (vd && typeof vd === 'object') {
     const fromRaw = vd.from ?? vd.start ?? vd.fromDate ?? vd.startDate;
@@ -167,17 +170,15 @@ function isOfferActiveNow(offer, now = new Date()) {
     const from = fromRaw ? new Date(fromRaw) : null;
     const to   = toRaw   ? new Date(toRaw)   : null;
     if ((from && isNaN(from)) || (to && isNaN(to))) {
-      // ignorieren, wenn nicht parsebar
+      // ignorieren
     } else {
       if (from && now < from) return false;
       if (to && now > to) return false;
     }
   }
-
-  // 2) Wochentage
   const vdDays = offer?.validDays || offer?.days || null;
   if (Array.isArray(vdDays) && vdDays.length) {
-    const day = now.getDay(); // 0 So … 6 Sa
+    const day = now.getDay();
     const norm = vdDays.map((d) => {
       if (typeof d === 'number') return d;
       const s = normalizeToken(d);
@@ -192,8 +193,6 @@ function isOfferActiveNow(offer, now = new Date()) {
     }).filter((n) => Number.isInteger(n));
     if (norm.length && !norm.includes(day)) return false;
   }
-
-  // 3) Tageszeit (HH:mm[:ss]) ggf. über Mitternacht
   const vt = offer?.validTimes || offer?.times || null;
   if (vt && typeof vt === 'object') {
     const parseHM = (x) => {
@@ -211,13 +210,11 @@ function isOfferActiveNow(offer, now = new Date()) {
       if (fromS <= toS) {
         if (!(nowS >= fromS && nowS <= toS)) return false;
       } else {
-        // Fenster über Mitternacht, z. B. 22:00–03:00
         if (!(nowS >= fromS || nowS <= toS)) return false;
       }
     }
   }
-
-  return true; // keine Einschränkungen gefunden → gültig
+  return true;
 }
 
 /* ───────────── Screen ───────────── */
@@ -230,7 +227,7 @@ export default function HomeTab() {
   const [grouped, setGrouped] = useState({});
   // Paging
   const [page, setPage] = useState(1);
-  const [limit] = useState(200); // breiter holen, lokal filtern
+  const [limit] = useState(200);
   const [hasMore, setHasMore] = useState(false);
   // Loading
   const [initialLoading, setInitialLoading] = useState(true);
@@ -240,8 +237,15 @@ export default function HomeTab() {
   // Error/Info
   const [err, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  // User Location (für Distanz-Fallback)
-  const [userLoc, setUserLoc] = useState(null); // {lat,lng}
+  // Location
+  const [userLoc, setUserLoc] = useState(null);
+
+  // Dev‑Banner
+  const [devMsg, setDevMsg] = useState(null);
+  const showDev = useCallback((msg) => {
+    setDevMsg(String(msg || ''));
+    setTimeout(() => setDevMsg(null), 3500);
+  }, []);
 
   // Refs
   const mountedRef = useRef(true);
@@ -251,8 +255,41 @@ export default function HomeTab() {
   const lastFocusAtRef = useRef(0);
   const appState = useRef(AppState.currentState);
 
-  // Ref hält IMMER die neueste fetch-Funktion
   const fetchFnRef = useRef(null);
+
+  /* ───────────── Gesehen-IDs (Persist) ───────────── */
+  const seenIdsRef = useRef(new Set());           // Set<string>
+  const baselineAppliedRef = useRef(BASELINE_ON_FIRST_LOAD); // <— Startwert folgt Flag
+
+  const loadSeenIds = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(SEEN_IDS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        seenIdsRef.current = new Set(arr.filter((x) => typeof x === 'string'));
+      }
+    } catch {}
+  }, []);
+
+  const saveSeenIds = useCallback(async () => {
+    try {
+      const arr = Array.from(seenIdsRef.current);
+      await AsyncStorage.setItem(SEEN_IDS_KEY, JSON.stringify(arr));
+    } catch {}
+  }, []);
+
+  // DEV: Reset per Long‑Press
+  const resetSeenIds = useCallback(async () => {
+    try {
+      seenIdsRef.current = new Set();
+      await AsyncStorage.removeItem(SEEN_IDS_KEY);
+      baselineAppliedRef.current = BASELINE_ON_FIRST_LOAD; // zurück auf Flag
+      if (__DEV__) showDev('DEV: seenOfferIds reset.');
+    } catch (e) {
+      if (__DEV__) showDev(`DEV: reset error ${e?.message || e}`);
+    }
+  }, [showDev]);
 
   const interestsCSVFromStorage = useCallback(async () => {
     try {
@@ -282,7 +319,7 @@ export default function HomeTab() {
     return { lat: pos.coords.latitude, lng: pos.coords.longitude };
   }, []);
 
-  // STABILE Fetch-Funktion
+  // Fetch
   const fetchPage = useCallback(
     async ({ pageToLoad = 1, mode = 'initial' } = {}) => {
       if (inFlightRef.current) return;
@@ -299,7 +336,13 @@ export default function HomeTab() {
       if (mode === 'pull') { setRefreshing(true); setError(null); }
       if (mode === 'more') { setLoadingMore(true); }
 
+      let postsThisReload = 0;
+
       try {
+        if (!baselineAppliedRef.current) {
+          await loadSeenIds();
+        }
+
         const [interestsCSV, loc] = await Promise.all([
           interestsCSVFromStorage(),
           getLocation(),
@@ -308,22 +351,14 @@ export default function HomeTab() {
         const interestSet = csvToSet(interestsCSV);
         console.log('[HomeTab] Interests:', Array.from(interestSet));
 
-        // ⬇️ NEU: Expo Push Token einmalig holen
         let expoToken = null;
         try { expoToken = await AsyncStorage.getItem('expoPushToken'); } catch {}
 
-        // Wichtig: keine serverseitigen Filter, wir filtern lokal
-        const params = {
-          withProvider: 1,
-          page: pageToLoad,
-          limit,
-        };
-
+        const params = { withProvider: 1, page: pageToLoad, limit };
         const t0 = performance.now();
         const res = await api.get('/offers', { params, signal: controller.signal });
         const t1 = performance.now();
 
-        // robustes Payload-Parsing
         const payload = res?.data ?? {};
         let rows = [];
         if (Array.isArray(payload)) rows = payload;
@@ -346,56 +381,63 @@ export default function HomeTab() {
           console.log('[HomeTab] WARN: no rows in payload. keys=', Object.keys(payload));
         }
 
-        // ── deterministische Client-Filterung ───────────────────────────
         const now = new Date();
         const filtered = [];
+        const newlySeenThisRun = [];
+
         for (const o of rows) {
-          // 1) Interesse
           if (!matchesInterests(o, interestSet)) {
-            console.log('[HomeTab][interest OUT]', { id: o?._id, name: o?.name, cat: o?.category, sub: o?.subcategory });
             continue;
           }
-          // 2) Zeitfenster
-          const active = isOfferActiveNow(o, now);
-          if (!active) {
-            console.log('[HomeTab][time OUT]', { id: o?._id, name: o?.name });
+          if (!isOfferActiveNow(o, now)) {
             continue;
           }
-          // 3) Geometrie
           const geo = pickOfferLatLng(o);
           const radiusM = pickRadiusMeters(o);
           if (!geo || !Number.isFinite(radiusM)) {
-            console.log('[HomeTab][geo OUT]', { id: o?._id, name: o?.name, geo: !!geo, radiusM });
             continue;
           }
           const distanceM =
-            toNumber(o.distance) ??
-            haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng);
-
+            toNumber(o.distance) ?? haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng);
           const inside = distanceM <= radiusM;
-          console.log('[HomeTab][calc]', {
-            id: o?._id, name: o?.name,
-            cat: o?.category, sub: o?.subcategory,
-            loc: geo, radiusM,
-            distanceM: Math.round(distanceM),
-            decision: inside ? 'IN' : 'OUT'
-          });
+
           if (inside) {
             filtered.push(o);
 
-            // ⬇️ NEU: Geofence-Push an Backend melden (fire-and-forget, Server hat Cooldown)
-            if (expoToken) {
-              api.post('/location/geofence-enter', {
-                offerId: o._id,
-                lat: loc.lat,
-                lng: loc.lng,
-                token: expoToken,
-                eventType: 'enter',
-              }).then(() => {
-                console.log('[HomeTab] geofence-enter sent', o._id);
-              }).catch((err) => {
-                console.log('[HomeTab] geofence-enter error', err?.message || err);
-              });
+            if (expoToken && postsThisReload < MAX_POSTS_PER_RELOAD) {
+              const id = String(o._id || '');
+              const seenSet = seenIdsRef.current;
+
+              // 👉 Baseline AUS = wir posten sofort beim ersten passenden neuen Offer
+              const isNew = id && !seenSet.has(id);
+
+              if (isNew) {
+                console.log('[HomeTab][autopost] NEW offer -> posting', id, o.name);
+                seenSet.add(id);
+                newlySeenThisRun.push(id);
+
+                api.post('/location/geofence-enter', {
+                  offerId: o._id,
+                  lat: loc.lat,
+                  lng: loc.lng,
+                  token: expoToken,
+                  eventType: 'enter',
+                }).then((r) => {
+                  const d = r?.data || {};
+                  const msg = `[geofence-enter] ${o.name ?? o._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
+                  console.log(msg);
+                  if (__DEV__) showDev(msg);
+                }).catch((err) => {
+                  const msg = `[geofence-enter] ERROR ${o.name ?? o._id} → ${err?.message || err}`;
+                  console.log(msg);
+                  if (__DEV__) showDev(msg);
+                });
+
+                postsThisReload += 1;
+              } else {
+                // deutlicher Log
+                console.log('[HomeTab][autopost] SKIP already seen', id, o.name);
+              }
             }
           }
         }
@@ -407,7 +449,6 @@ export default function HomeTab() {
         });
 
         if (!mountedRef.current) return;
-
         setLastUpdated(new Date());
         setHasMore(serverHasMore);
         setPage(pageToLoad);
@@ -429,6 +470,21 @@ export default function HomeTab() {
 
         const netMs = (t1 - t0).toFixed(0);
         console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${netMs}ms took=${payload.tookMs ?? '—'}ms`);
+
+        // 🔁 Baseline nur, wenn Flag aktiv
+        if (mode === 'initial' && !baselineAppliedRef.current && BASELINE_ON_FIRST_LOAD) {
+          for (const o of filtered) {
+            const id = String(o._id || '');
+            if (id) seenIdsRef.current.add(id);
+          }
+          baselineAppliedRef.current = true;
+          await saveSeenIds();
+          console.log('[HomeTab] Baseline seeded with', filtered.length, 'ids');
+        } else {
+          if (newlySeenThisRun.length > 0) {
+            await saveSeenIds();
+          }
+        }
       } catch (e) {
         if (mountedRef.current) {
           const msg = e?.message?.includes('timeout')
@@ -436,6 +492,7 @@ export default function HomeTab() {
             : 'Fehler beim Laden der Angebote.';
           setError(msg);
           console.warn('[HomeTab] fetch error:', e?.message || e);
+          if (__DEV__) showDev(`[fetch offers] ${e?.message || e}`);
         }
       } finally {
         inFlightRef.current = false;
@@ -445,12 +502,12 @@ export default function HomeTab() {
         if (mode === 'more') setLoadingMore(false);
       }
     },
-    [limit, interestsCSVFromStorage, getLocation, hasLoadedOnce]
+    [limit, interestsCSVFromStorage, getLocation, hasLoadedOnce, showDev, loadSeenIds, saveSeenIds]
   );
 
   useEffect(() => { fetchFnRef.current = fetchPage; }, [fetchPage]);
 
-  /* Initial load – nur EINMAL */
+  // Initial load
   useEffect(() => {
     mountedRef.current = true;
     fetchFnRef.current?.({ pageToLoad: 1, mode: 'initial' });
@@ -461,12 +518,10 @@ export default function HomeTab() {
     };
   }, []);
 
-  /* Pull-to-Refresh */
   const onRefresh = useCallback(() => {
     fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' });
   }, []);
 
-  /* Auto-Refresh */
   useEffect(() => {
     const handleAppState = (next) => {
       const prev = appState.current;
@@ -491,6 +546,48 @@ export default function HomeTab() {
     };
   }, []);
 
+  // DEV: Test Arrival (unchanged) – Long‑Press = Reset
+  const triggerTestArrival = useCallback(async () => {
+    try {
+      const expoToken = await AsyncStorage.getItem('expoPushToken');
+      if (!expoToken) {
+        if (__DEV__) showDev('Kein expoPushToken im AsyncStorage');
+        return;
+      }
+      if (!userLoc || !offers.length) {
+        if (__DEV__) showDev('Kein Standort oder kein Offer geladen');
+        return;
+      }
+      let best = null, bestD = Infinity;
+      for (const o of offers) {
+        const geo = pickOfferLatLng(o);
+        const r = pickRadiusMeters(o);
+        if (!geo || !Number.isFinite(r)) continue;
+        const d = haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng);
+        if (d < bestD) { best = o; bestD = d; }
+      }
+      if (!best) {
+        if (__DEV__) showDev('Kein gültiges Offer für Test gefunden');
+        return;
+      }
+      const res = await api.post('/location/geofence-enter', {
+        offerId: best._id,
+        lat: userLoc.lat,
+        lng: userLoc.lng,
+        token: await AsyncStorage.getItem('expoPushToken'),
+        eventType: 'enter',
+      });
+      const d = res?.data || {};
+      const msg = `[TEST] ${best.name ?? best._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
+      console.log(msg);
+      if (__DEV__) showDev(msg);
+    } catch (e) {
+      const msg = `[TEST] ERROR → ${e?.message || e}`;
+      console.warn(msg);
+      if (__DEV__) showDev(msg);
+    }
+  }, [offers, userLoc, showDev]);
+
   /* UI */
 
   const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
@@ -503,6 +600,7 @@ export default function HomeTab() {
           <SkeletonSection titleWidth={120} />
           <SkeletonSection titleWidth={160} />
         </ScrollView>
+        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
       </View>
     );
   }
@@ -518,6 +616,7 @@ export default function HomeTab() {
         >
           <Text style={{ color: colors.primary, fontWeight: '700' }}>Erneut versuchen</Text>
         </TouchableOpacity>
+        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
       </View>
     );
   }
@@ -530,6 +629,24 @@ export default function HomeTab() {
       >
         {lastUpdated && (
           <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>
+        )}
+
+        {/* DEV: Test Arrival (Long‑Press = Reset Seen‑IDs) */}
+        {__DEV__ && (
+          <>
+            <TouchableOpacity
+              onPress={triggerTestArrival}
+              onLongPress={resetSeenIds}
+              delayLongPress={450}
+              style={styles.testBtn}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.testBtnText}>Test Arrival</Text>
+            </TouchableOpacity>
+            <Text style={{ color: '#6b7280', fontSize: 11, marginBottom: 8 }}>
+              DEV: Long‑Press auf „Test Arrival“ = Reset der gesehenen Offer‑IDs
+            </Text>
+          </>
         )}
 
         {groupedEntries.length === 0 ? (
@@ -547,21 +664,12 @@ export default function HomeTab() {
                     index={index}
                     userLoc={userLoc}
                     onPress={() => {
-                      // ⬇️ Minimaler Eingriff: Param‑Hydration beim Navigieren
                       try {
                         const geo = pickOfferLatLng(item);
                         const distanceMeters =
                           toNumber(item.distance) ??
                           (userLoc && geo ? haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng) : null);
                         const heroImage = (Array.isArray(item.images) && item.images.length > 0) ? item.images[0] : '';
-
-                        console.log('[HomeTab] Navigate → /offers/[id]', {
-                          id: item?._id,
-                          name: item?.name,
-                          distanceM: distanceMeters != null ? Math.round(distanceMeters) : null
-                        });
-
-                        // expo-router mit Params
                         router.push({
                           pathname: `/offers/${item._id}`,
                           params: {
@@ -571,8 +679,7 @@ export default function HomeTab() {
                             distance: distanceMeters != null ? String(Math.round(distanceMeters)) : '',
                           },
                         });
-                      } catch (e) {
-                        console.warn('[HomeTab] navigate error:', e?.message || e);
+                      } catch {
                         router.push(`/offers/${item._id}`);
                       }
                     }}
@@ -603,11 +710,13 @@ export default function HomeTab() {
           </View>
         )}
       </ScrollView>
+
+      {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
     </View>
   );
 }
 
-/* ───────────── Card mit sanftem Fade-in ───────────── */
+/* ───────────── Card ───────────── */
 
 function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -617,25 +726,23 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
     const delay = Math.min(index * 50, 250);
     Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: 200, delay, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 200, delay, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 200, delay, useNativeDriver: true }),
     ]).start();
   }, [index, opacity, translateY]);
 
-  // Distanz: erst server, dann Fallback auf Haversine
   let distanceMeters = toNumber(item.distance);
   if (distanceMeters == null && userLoc && item?.location?.coordinates?.length === 2) {
-    const [lng, lat] = item.location.coordinates; // GeoJSON: [lng, lat]
+    const [lng, lat] = item.location.coordinates;
     distanceMeters = haversineMeters(userLoc.lat, userLoc.lng, lat, lng);
   }
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
-  const isActiveNow = true; // wir zeigen nur aktive an
-  const remainingMs = getRemainingMs(item); // kann null sein
+  const isActiveNow = true;
+  const remainingMs = getRemainingMs(item);
   const remainingLabel = formatRemaining(remainingMs);
   const hurry = remainingMs != null && remainingMs <= 60 * 60 * 1000;
 
-  // exakt 3 Bild-Slots, leere Slots sind unsichtbar (halten Raster)
   const imgs = (item.images || []).slice(0, 3);
   while (imgs.length < 3) imgs.push(null);
 
@@ -648,24 +755,17 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
               <Text style={styles.badgeText}>Jetzt gültig</Text>
             </View>
           )}
-
-          {/* Rest-Badge: IMMER sichtbar */}
           <View style={[styles.badge, styles.badgeRest]}>
             <Text style={[styles.badgeText, { color: '#7c2d12' }]}>{remainingLabel}</Text>
           </View>
-
-          {/* Distanz-Badge: sichtbar mit Fallback-Berechnung */}
           <View style={[styles.badge, styles.badgeDistance]}>
             <Text style={[styles.badgeText, { color: '#0f172a' }]}>{distanceText ?? '—'}</Text>
           </View>
-
-          {/* Nähe-Info optional */}
           {near && (
             <View style={[styles.badge, styles.badgeNear]}>
               <Text style={styles.badgeText}>In der Nähe</Text>
             </View>
           )}
-
           {!!item.category && (
             <View style={[styles.badge, styles.badgeCategory]}>
               <Text style={[styles.badgeText, { color: '#374151' }]} numberOfLines={1}>
@@ -697,7 +797,15 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   );
 }
 
-/* ───────────── Skeletons ───────────── */
+/* ───────────── Dev‑Banner & Skeletons & Styles (unverändert) ───────────── */
+
+function DevBanner({ msg, onClose }) {
+  return (
+    <TouchableOpacity activeOpacity={0.9} onPress={onClose} style={styles.devBannerWrap}>
+      <Text style={styles.devBannerText} numberOfLines={3}>{msg}</Text>
+    </TouchableOpacity>
+  );
+}
 
 function SkeletonCard() {
   return (
@@ -707,7 +815,7 @@ function SkeletonCard() {
       <View style={[styles.skel, { width: 200, height: 12, marginBottom: 12 }]} />
       <View style={{ flexDirection: 'row', marginTop: 8 }}>
         <View style={styles.skelImg} />
-        <View style={styles.skelImg} />
+        <View className="styles.skelImg" />
         <View style={styles.skelImg} />
       </View>
     </View>
@@ -731,13 +839,8 @@ function SkeletonSection({ titleWidth = 140 }) {
   );
 }
 
-/* ───────────── Styles ───────────── */
-
-// Card: 260 breit; innen 16 Padding → 228 nutzbar
-// 3 Bilder + 2x8 Abstand → 212 / 3 ≈ 70
 const CARD_WIDTH = 260;
 const CARD_MIN_HEIGHT = 216;
-
 const IMAGE_MARGIN = 8;
 const IMAGE_WIDTH = 70;
 const IMAGE_HEIGHT = 54;
@@ -753,6 +856,18 @@ const styles = StyleSheet.create({
   horizontalList: { paddingLeft: 2, paddingRight: 2 },
 
   updatedHint: { color: '#6b7280', fontSize: 12, marginBottom: 8 },
+
+  testBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef2ff',
+    borderColor: '#c7d2fe',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  testBtnText: { color: colors.primary, fontWeight: '800' },
 
   card: {
     backgroundColor: '#f7f8fb',
@@ -800,7 +915,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#eee',
     marginRight: IMAGE_MARGIN,
   },
-  // unsichtbar, hält Raster
   offerImageTransparent: {
     width: IMAGE_WIDTH,
     height: IMAGE_HEIGHT,
@@ -809,7 +923,6 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
 
-  /* Skeleton */
   skel: { backgroundColor: '#e9eef5', borderRadius: 8 },
   skelImg: {
     width: IMAGE_WIDTH,
@@ -819,7 +932,6 @@ const styles = StyleSheet.create({
     marginRight: IMAGE_MARGIN,
   },
 
-  /* Footer */
   loadMoreBtn: {
     marginTop: 8,
     paddingHorizontal: 18,
@@ -831,4 +943,23 @@ const styles = StyleSheet.create({
 
   error: { color: 'red', marginTop: 30, textAlign: 'center' },
   empty: { color: '#999', marginTop: 20, textAlign: 'center', fontSize: 16 },
+
+  devBannerWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 16,
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#64748b',
+    elevation: 6,
+  },
+  devBannerText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });

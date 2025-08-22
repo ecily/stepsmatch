@@ -6,7 +6,7 @@ import Offer from '../models/Offer.js';
 // Robuster Sender mit Receipts/Deaktivierung
 import { sendOffersPushSafe } from '../utils/push.js';
 
-// ✅ Korrigiert: dein bestehendes Token-Model
+// ✅ Token-Model
 import PushToken from '../models/PushToken.js';
 
 // Persistente Sichtbarkeit pro (deviceToken × offerId)
@@ -15,29 +15,11 @@ import OfferVisibility, { OFFER_VISIBILITY_STATUS as VIS } from '../models/Offer
 const router = express.Router();
 
 /* ──────────────────────────────────────────────────────────────
- * In‑Memory Guards
+ * Helpers
  * ────────────────────────────────────────────────────────────── */
 
-// A) Bestehender Pair‑Cooldown (10 min) pro (recipient × offer)
-const pairLastPushAt = new Map();
-const PAIR_COOLDOWN_MS = 10 * 60 * 1000;
-function shouldSendNowPair(key) {
-  const now = Date.now();
-  const last = pairLastPushAt.get(key) || 0;
-  if (now - last >= PAIR_COOLDOWN_MS) { pairLastPushAt.set(key, now); return true; }
-  return false;
-}
-
-// B) Global‑Guard „pro Reload max. 1 Push“ (Default 10 Sek.)
-const anyLastPushAt = new Map();
-const ANY_COOLDOWN_MS = Number(process.env.MIN_PUSH_INTERVAL_MS || 10_000); // 10s default
-
-function shouldSendNowAny(recipientKey) {
-  const now = Date.now();
-  const last = anyLastPushAt.get(recipientKey) || 0;
-  if (now - last >= ANY_COOLDOWN_MS) { anyLastPushAt.set(recipientKey, now); return true; }
-  return false;
-}
+// ENV → Zahl, "0" bleibt 0, Default nur wenn undefined
+const toMs = (v, def) => (v === undefined ? def : Number(v));
 
 /* Haversine (Meter) */
 function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -53,15 +35,39 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 }
 
 /* ──────────────────────────────────────────────────────────────
+ * In‑Memory Guards (pro Prozess)
+ * ────────────────────────────────────────────────────────────── */
+
+// A) Pair‑Cooldown (pro Empfänger×Offer), ENV-gesteuert
+const PAIR_COOLDOWN_MS = toMs(process.env.PAIR_COOLDOWN_MS, 10 * 60 * 1000);
+const pairLastPushAt = new Map(); // key: `${recipientKey}::${offerId}` -> ts
+const isPairAllowed = (key) => {
+  if (PAIR_COOLDOWN_MS <= 0) return true;
+  const last = pairLastPushAt.get(key) || 0;
+  return Date.now() - last >= PAIR_COOLDOWN_MS;
+};
+const markPairPushed = (key) => pairLastPushAt.set(key, Date.now());
+
+// B) Global‑Guard „pro Reload max. 1 Push“ (pro Empfänger), ENV-gesteuert
+const MIN_PUSH_INTERVAL_MS = toMs(process.env.MIN_PUSH_INTERVAL_MS, 10_000);
+const anyLastPushAt = new Map(); // key: recipientKey -> ts
+const isAnyAllowed = (recipientKey) => {
+  if (MIN_PUSH_INTERVAL_MS <= 0) return true;
+  const last = anyLastPushAt.get(recipientKey) || 0;
+  return Date.now() - last >= MIN_PUSH_INTERVAL_MS;
+};
+const markAnyPushed = (recipientKey) => anyLastPushAt.set(recipientKey, Date.now());
+
+/* ──────────────────────────────────────────────────────────────
  * In‑Memory Telemetry (startet bei 0 nach Restart)
  * ────────────────────────────────────────────────────────────── */
 const bootAt = Date.now();
 const stats = {
   received: 0,          // Anzahl eingehender Requests
   sent: 0,              // erfolgreich gesendete Pushes (>=1 Ticket ok)
-  cooldown: 0,          // blockiert wegen Pair‑Cooldown (10 min)
-  perReload: 0,         // blockiert wegen Global‑Guard (10 s)
-  seenOrMuted: 0,       // already-seen-or-muted (OfferVisibility)
+  cooldown: 0,          // blockiert wegen Pair‑Cooldown
+  perReload: 0,         // blockiert wegen Global‑Guard
+  seenOrMuted: 0,       // blocked durch OfferVisibility (dismissed/snoozed/notified)
   outside: 0,           // außerhalb des Radius
   noRecipients: 0,      // kein aktives Device
   tokenDisabled: 0,     // konkretes Token ist disabled
@@ -79,7 +85,7 @@ router.get('/debug-stats', (_req, res) => {
     uptimeSec: Math.round((Date.now() - bootAt) / 1000),
     windows: {
       pairCooldownMs: PAIR_COOLDOWN_MS,
-      anyCooldownMs: ANY_COOLDOWN_MS,
+      anyCooldownMs: MIN_PUSH_INTERVAL_MS,
     },
     stats,
   });
@@ -148,7 +154,7 @@ router.post('/geofence-enter', async (req, res) => {
       }
 
       tokens = [deviceTokenDoc.token];
-      recipientKey = deviceTokenDoc.token; // für In‑Memory Guards
+      recipientKey = deviceTokenDoc.token; // pro-Recipient Guard
     } else if (req.user?._id) {
       const devices = await PushToken.find(
         { userId: req.user._id, disabled: false },
@@ -211,23 +217,23 @@ router.post('/geofence-enter', async (req, res) => {
     // 1) „gesehen“ anlegen, falls neu
     await OfferVisibility.upsertSeen(deviceTokenId, offerId);
 
-    // 2) Darf benachrichtigt werden? (respektiert snooze/dismiss)
-    const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, new Date());
+    // 2) Darf benachrichtigt werden? (respektiert snooze/dismiss/notified)
+    const now = new Date();
+    const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, now);
     if (!mayNotify) {
       stats.seenOrMuted += 1;
 
-      // 🆕 Statusgenaue Reason für besseres Debugging
+      // statusgenaue Reason
       const doc = await OfferVisibility.findOne({ deviceToken: deviceTokenId, offerId }).lean();
       let reason = 'blocked';
       if (doc) {
         if (doc.status === VIS.DISMISSED) {
           reason = 'dismissed';
         } else if (doc.status === VIS.SNOOZED) {
-          reason = doc.remindAt && doc.remindAt > new Date() ? 'snoozed-not-due' : 'snoozed';
+          reason = doc.remindAt && doc.remindAt > now ? 'snoozed-not-due' : 'snoozed';
         } else if (doc.status === VIS.NOTIFIED) {
           reason = 'already-notified';
         } else if (doc.status === VIS.SEEN) {
-          // sollte mit aktuellem Model nie hier landen (SEEN => shouldNotify true)
           reason = 'seen-no-push';
         }
       }
@@ -240,26 +246,34 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // 3) Global‑Guard – nur 1 Push pro kurzem Fenster (≈ „pro Reload“)
-    if (!shouldSendNowAny(recipientKey)) {
+    // Keys für Guards
+    const pairKey = `${recipientKey ?? tokens[0]}::${offerId}`;
+
+    // 3) Global‑Guard – prüft nur, markiert NICHT
+    if (!isAnyAllowed(recipientKey)) {
       stats.perReload += 1;
+      const last = anyLastPushAt.get(recipientKey) || 0;
+      const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
         distanceMeters: Math.round(distanceMeters),
         radiusMeters: radius, eventType,
-        pushSent: false, reason: 'per-reload-limit'
+        pushSent: false, reason: 'per-reload-limit',
+        meta: { windowMs: MIN_PUSH_INTERVAL_MS, sinceMs: since }
       });
     }
 
-    // 4) Pair‑Guard (10 min) pro (recipient × offer)
-    const pairKey = `${recipientKey ?? tokens[0]}::${offerId}`;
-    if (!shouldSendNowPair(pairKey)) {
+    // 4) Pair‑Guard – prüft nur, markiert NICHT
+    if (!isPairAllowed(pairKey)) {
       stats.cooldown += 1;
+      const last = pairLastPushAt.get(pairKey) || 0;
+      const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
         distanceMeters: Math.round(distanceMeters),
         radiusMeters: radius, eventType,
-        pushSent: false, reason: 'cooldown-active'
+        pushSent: false, reason: 'cooldown-active',
+        meta: { windowMs: PAIR_COOLDOWN_MS, sinceMs: since }
       });
     }
 
@@ -274,9 +288,12 @@ router.post('/geofence-enter', async (req, res) => {
 
     const notified = meta.sent > 0;
 
-    // 6) Persistenter Zustandswechsel nur bei Erfolg
+    // 6) Zustände & Guards nur bei Erfolg markieren
     if (notified) {
       await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
+      // Guards „armen“ NACH erfolgreichem Send
+      markAnyPushed(recipientKey);
+      markPairPushed(pairKey);
       stats.sent += 1;
     }
 
