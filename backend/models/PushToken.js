@@ -1,3 +1,4 @@
+// backend/models/PushToken.js
 import mongoose from 'mongoose';
 
 const { Schema, Types } = mongoose;
@@ -25,11 +26,11 @@ const pushTokenSchema = new Schema(
   {
     timestamps: true,           // createdAt + updatedAt automatisch
     versionKey: false,
-    collection: 'devicetokens', // <<< WICHTIG: auf bestehende Collection zeigen
+    collection: 'devicetoken',  // <<< FIX: exakt deine bestehende Collection (singular)
   }
 );
 
-// Zusätzliche sinnvolle Kombi-Indizes
+// Sinnvolle Kombi-Indizes
 pushTokenSchema.index({ userId: 1, platform: 1 });
 pushTokenSchema.index({ userId: 1, updatedAt: -1 });
 
