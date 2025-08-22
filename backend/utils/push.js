@@ -1,4 +1,4 @@
-import Expo from 'expo-server-sdk';
+import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js'; // ✅ FIX: war DeviceTokens.js
 import OfferVisibility from '../models/OfferVisibility.js';
 
