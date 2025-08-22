@@ -8,8 +8,7 @@ import OfferVisibility, { OFFER_VISIBILITY_STATUS as VIS } from '../models/Offer
 
 const router = express.Router();
 
-/* ───────── Helpers ───────── */
-
+/* Helpers */
 function envMs(name, def) {
   const v = process.env[name];
   if (v === undefined) return def;
@@ -18,7 +17,6 @@ function envMs(name, def) {
   const n = Number(s);
   return Number.isFinite(n) ? n : def;
 }
-
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const toRad = (v) => (v * Math.PI) / 180;
   const R = 6371000;
@@ -31,8 +29,7 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-/* ───────── In‑Memory Guards ───────── */
-
+/* In‑Memory Guards */
 const PAIR_COOLDOWN_MS = envMs('PAIR_COOLDOWN_MS', 10 * 60 * 1000);
 const MIN_PUSH_INTERVAL_MS = envMs('MIN_PUSH_INTERVAL_MS', 10_000);
 
@@ -52,8 +49,7 @@ const isAnyAllowed = (recipientKey) => {
 const markPairPushed = (key) => pairLastPushAt.set(key, Date.now());
 const markAnyPushed  = (recipientKey) => anyLastPushAt.set(recipientKey, Date.now());
 
-/* ───────── Telemetry ───────── */
-
+/* Telemetry */
 const bootAt = Date.now();
 const stats = {
   received: 0, sent: 0, cooldown: 0, perReload: 0,
@@ -61,8 +57,7 @@ const stats = {
   validationErrors: 0, errors: 0,
 };
 
-/* ───────── Debug ───────── */
-
+/* Debug: windows */
 router.get('/debug-stats', (_req, res) => {
   res.json({
     ok: true,
@@ -79,8 +74,43 @@ router.get('/debug-stats', (_req, res) => {
   });
 });
 
-/* ───────── Route ───────── */
+/* 🔎 NEU: Model/DB‑Check */
+router.get('/debug-model', async (_req, res) => {
+  try {
+    const db = mongoose.connection?.db;
+    const dbName = db?.databaseName || mongoose.connection?.name || null;
+    const modelName = PushToken?.modelName;
+    const collectionName = PushToken?.collection?.collectionName;
+    res.json({ ok: true, dbName, modelName, collectionName });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
 
+/* 🔎 NEU: Direkter Upsert‑Test (kein Offer nötig) */
+router.post('/debug-upsert-token', async (req, res) => {
+  try {
+    const { token, platform = 'android' } = req.body || {};
+    if (!token) return res.status(400).json({ ok: false, error: 'token required' });
+
+    const doc = await PushToken.findOneAndUpdate(
+      { token: token.trim() },
+      { $setOnInsert: { platform }, $set: { disabled: false, lastSeenAt: new Date() } },
+      { new: true, upsert: true }
+    ).lean();
+
+    res.json({
+      ok: true,
+      modelName: PushToken.modelName,
+      collectionName: PushToken.collection?.collectionName,
+      saved: doc ? { _id: String(doc._id), token: doc.token, disabled: doc.disabled, updatedAt: doc.updatedAt } : null,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+/* Route: Geofence Enter */
 router.post('/geofence-enter', async (req, res) => {
   stats.received += 1;
 
@@ -117,6 +147,9 @@ router.post('/geofence-enter', async (req, res) => {
     let deviceTokenDoc = null;
 
     if (typeof inlineToken === 'string' && inlineToken.trim()) {
+      // 🔎 log mini
+      // console.log('[geofence-enter] inlineToken len:', inlineToken.trim().length);
+
       deviceTokenDoc = await PushToken.findOneAndUpdate(
         { token: inlineToken.trim() },
         { $setOnInsert: { platform: 'android' }, $set: { disabled: false, lastSeenAt: new Date() } },
@@ -162,7 +195,7 @@ router.post('/geofence-enter', async (req, res) => {
         success: true, offerId, inside,
         distanceMeters: Math.round(distanceMeters),
         radiusMeters: radius, eventType,
-        pushSent: false, reason: 'no-recipients'
+        pushSent: false, reason: 'no-inline-token'
       });
     }
 
@@ -187,7 +220,6 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // Sichtbarkeit & Permission
     await OfferVisibility.upsertSeen(deviceTokenId, offerId);
 
     const now = new Date();
@@ -210,7 +242,6 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // Guards (prüfen, noch NICHT markieren)
     const pairKey = `${recipientKey ?? tokens[0]}::${offerId}`;
 
     if (!isAnyAllowed(recipientKey)) {
@@ -239,19 +270,16 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // Push vorbereiten
     const url = `/offers/${offerId}`;
     const title = 'Angebot in deiner Nähe';
     const body  = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
 
-    // Senden
     const metaFull = await sendOffersPushSafe(tokens, {
       title, body, url, channelId: 'offers', sound: 'default'
     });
 
     const notified = metaFull.sent > 0;
 
-    // Guards & Status nur bei Erfolg markieren
     if (notified) {
       await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
       markAnyPushed(recipientKey);
@@ -259,12 +287,9 @@ router.post('/geofence-enter', async (req, res) => {
       stats.sent += 1;
     }
 
-    // Diagnose: klare Reason & kompaktes Meta zurückgeben
     let reason = undefined;
     if (!notified) {
-      // Ableitungen aus metaFull
-      const disabledCount =
-        (metaFull.disabledTokens?.length || metaFull.disabled?.length || 0);
+      const disabledCount = (metaFull.disabledTokens?.length || metaFull.disabled?.length || 0);
       if (disabledCount > 0 && disabledCount >= (tokens?.length || 1)) {
         reason = 'device-token-disabled';
         stats.tokenDisabled += 1;
@@ -275,8 +300,6 @@ router.post('/geofence-enter', async (req, res) => {
       } else {
         reason = 'delivery-failed';
       }
-
-      // Server‑Log für Deep‑Dive
       console.warn('[geofence-enter] send failed', {
         offerId: String(offerId),
         recipient: recipientKey,
@@ -291,7 +314,6 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    // kompaktes Meta an Client
     const meta = {
       sent: metaFull.sent,
       tickets: Array.isArray(metaFull.tickets) ? metaFull.tickets.length : undefined,
@@ -318,3 +340,4 @@ router.post('/geofence-enter', async (req, res) => {
 });
 
 export default router;
+
