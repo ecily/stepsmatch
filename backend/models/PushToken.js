@@ -1,9 +1,36 @@
 import mongoose from 'mongoose';
 
-const pushTokenSchema = new mongoose.Schema({
-  token: { type: String, required: true, unique: true },
-  platform: { type: String, enum: ['android', 'ios', 'web'], required: true },
-  createdAt: { type: Date, default: Date.now }
-});
+const { Schema, Types } = mongoose;
+
+const pushTokenSchema = new Schema(
+  {
+    // Expo Push Token (z. B. "ExponentPushToken[xxxxxxxxxxxxxxxxxxxx]")
+    token: { type: String, required: true, unique: true, index: true },
+
+    // Plattform wird von der App beim /push/register-Aufruf mitgegeben
+    platform: { type: String, enum: ['android', 'ios', 'web'], required: true, index: true },
+
+    // Optional: Zuordnung zu einem eingeloggten Nutzer (falls vorhanden)
+    userId: { type: Types.ObjectId, ref: 'User', default: null, index: true },
+
+    // Optional: Geräte-/Installations-ID (falls clientseitig geführt)
+    deviceId: { type: String, default: null, index: true },
+
+    // Token vom Server deaktiviert (z. B. Expo: DeviceNotRegistered)
+    disabled: { type: Boolean, default: false, index: true },
+
+    // Letzte Sichtung/Registrierung
+    lastSeenAt: { type: Date, default: Date.now, index: true },
+  },
+  {
+    timestamps: true,           // createdAt + updatedAt automatisch
+    versionKey: false,
+    collection: 'devicetokens', // <<< WICHTIG: auf bestehende Collection zeigen
+  }
+);
+
+// Zusätzliche sinnvolle Kombi-Indizes
+pushTokenSchema.index({ userId: 1, platform: 1 });
+pushTokenSchema.index({ userId: 1, updatedAt: -1 });
 
 export default mongoose.model('PushToken', pushTokenSchema);
