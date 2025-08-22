@@ -6,10 +6,10 @@ const { Schema, model, Types } = mongoose;
 /**
  * OfferVisibility
  *  - Ein Dokument pro (deviceToken × offerId)
- *  - Status steuert, ob/wan n Push gesendet werden darf
+ *  - Status steuert, ob/wann Push gesendet werden darf
  *
  * Status:
- *  - 'seen'      → Gerät hat das Offer bereits „entdeckt“, aber (noch) keine Push gesendet
+ *  - 'seen'      → Gerät hat das Offer bereits „entdeckt“, aber noch KEINE Push gesendet
  *  - 'notified'  → Push wurde bereits gesendet (lastNotifiedAt gesetzt)
  *  - 'dismissed' → Nutzer will das Offer nicht (nie wieder pushen für dieses Pair)
  *  - 'snoozed'   → „Später erinnern“; erneute Benachrichtigung erst ab remindAt
@@ -40,7 +40,7 @@ const OfferVisibilitySchema = new Schema(
       type: String,
       enum: Object.values(STATUS),
       required: true,
-      default: STATUS.SEEN,
+      default: STATUS.SEEN, // neu angelegt = gesehen, aber noch keine Push (firstSeenAt gesetzt)
       index: true,
     },
 
@@ -53,7 +53,7 @@ const OfferVisibilitySchema = new Schema(
   {
     timestamps: true, // createdAt, updatedAt
     versionKey: false,
-    collection: 'offervisibility',
+    collection: 'offervisibility', // explizit singular
   }
 );
 
@@ -146,19 +146,22 @@ OfferVisibilitySchema.statics.dismiss = async function dismiss(deviceTokenId, of
  *  - Kein Eintrag → neu → darf
  *  - dismissed → nein
  *  - snoozed → nur, wenn remindAt <= now
- *  - seen/notified → standardmäßig nein (es sei denn, du möchtest ein Re‑Notify nach X h – dann später erweitern)
+ *  - seen → JA (Erst-Push noch nicht erfolgt)
+ *  - notified → nein (erneuter Push nur mit separater Re-Notify-Logik)
  */
 OfferVisibilitySchema.statics.shouldNotify = async function shouldNotify(deviceTokenId, offerId, now = new Date()) {
   const doc = await this.findOne({ deviceToken: deviceTokenId, offerId }).lean().exec();
   if (!doc) return true; // komplett neu
 
   if (doc.status === STATUS.DISMISSED) return false;
+
   if (doc.status === STATUS.SNOOZED) {
     if (!doc.remindAt) return false;
     return doc.remindAt <= now;
   }
 
-  // 'seen' oder 'notified' → bereits bekannt → kein erneuter Push
+  if (doc.status === STATUS.SEEN) return true; // <- WICHTIG: Erst-Push erlauben
+  // 'notified' → bereits gepusht → kein erneuter Push
   return false;
 };
 

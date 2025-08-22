@@ -215,11 +215,28 @@ router.post('/geofence-enter', async (req, res) => {
     const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, new Date());
     if (!mayNotify) {
       stats.seenOrMuted += 1;
+
+      // 🆕 Statusgenaue Reason für besseres Debugging
+      const doc = await OfferVisibility.findOne({ deviceToken: deviceTokenId, offerId }).lean();
+      let reason = 'blocked';
+      if (doc) {
+        if (doc.status === VIS.DISMISSED) {
+          reason = 'dismissed';
+        } else if (doc.status === VIS.SNOOZED) {
+          reason = doc.remindAt && doc.remindAt > new Date() ? 'snoozed-not-due' : 'snoozed';
+        } else if (doc.status === VIS.NOTIFIED) {
+          reason = 'already-notified';
+        } else if (doc.status === VIS.SEEN) {
+          // sollte mit aktuellem Model nie hier landen (SEEN => shouldNotify true)
+          reason = 'seen-no-push';
+        }
+      }
+
       return res.json({
         success: true, offerId, inside,
         distanceMeters: Math.round(distanceMeters),
         radiusMeters: radius, eventType,
-        pushSent: false, reason: 'already-seen-or-muted'
+        pushSent: false, reason
       });
     }
 
