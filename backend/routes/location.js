@@ -348,4 +348,47 @@ router.post('/geofence-enter', async (req, res) => {
   }
 });
 
+/* ▶️ NEU: Notification-Action (➡️ / ❌ / 💤) */
+router.post('/notify-action', async (req, res) => {
+  try {
+    const { offerId, action, token, snoozeMinutes } = req.body || {};
+    if (!offerId || typeof action !== 'string' || !token) {
+      return res.status(400).json({ ok: false, error: 'offerId, action, token erforderlich' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(offerId)) {
+      return res.status(400).json({ ok: false, error: 'Ungültige offerId' });
+    }
+
+    const devTok = await PushToken.findOne({ token: token.trim() }).lean();
+    if (!devTok || devTok.disabled) {
+      return res.status(404).json({ ok: false, error: 'device token nicht gefunden/disabled' });
+    }
+    const deviceTokenId = devTok._id;
+
+    let status = 'noop';
+    const now = new Date();
+
+    if (action === 'dismiss') {
+      await OfferVisibility.dismiss(deviceTokenId, offerId);
+      status = 'dismissed';
+    } else if (action === 'snooze') {
+      const minutes = Number.isFinite(Number(snoozeMinutes)) ? Number(snoozeMinutes) : 180; // Default 3h
+      const remindAt = new Date(Date.now() + minutes * 60 * 1000);
+      await OfferVisibility.snooze(deviceTokenId, offerId, remindAt);
+      status = `snoozed-${minutes}m`;
+    } else if (action === 'go') {
+      // idempotent – falls bereits notified, harmless
+      await OfferVisibility.markNotified(deviceTokenId, offerId, now);
+      status = 'opened';
+    } else {
+      return res.status(400).json({ ok: false, error: 'unbekannte action' });
+    }
+
+    return res.json({ ok: true, action, status });
+  } catch (e) {
+    console.error('Fehler bei /location/notify-action:', e);
+    return res.status(500).json({ ok: false, error: 'Serverfehler bei notify-action' });
+  }
+});
+
 export default router;

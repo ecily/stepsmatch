@@ -23,6 +23,7 @@ import Constants from 'expo-constants';
 import colors from '../../theme/colors';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const CATEGORY_ID = 'offers-actions'; // 🔔 Actions: ➡️ / ❌ / 💤
 
 /* ─────────── PUSH: Handler (zeigt Banner auch im Vordergrund) ─────────── */
 Notifications.setNotificationHandler({
@@ -33,7 +34,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/* ─────────── PUSH: Setup (Channel + Permission + Token speichern) ─────────── */
+/* ─────────── PUSH: Setup (Channel + Permission + Token speichern + Kategorie) ─────────── */
 async function ensurePushReady() {
   try {
     // Android: Channel mit hoher Importance
@@ -48,6 +49,13 @@ async function ensurePushReady() {
         showBadge: true,
       });
     }
+
+    // 🔔 Kategorie für Aktionen (➡️ / ❌ / 💤)
+    await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
+      { identifier: 'go',      buttonTitle: '➡️', options: { isDestructive: false, isAuthenticationRequired: false } },
+      { identifier: 'dismiss', buttonTitle: '❌', options: { isDestructive: true,  isAuthenticationRequired: false } },
+      { identifier: 'snooze',  buttonTitle: '💤', options: { isDestructive: false, isAuthenticationRequired: false } },
+    ]);
 
     // Permissions
     const { status: existing } = await Notifications.getPermissionsAsync();
@@ -330,6 +338,47 @@ export default function HomeTab() {
     })();
   }, [showDev]);
 
+  /* 🔔 PUSH: Action‑Response Listener (➡️ / ❌ / 💤) */
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      try {
+        const actionId = response?.actionIdentifier;
+        if (!actionId) return;
+
+        const data = response?.notification?.request?.content?.data || {};
+        const offerId = String(data?.offerId || '');
+        if (!offerId) return;
+
+        let action = null;
+        if (actionId === 'go') action = 'go';
+        else if (actionId === 'dismiss') action = 'dismiss';
+        else if (actionId === 'snooze') action = 'snooze';
+        else return;
+
+        const token = await AsyncStorage.getItem('expoPushToken');
+        if (token) {
+          try {
+            await api.post('/location/notify-action', { offerId, action, token });
+          } catch (e) {
+            console.log('[notify-action] error', e?.message || e);
+          }
+        }
+
+        if (action === 'go' && offerId) {
+          try {
+            router.push(`/offers/${offerId}`);
+          } catch {}
+        }
+      } catch (e) {
+        console.log('[Push] response listener error', e?.message || e);
+      }
+    });
+
+    return () => {
+      try { sub?.remove?.(); } catch {}
+    };
+  }, [router]);
+
   /* ───────── Gesehen-IDs (Client) – unverändert aus deiner Version ───────── */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
   const BASELINE_ON_FIRST_LOAD = false;
@@ -486,6 +535,7 @@ export default function HomeTab() {
                   lat: loc.lat,
                   lng: loc.lng,
                   token: expoToken,
+                  platform: Platform.OS === 'ios' ? 'ios' : 'android', // ✅ wichtig für Filterkette
                   eventType: 'enter',
                 }).then((r) => {
                   const d = r?.data || {};
@@ -638,6 +688,7 @@ export default function HomeTab() {
         lat: userLoc.lat,
         lng: userLoc.lng,
         token: expoToken,
+        platform: Platform.OS === 'ios' ? 'ios' : 'android', // ✅ wichtig für Filterkette
         eventType: 'enter',
       });
       const d = res?.data || {};
