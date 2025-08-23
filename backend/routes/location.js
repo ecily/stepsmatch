@@ -74,7 +74,7 @@ router.get('/debug-stats', (_req, res) => {
   });
 });
 
-/* 🔎 NEU: Model/DB‑Check */
+/* 🔎 Model/DB‑Check */
 router.get('/debug-model', async (_req, res) => {
   try {
     const db = mongoose.connection?.db;
@@ -87,7 +87,7 @@ router.get('/debug-model', async (_req, res) => {
   }
 });
 
-/* 🔎 NEU: Direkter Upsert‑Test (kein Offer nötig) */
+/* 🔎 Direkter Upsert‑Test (kein Offer nötig) */
 router.post('/debug-upsert-token', async (req, res) => {
   try {
     const { token, platform = 'android' } = req.body || {};
@@ -107,6 +107,48 @@ router.post('/debug-upsert-token', async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+/* ✅ NEU: Heartbeat – Position & Präsenz eines Geräts speichern */
+router.get('/heartbeat/ping', (_req, res) => {
+  res.json({ ok: true, now: new Date().toISOString() });
+});
+
+router.post('/heartbeat', async (req, res) => {
+  try {
+    const { token, platform = 'android', lat, lng, accuracy, at } = req.body || {};
+
+    if (!token || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ ok: false, error: 'token, lat, lng erforderlich' });
+    }
+
+    const now = at ? new Date(at) : new Date();
+
+    const doc = await PushToken.findOneAndUpdate(
+      { token: token.trim() },
+      {
+        $setOnInsert: { platform },
+        $set: {
+          disabled: false,
+          lastSeenAt: now,
+          lastHeartbeatAt: now,
+          ...(typeof accuracy === 'number' ? { accuracy } : {}),
+          lastKnownLocation: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
+        },
+      },
+      { new: true, upsert: true }
+    ).lean();
+
+    return res.json({
+      ok: true,
+      id: String(doc._id),
+      platform: doc.platform,
+      lastHeartbeatAt: doc.lastHeartbeatAt ?? now,
+    });
+  } catch (e) {
+    console.error('Fehler bei /location/heartbeat:', e);
+    return res.status(500).json({ ok: false, error: 'Serverfehler bei heartbeat' });
   }
 });
 
@@ -348,7 +390,7 @@ router.post('/geofence-enter', async (req, res) => {
   }
 });
 
-/* ▶️ NEU: Notification-Action (➡️ / ❌ / 💤) */
+/* ▶️ Notification-Action (➡️ / ❌ / 💤) */
 router.post('/notify-action', async (req, res) => {
   try {
     const { offerId, action, token, snoozeMinutes } = req.body || {};
