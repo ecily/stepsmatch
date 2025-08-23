@@ -77,7 +77,7 @@ export function startOfferPoller() {
       const candidateOffers = await Offer.find({
         $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
       })
-        .select('_id title location radiusMeters radius validDates validTimes weekdays interestsRequired')
+        .select('_id name location radiusMeters radius validDates validTimes weekdays interestsRequired')
         .lean();
 
       const activeOffers = candidateOffers.filter(
@@ -90,9 +90,9 @@ export function startOfferPoller() {
         disabled: { $ne: true },
         'lastLocation.coordinates.0': { $exists: true }, // robustere Existenzprüfung
         $or: [
-          { lastHeartbeatAt: { $gte: freshSince } }, // falls vorhanden
-          { lastSeenAt: { $gte: freshSince } },      // ✔ dein Schema hat das Feld
-          { updatedAt: { $gte: freshSince } },       // Fallback
+          { lastHeartbeatAt: { $gte: freshSince } },
+          { lastSeenAt: { $gte: freshSince } },
+          { updatedAt: { $gte: freshSince } }, // Fallback
         ],
       })
         .select('_id token platform interests lastLocation')
@@ -119,7 +119,7 @@ export function startOfferPoller() {
         const [lng, lat] = offer?.location?.coordinates || [];
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-        // Radius-Fix: erst radiusMeters, dann radius, sonst Default
+        // Radius: erst radiusMeters, dann radius, sonst Default
         const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
         if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM}`);
 
@@ -145,15 +145,24 @@ export function startOfferPoller() {
         if (!matched.length) continue;
 
         // 4) Spam-Schutz via OfferVisibility
+        // blockiere:
+        // - notified (bereits gepusht)
+        // - dismissed (nie wieder)
+        // - snoozed, wenn remindAt > now (Snooze noch aktiv)
+        const now = new Date();
         const vis = await OfferVisibility.find({
           offerId: offer._id,
-          deviceTokenId: { $in: matched.map((t) => t._id) },
-          status: { $in: ['notified', 'muted', 'seen'] },
+          deviceToken: { $in: matched.map((t) => t._id) },
+          $or: [
+            { status: 'notified' },
+            { status: 'dismissed' },
+            { status: 'snoozed', remindAt: { $gt: now } },
+          ],
         })
-          .select('deviceTokenId')
+          .select('deviceToken status remindAt')
           .lean();
 
-        const already = new Set(vis.map((v) => String(v.deviceTokenId)));
+        const already = new Set(vis.map((v) => String(v.deviceToken)));
         const toNotify = matched.filter((t) => !already.has(String(t._id)));
         if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotify.length}`);
         if (!toNotify.length) continue;
@@ -162,7 +171,7 @@ export function startOfferPoller() {
         await sendOffersPushSafe(
           toNotify.map((t) => ({ token: t.token, platform: t.platform })),
           {
-            title: offer.title ?? 'Neues Angebot in deiner Nähe',
+            title: offer.name ?? 'Neues Angebot in deiner Nähe',
             body: 'Tippe, um Details zu sehen.',
             data: { type: 'offer', offerId: String(offer._id) },
           }
@@ -170,10 +179,10 @@ export function startOfferPoller() {
 
         const bulk = toNotify.map((t) => ({
           updateOne: {
-            filter: { offerId: offer._id, deviceTokenId: t._id },
+            filter: { offerId: offer._id, deviceToken: t._id }, // ← Feldname korrigiert
             update: {
-              $setOnInsert: { offerId: offer._id, deviceTokenId: t._id },
-              $set: { status: 'notified', remindAt: null, updatedAt: new Date() },
+              $setOnInsert: { offerId: offer._id, deviceToken: t._id, firstSeenAt: new Date() },
+              $set: { status: 'notified', remindAt: null, lastNotifiedAt: new Date(), updatedAt: new Date() },
             },
             upsert: true,
           },
