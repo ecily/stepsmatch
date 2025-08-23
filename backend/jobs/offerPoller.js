@@ -65,7 +65,10 @@ let timer = null;
 /* ───────── Start/Stop ───────── */
 export function startOfferPoller() {
   if (timer) return;
-  timer = setInterval(async () => {
+
+  const DEBUG = process.env.DEBUG_OFFER_POLLER === '1';
+
+  async function doCycle() {
     const t0 = Date.now();
     try {
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
@@ -80,7 +83,6 @@ export function startOfferPoller() {
       const activeOffers = candidateOffers.filter(
         (o) => isWithinDateWindow(o.validDates) && isWithinTimeWindow(o.validTimes) && weekdayMatch(o.weekdays)
       );
-      if (!activeOffers.length) return;
 
       // 2) Tokens mit frischer Location
       const tokensFresh = await PushToken.find({
@@ -94,7 +96,21 @@ export function startOfferPoller() {
         .select('_id token platform interests lastLocation')
         .lean();
 
-      if (!tokensFresh.length) return;
+      if (DEBUG) {
+        console.log(
+          `[offerPoller][debug] candidates=${candidateOffers.length} active=${activeOffers.length} tokensFresh=${tokensFresh.length}`
+        );
+      }
+
+      if (!activeOffers.length || !tokensFresh.length) {
+        if (DEBUG) console.log('[offerPoller][debug] nothing to do');
+        if (!DEBUG && process.env.NODE_ENV !== 'production') {
+          console.log(
+            `[offerPoller] cycle ok — offers=${activeOffers.length} tokens=${tokensFresh.length} took=${Date.now() - t0}ms`
+          );
+        }
+        return;
+      }
 
       // 3) Für jedes Offer → Tokens im Radius
       for (const offer of activeOffers) {
@@ -113,9 +129,14 @@ export function startOfferPoller() {
         })
           .select('_id token platform interests lastLocation')
           .lean();
-        if (!nearTokens.length) continue;
 
         const matched = nearTokens.filter((t) => interestsMatch(offer, t));
+
+        if (DEBUG) {
+          console.log(
+            `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${radiusM}`
+          );
+        }
         if (!matched.length) continue;
 
         // 4) Spam-Schutz via OfferVisibility
@@ -126,8 +147,10 @@ export function startOfferPoller() {
         })
           .select('deviceTokenId')
           .lean();
+
         const already = new Set(vis.map((v) => String(v.deviceTokenId)));
         const toNotify = matched.filter((t) => !already.has(String(t._id)));
+        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotify.length}`);
         if (!toNotify.length) continue;
 
         // 5) Push senden + Visibility setzen
@@ -153,15 +176,23 @@ export function startOfferPoller() {
         if (bulk.length) await OfferVisibility.bulkWrite(bulk);
       }
 
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[offerPoller] cycle ok — offers=${activeOffers.length} tokens=${tokensFresh.length} took=${Date.now() - t0}ms`);
+      if (!DEBUG && process.env.NODE_ENV !== 'production') {
+        console.log(
+          `[offerPoller] cycle ok — offers=${activeOffers.length} tokens=${tokensFresh.length} took=${Date.now() - t0}ms`
+        );
+      }
+      if (DEBUG) {
+        console.log(`[offerPoller][debug] took=${Date.now() - t0}ms`);
       }
     } catch (e) {
       console.error('[offerPoller] cycle error:', e?.message || e);
     }
-  }, INTERVAL_MS);
+  }
 
   console.log(`[offerPoller] started — every ${INTERVAL_MS}ms`);
+  // sofortiger erster Lauf + Intervall
+  doCycle();
+  timer = setInterval(doCycle, INTERVAL_MS);
 }
 
 export function stopOfferPoller() {
