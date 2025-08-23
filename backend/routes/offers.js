@@ -6,6 +6,7 @@ import Offer from '../models/Offer.js';
 import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
+import { sendPushToNearbyTokensForOffer } from '../utils/geoPush.js'; // ⬅️ NEU
 
 const router = express.Router();
 
@@ -460,6 +461,20 @@ router.post('/', async (req, res) => {
   try {
     const offer = new Offer(req.body);
     const saved = await offer.save();
+
+    // ⬇️ NEU: Sofort-Push an Tokens im Radius, wenn Offer aktuell aktiv ist
+    try {
+      if (isActiveNow(saved) && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
+        setImmediate(() => {
+          sendPushToNearbyTokensForOffer(saved).catch(err =>
+            console.error('[offers.create] geoPush error:', err)
+          );
+        });
+      }
+    } catch (e) {
+      console.warn('[offers.create] geoPush skipped:', e?.message || e);
+    }
+
     res.status(201).json(saved);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -504,6 +519,19 @@ router.put('/:id', async (req, res) => {
 
     if (!updatedOffer) {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
+    }
+
+    // ⬇️ NEU: Bei Updates ebenfalls Push triggern, wenn Offer aktuell aktiv ist
+    try {
+      if (isActiveNow(updatedOffer) && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
+        setImmediate(() => {
+          sendPushToNearbyTokensForOffer(updatedOffer).catch(err =>
+            console.error('[offers.update] geoPush error:', err)
+          );
+        });
+      }
+    } catch (e) {
+      console.warn('[offers.update] geoPush skipped:', e?.message || e);
     }
 
     res.json(updatedOffer);
