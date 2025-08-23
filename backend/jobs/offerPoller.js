@@ -77,7 +77,7 @@ export function startOfferPoller() {
       const candidateOffers = await Offer.find({
         $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
       })
-        .select('_id title location radiusMeters validDates validTimes weekdays interestsRequired')
+        .select('_id title location radiusMeters radius validDates validTimes weekdays interestsRequired')
         .lean();
 
       const activeOffers = candidateOffers.filter(
@@ -116,7 +116,10 @@ export function startOfferPoller() {
       for (const offer of activeOffers) {
         const [lng, lat] = offer?.location?.coordinates || [];
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        const radiusM = Number(offer.radiusMeters ?? MAX_DISTANCE_M_DEFAULT);
+
+        // ► Radius-Fix: erst radiusMeters, dann radius (gemäß deinen Datenfeldern), sonst Default
+        const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
+        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM}`);
 
         const nearTokens = await PushToken.find({
           _id: { $in: tokensFresh.map((t) => t._id) },
