@@ -147,9 +147,6 @@ router.post('/geofence-enter', async (req, res) => {
     let deviceTokenDoc = null;
 
     if (typeof inlineToken === 'string' && inlineToken.trim()) {
-      // 🔎 log mini
-      // console.log('[geofence-enter] inlineToken len:', inlineToken.trim().length);
-
       deviceTokenDoc = await PushToken.findOneAndUpdate(
         { token: inlineToken.trim() },
         { $setOnInsert: { platform: 'android' }, $set: { disabled: false, lastSeenAt: new Date() } },
@@ -166,15 +163,23 @@ router.post('/geofence-enter', async (req, res) => {
         });
       }
 
-      tokens = [deviceTokenDoc.token];
+      // ✅ Pass full token object to push util
+      tokens = [{
+        token: deviceTokenDoc.token,
+        platform: deviceTokenDoc.platform,
+        disabled: deviceTokenDoc.disabled,
+      }];
       recipientKey = deviceTokenDoc.token;
     } else if (req.user?._id) {
       const devices = await PushToken.find(
         { userId: req.user._id, disabled: false },
-        { token: 1 }
+        { token: 1, platform: 1, disabled: 1 }
       ).sort({ updatedAt: -1 }).lean();
 
-      tokens = devices.map(d => d.token).filter(Boolean);
+      tokens = devices.map(d => ({
+        token: d.token, platform: d.platform, disabled: d.disabled
+      })).filter(d => d.token);
+
       if (!tokens.length) {
         stats.noRecipients += 1;
         return res.json({
@@ -186,8 +191,7 @@ router.post('/geofence-enter', async (req, res) => {
       }
       recipientKey = `user:${req.user._id}`;
 
-      const latest = await PushToken.findOne({ userId: req.user._id, disabled: false })
-        .sort({ updatedAt: -1 }).lean();
+      const latest = devices[0];
       if (latest) deviceTokenDoc = latest;
     } else {
       stats.noRecipients += 1;
@@ -242,7 +246,7 @@ router.post('/geofence-enter', async (req, res) => {
       });
     }
 
-    const pairKey = `${recipientKey ?? tokens[0]}::${offerId}`;
+    const pairKey = `${recipientKey ?? (tokens[0]?.token || 'unknown')}::${offerId}`;
 
     if (!isAnyAllowed(recipientKey)) {
       stats.perReload += 1;
@@ -275,10 +279,15 @@ router.post('/geofence-enter', async (req, res) => {
     const body  = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
 
     const metaFull = await sendOffersPushSafe(tokens, {
-      title, body, url, channelId: 'offers', sound: 'default'
+      title,
+      body,
+      url,
+      channelId: 'offers',
+      sound: 'default',
+      data: { offerId: String(offerId) }
     });
 
-    const notified = metaFull.sent > 0;
+    const notified = (metaFull?.sent || 0) > 0;
 
     if (notified) {
       await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
@@ -289,13 +298,13 @@ router.post('/geofence-enter', async (req, res) => {
 
     let reason = undefined;
     if (!notified) {
-      const disabledCount = (metaFull.disabledTokens?.length || metaFull.disabled?.length || 0);
+      const disabledCount = (metaFull?.disabledTokens?.length || 0);
       if (disabledCount > 0 && disabledCount >= (tokens?.length || 1)) {
         reason = 'device-token-disabled';
         stats.tokenDisabled += 1;
-      } else if (Array.isArray(metaFull.errors) && metaFull.errors.length) {
-        reason = `push-service-error: ${String(metaFull.errors[0]?.message || metaFull.errors[0])}`.slice(0, 180);
-      } else if ((metaFull.tickets?.length || 0) === 0) {
+      } else if (Array.isArray(metaFull?.errors) && metaFull.errors.length) {
+        reason = `push-service-error: ${String(metaFull.errors[0])}`.slice(0, 180);
+      } else if ((metaFull?.tickets?.length || 0) === 0) {
         reason = 'no-tickets';
       } else {
         reason = 'delivery-failed';
@@ -306,19 +315,19 @@ router.post('/geofence-enter', async (req, res) => {
         tokens: tokens.length,
         reason,
         meta: {
-          sent: metaFull.sent,
-          tickets: Array.isArray(metaFull.tickets) ? metaFull.tickets.slice(0, 2) : undefined,
-          errors: Array.isArray(metaFull.errors) ? metaFull.errors.slice(0, 2) : undefined,
-          disabled: metaFull.disabledTokens || metaFull.disabled || undefined,
+          sent: metaFull?.sent,
+          tickets: Array.isArray(metaFull?.tickets) ? metaFull.tickets.slice(0, 2) : undefined,
+          errors: Array.isArray(metaFull?.errors) ? metaFull.errors.slice(0, 2) : undefined,
+          disabled: metaFull?.disabledTokens || undefined,
         }
       });
     }
 
     const meta = {
-      sent: metaFull.sent,
-      tickets: Array.isArray(metaFull.tickets) ? metaFull.tickets.length : undefined,
-      errors: Array.isArray(metaFull.errors) ? metaFull.errors.slice(0, 1) : undefined,
-      disabled: metaFull.disabledTokens || metaFull.disabled || undefined,
+      sent: metaFull?.sent || 0,
+      tickets: Array.isArray(metaFull?.tickets) ? metaFull.tickets.length : undefined,
+      errors: Array.isArray(metaFull?.errors) ? metaFull.errors.slice(0, 1) : undefined,
+      disabled: metaFull?.disabledTokens || undefined,
     };
 
     return res.json({
@@ -340,4 +349,3 @@ router.post('/geofence-enter', async (req, res) => {
 });
 
 export default router;
-

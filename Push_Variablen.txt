@@ -1,0 +1,5 @@
+BASE="https://lobster-app-ie9a5.ondigitalocean.app/api"
+TOKEN="ExponentPushToken[5KQcmwFgMcQgsPB5YXNArP]"
+OFFER="68a74ad3d069ae847457e53d"
+LAT=48.20849
+LNG=16.37208
