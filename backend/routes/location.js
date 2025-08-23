@@ -433,4 +433,42 @@ router.post('/notify-action', async (req, res) => {
   }
 });
 
+// GET /api/location/debug-visibility?token=...&offerId=...&status=...&includeHistory=1&limit=50
+router.get('/debug-visibility', async (req, res) => {
+  try {
+    const { token, offerId, status, includeHistory, limit = 50 } = req.query || {};
+    const q = {};
+    if (offerId && mongoose.Types.ObjectId.isValid(String(offerId))) {
+      q.offerId = new mongoose.Types.ObjectId(String(offerId));
+    }
+    if (status) q.status = status;
+
+    if (token) {
+      const dev = await PushToken.findOne({ token: String(token).trim() }, { _id: 1 }).lean();
+      if (!dev) return res.json({ ok: true, items: [] });
+      q.deviceToken = dev._id;
+    }
+
+    const items = await OfferVisibility.find(q)
+      .sort({ updatedAt: -1 })
+      .limit(Math.min(Number(limit) || 50, 200))
+      .lean();
+
+    const mapped = items.map(i => ({
+      offerId: String(i.offerId),
+      deviceTokenId: String(i.deviceToken),
+      status: i.status,
+      remindAt: i.remindAt,
+      cooldownUntil: i.cooldownUntil,
+      lastPushAt: i.lastPushAt,
+      ...(includeHistory ? { actionHistory: i.actionHistory } : {})
+    }));
+
+    res.json({ ok: true, items: mapped });
+  } catch (e) {
+    console.error('/debug-visibility error', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 export default router;
