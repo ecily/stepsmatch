@@ -273,8 +273,8 @@ router.post('/geofence-enter', async (req, res) => {
     const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, now);
     if (!mayNotify) {
       stats.seenOrMuted += 1;
-      // ❗️Fix: Feld heißt deviceTokenId
-      const doc = await OfferVisibility.findOne({ deviceTokenId, offerId }).lean();
+      // Feld im Schema: deviceToken
+      const doc = await OfferVisibility.findOne({ deviceToken: deviceTokenId, offerId }).lean();
       let reason = 'blocked';
       if (doc) {
         if (doc.status === VIS.DISMISSED) reason = 'dismissed';
@@ -410,19 +410,18 @@ router.post('/notify-action', async (req, res) => {
     const deviceTokenId = devTok._id;
 
     let status = 'noop';
-    const now = new Date();
 
     if (action === 'dismiss') {
       await OfferVisibility.dismiss(deviceTokenId, offerId);
       status = 'dismissed';
     } else if (action === 'snooze') {
+      // Schema-Bedeutung: OfferVisibility.snooze(deviceTokenId, offerId, minutes)
       const minutes = Number.isFinite(Number(snoozeMinutes)) ? Number(snoozeMinutes) : 180; // Default 3h
-      const remindAt = new Date(Date.now() + minutes * 60 * 1000);
-      await OfferVisibility.snooze(deviceTokenId, offerId, remindAt);
+      await OfferVisibility.snooze(deviceTokenId, offerId, minutes);
       status = `snoozed-${minutes}m`;
     } else if (action === 'go') {
       // idempotent – falls bereits notified, harmless
-      await OfferVisibility.markNotified(deviceTokenId, offerId, now);
+      await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
       status = 'opened';
     } else {
       return res.status(400).json({ ok: false, error: 'unbekannte action' });
@@ -448,8 +447,8 @@ router.get('/debug-visibility', async (req, res) => {
     if (token) {
       const dev = await PushToken.findOne({ token: String(token).trim() }, { _id: 1 }).lean();
       if (!dev) return res.json({ ok: true, items: [] });
-      // ❗️Fix: Feld heißt deviceTokenId
-      q.deviceTokenId = dev._id;
+      // Feld im Schema: deviceToken (ObjectId)
+      q.deviceToken = dev._id;
     }
 
     const items = await OfferVisibility.find(q)
@@ -459,12 +458,12 @@ router.get('/debug-visibility', async (req, res) => {
 
     const mapped = items.map(i => ({
       offerId: String(i.offerId),
-      deviceTokenId: String(i.deviceTokenId),
+      deviceToken: String(i.deviceToken),
       status: i.status,
-      remindAt: i.remindAt,
-      cooldownUntil: i.cooldownUntil,
-      lastPushAt: i.lastPushAt,
-      ...(includeHistory ? { actionHistory: i.actionHistory } : {})
+      remindAt: i.remindAt ?? null,
+      lastNotifiedAt: i.lastNotifiedAt ?? null,
+      firstSeenAt: i.firstSeenAt ?? null,
+      ...(includeHistory ? { /* kein actionHistory im Schema – daher weggelassen */ } : {})
     }));
 
     res.json({ ok: true, items: mapped });
