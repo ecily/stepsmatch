@@ -55,7 +55,7 @@ function interestsMatch(offer, token) {
 }
 
 /* ───────── Konfig ───────── */
-const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);           // jede Minute
+const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 30 * 60_000);
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
@@ -85,12 +85,14 @@ export function startOfferPoller() {
       );
 
       // 2) Tokens mit frischer Location
+      const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
       const tokensFresh = await PushToken.find({
         disabled: { $ne: true },
-        'lastLocation.coordinates': { $exists: true },
+        'lastLocation.coordinates.0': { $exists: true }, // robustere Existenzprüfung
         $or: [
-          { lastHeartbeatAt: { $gte: new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS) } },
-          { updatedAt: { $gte: new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS) } },
+          { lastHeartbeatAt: { $gte: freshSince } }, // falls vorhanden
+          { lastSeenAt: { $gte: freshSince } },      // ✔ dein Schema hat das Feld
+          { updatedAt: { $gte: freshSince } },       // Fallback
         ],
       })
         .select('_id token platform interests lastLocation')
@@ -117,7 +119,7 @@ export function startOfferPoller() {
         const [lng, lat] = offer?.location?.coordinates || [];
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-        // ► Radius-Fix: erst radiusMeters, dann radius (gemäß deinen Datenfeldern), sonst Default
+        // Radius-Fix: erst radiusMeters, dann radius, sonst Default
         const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
         if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM}`);
 

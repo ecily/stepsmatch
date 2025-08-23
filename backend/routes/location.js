@@ -110,7 +110,7 @@ router.post('/debug-upsert-token', async (req, res) => {
   }
 });
 
-/* ✅ NEU: Heartbeat – Position & Präsenz eines Geräts speichern */
+/* ✅ Heartbeat – Position & Präsenz eines Geräts speichern */
 router.get('/heartbeat/ping', (_req, res) => {
   res.json({ ok: true, now: new Date().toISOString() });
 });
@@ -132,9 +132,9 @@ router.post('/heartbeat', async (req, res) => {
         $set: {
           disabled: false,
           lastSeenAt: now,
-          lastHeartbeatAt: now,
           ...(typeof accuracy === 'number' ? { accuracy } : {}),
-          lastKnownLocation: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
+          // Wichtig: in deinem Schema heißt es 'lastLocation'
+          lastLocation: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
         },
       },
       { new: true, upsert: true }
@@ -144,7 +144,8 @@ router.post('/heartbeat', async (req, res) => {
       ok: true,
       id: String(doc._id),
       platform: doc.platform,
-      lastHeartbeatAt: doc.lastHeartbeatAt ?? now,
+      lastSeenAt: doc.lastSeenAt ?? now,
+      lastLocation: doc.lastLocation || { type: 'Point', coordinates: [lng, lat] },
     });
   } catch (e) {
     console.error('Fehler bei /location/heartbeat:', e);
@@ -205,7 +206,7 @@ router.post('/geofence-enter', async (req, res) => {
         });
       }
 
-      // ✅ Pass full token object to push util
+      // Pass full token object to push util
       tokens = [{
         token: deviceTokenDoc.token,
         platform: deviceTokenDoc.platform,
@@ -272,7 +273,8 @@ router.post('/geofence-enter', async (req, res) => {
     const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, now);
     if (!mayNotify) {
       stats.seenOrMuted += 1;
-      const doc = await OfferVisibility.findOne({ deviceToken: deviceTokenId, offerId }).lean();
+      // ❗️Fix: Feld heißt deviceTokenId
+      const doc = await OfferVisibility.findOne({ deviceTokenId, offerId }).lean();
       let reason = 'blocked';
       if (doc) {
         if (doc.status === VIS.DISMISSED) reason = 'dismissed';
@@ -446,7 +448,8 @@ router.get('/debug-visibility', async (req, res) => {
     if (token) {
       const dev = await PushToken.findOne({ token: String(token).trim() }, { _id: 1 }).lean();
       if (!dev) return res.json({ ok: true, items: [] });
-      q.deviceToken = dev._id;
+      // ❗️Fix: Feld heißt deviceTokenId
+      q.deviceTokenId = dev._id;
     }
 
     const items = await OfferVisibility.find(q)
@@ -456,7 +459,7 @@ router.get('/debug-visibility', async (req, res) => {
 
     const mapped = items.map(i => ({
       offerId: String(i.offerId),
-      deviceTokenId: String(i.deviceToken),
+      deviceTokenId: String(i.deviceTokenId),
       status: i.status,
       remindAt: i.remindAt,
       cooldownUntil: i.cooldownUntil,
