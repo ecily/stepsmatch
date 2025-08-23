@@ -16,6 +16,7 @@ import matchRoutes from "./routes/match.js";
 import pushRoutes from "./routes/push.js";
 import locationRoutes from "./routes/location.js";
 import testerRoutes from "./routes/testers.js";
+import { startOfferPoller } from "./jobs/offerPoller.js";
 
 dotenv.config();
 
@@ -135,6 +136,11 @@ app.use((err, _req, res, _next) => {
    ───────────────────────────────────────────────────────────── */
 connectDB()
   .then(() => {
+    // Offer-Poller (serverseitiger 1‑Minuten‑Check für neue/aktualisierte Offers)
+    if (process.env.OFFER_POLLER_ENABLED !== "0") {
+      startOfferPoller();
+    }
+
     app.listen(PORT, "0.0.0.0", () => {
       const local = `http://localhost:${PORT}`;
       const lan = `http://10.0.0.34:${PORT}`;

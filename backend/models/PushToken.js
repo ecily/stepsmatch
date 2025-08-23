@@ -22,6 +22,19 @@ const pushTokenSchema = new Schema(
 
     // Letzte Sichtung/Registrierung
     lastSeenAt: { type: Date, default: Date.now, index: true },
+
+    // Letzte bekannte Location (für Geofencing / Poller)
+    lastLocation: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        default: undefined,
+      },
+    },
   },
   {
     timestamps: true,           // createdAt + updatedAt automatisch
@@ -33,5 +46,8 @@ const pushTokenSchema = new Schema(
 // Sinnvolle Kombi-Indizes
 pushTokenSchema.index({ userId: 1, platform: 1 });
 pushTokenSchema.index({ userId: 1, updatedAt: -1 });
+
+// Geo-Index für $near-Abfragen im Poller
+pushTokenSchema.index({ lastLocation: '2dsphere' });
 
 export default mongoose.model('PushToken', pushTokenSchema);
