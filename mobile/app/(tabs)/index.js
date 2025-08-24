@@ -13,6 +13,7 @@ import {
   Animated,
   Easing,
   Platform,
+  InteractionManager, // ⬅️ NEU
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,18 +35,27 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/* ─────────── PUSH: Setup (Channel + Permission + Token speichern + Kategorie) ─────────── */
+/* ─────────── PUSH: Setup (Channels + Permission + Token + Kategorie) ─────────── */
 async function ensurePushReady() {
   try {
-    // Android: Channel mit hoher Importance
+    // Android: Kanäle mit hoher Importance
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('offers', {
-        name: 'Offers',
-        importance: Notifications.AndroidImportance.HIGH,
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.MAX,
         sound: 'default',
         vibrationPattern: [0, 250, 250, 250],
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: false,
+        bypassDnd: true,
+        showBadge: true,
+      });
+      await Notifications.setNotificationChannelAsync('offers', {
+        name: 'Offers',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
         showBadge: true,
       });
     }
@@ -58,22 +68,20 @@ async function ensurePushReady() {
     ]);
 
     // Permissions
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let status = existing;
-    if (existing !== 'granted') {
+    const perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted) {
       const req = await Notifications.requestPermissionsAsync();
-      status = req.status;
-    }
-    if (status !== 'granted') {
-      console.log('[Push] permission not granted');
-      return null;
+      if (!req.granted) {
+        console.log('[Push] permission not granted');
+        return null;
+      }
     }
 
     // Expo Push Token (SDK 50): projectId muss gesetzt sein
     const projectId =
       Constants?.expoConfig?.extra?.eas?.projectId ??
       Constants?.easConfig?.projectId ??
-      Constants?.expoConfig?.owner; // fallback (nicht ideal, aber harmless)
+      null;
 
     const tokenResp = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
@@ -323,10 +331,75 @@ export default function HomeTab() {
   const inFlightRef = useRef(false);
   const abortRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const heartbeatTimerRef = useRef(null);          // ✅ neu: regelmäßiger Heartbeat
   const lastFocusAtRef = useRef(0);
   const appState = useRef(AppState.currentState);
+  const lastTokenRef = useRef(null);               // ✅ neu: letzter Token für Heartbeat
 
   const fetchFnRef = useRef(null);
+
+  // ⬇️ NEU: Dedupe & Helper für Notif‑Navigation
+  const lastHandledNotifIdRef = useRef(null);
+
+  const navigateFromNotifData = useCallback((originLabel, data) => {
+    try {
+      const d = data || {};
+      const offerId = d.offerId || d?.offer?.id || d?.id;
+      const link = d.link || d.url;
+
+      if (offerId) {
+        console.log('[NotifNav]', originLabel, '→ /offers/', offerId);
+        InteractionManager.runAfterInteractions(() => {
+          router.push({ pathname: '/offers/[id]', params: { id: String(offerId) } });
+        });
+        return true;
+      }
+      if (typeof link === 'string' && link.length > 0) {
+        console.log('[NotifNav]', originLabel, '→', link);
+        InteractionManager.runAfterInteractions(() => router.push(link));
+        return true;
+      }
+
+      console.log('[NotifNav] Kein offerId/link im Payload:', d);
+      return false;
+    } catch (e) {
+      console.warn('[NotifNav] Fehler beim Navigieren:', e);
+      return false;
+    }
+  }, [router]);
+
+  /* ───────── Heartbeat Helper ───────── */
+  const sendHeartbeat = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      // Grobe Position reicht dem Backend
+      let pos = await Location.getLastKnownPositionAsync();
+      if (!pos) {
+        try {
+          pos = await withTimeout(
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            6000,
+            'heartbeat position'
+          );
+        } catch {}
+      }
+      const lat = pos?.coords?.latitude ?? null;
+      const lng = pos?.coords?.longitude ?? null;
+      if (lat == null || lng == null) {
+        console.log('[heartbeat] skip (no position)');
+        return;
+      }
+      await api.post('/location/heartbeat', {
+        token,
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+        lat,
+        lng,
+      });
+      console.log('[heartbeat] sent');
+    } catch (e) {
+      console.log('[heartbeat] error', e?.message || e);
+    }
+  }, []);
 
   /* ───────── PUSH: Setup einmalig beim Mount ───────── */
   useEffect(() => {
@@ -334,40 +407,52 @@ export default function HomeTab() {
       const token = await ensurePushReady();
       if (!token) {
         if (__DEV__) showDev('Push nicht bereit (Permissions/Token/Channel prüfen).');
+        return;
       }
+      lastTokenRef.current = token;
+      // Initialer Heartbeat direkt nach App-Start
+      await sendHeartbeat(token);
     })();
-  }, [showDev]);
+  }, [showDev, sendHeartbeat]);
 
-  /* 🔔 PUSH: Action‑Response Listener (➡️ / ❌ / 💤) */
+  /* 🔔 PUSH: Response Listener — behandelt **Actions** und **Standard‑Tap** */
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       try {
-        const actionId = response?.actionIdentifier;
-        if (!actionId) return;
+        const notifId = response?.notification?.request?.identifier;
+        if (notifId && lastHandledNotifIdRef.current === notifId) {
+          return; // schon gehandhabt
+        }
+        lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
 
+        const actionId = response?.actionIdentifier;
         const data = response?.notification?.request?.content?.data || {};
         const offerId = String(data?.offerId || '');
-        if (!offerId) return;
 
+        // 1) Standard‑Tap (kein Button) → direkt navigieren
+        if (!actionId || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          navigateFromNotifData('tap-live', data);
+          return;
+        }
+
+        // 2) Button‑Actions (go/dismiss/snooze)
         let action = null;
         if (actionId === 'go') action = 'go';
         else if (actionId === 'dismiss') action = 'dismiss';
         else if (actionId === 'snooze') action = 'snooze';
-        else return;
 
-        const token = await AsyncStorage.getItem('expoPushToken');
-        if (token) {
-          try {
-            await api.post('/location/notify-action', { offerId, action, token });
-          } catch (e) {
-            console.log('[notify-action] error', e?.message || e);
+        if (action && offerId) {
+          const token = await AsyncStorage.getItem('expoPushToken');
+          if (token) {
+            try {
+              await api.post('/location/notify-action', { offerId, action, token });
+            } catch (e) {
+              console.log('[notify-action] error', e?.message || e);
+            }
           }
-        }
-
-        if (action === 'go' && offerId) {
-          try {
-            router.push(`/offers/${offerId}`);
-          } catch {}
+          if (action === 'go') {
+            navigateFromNotifData('tap-action-go', data);
+          }
         }
       } catch (e) {
         console.log('[Push] response listener error', e?.message || e);
@@ -377,7 +462,39 @@ export default function HomeTab() {
     return () => {
       try { sub?.remove?.(); } catch {}
     };
-  }, [router]);
+  }, [navigateFromNotifData]);
+
+  /* 🔔 NEU: Cold‑Start Navigation (App komplett beendet, Tap vom Lockscreen) */
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const resp = await Notifications.getLastNotificationResponseAsync();
+        if (!mounted || !resp) return;
+
+        const notifId = resp?.notification?.request?.identifier;
+        if (notifId && lastHandledNotifIdRef.current === notifId) {
+          return; // schon gehandhabt
+        }
+        lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
+
+        const actionId = resp?.actionIdentifier;
+        const data = resp?.notification?.request?.content?.data || {};
+
+        if (!actionId || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          navigateFromNotifData('tap-cold-start', data);
+          return;
+        }
+        if (actionId === 'go') {
+          navigateFromNotifData('tap-cold-start-action-go', data);
+        }
+      } catch (e) {
+        console.warn('[NotifNav] getLastNotificationResponseAsync Fehler:', e);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, [navigateFromNotifData]);
 
   /* ───────── Gesehen-IDs (Client) – unverändert aus deiner Version ───────── */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
@@ -537,6 +654,7 @@ export default function HomeTab() {
                   token: expoToken,
                   platform: Platform.OS === 'ios' ? 'ios' : 'android', // ✅ wichtig für Filterkette
                   eventType: 'enter',
+                  channelId: 'offers', // ✅ sichert Sichtbarkeit, wenn Server es durchreicht
                 }).then((r) => {
                   const d = r?.data || {};
                   const msg = `[geofence-enter] ${o.name ?? o._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
@@ -628,6 +746,7 @@ export default function HomeTab() {
       mountedRef.current = false;
       if (abortRef.current) try { abortRef.current.abort(); } catch {}
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); // ✅ cleanup
     };
   }, []);
 
@@ -636,28 +755,41 @@ export default function HomeTab() {
   }, []);
 
   useEffect(() => {
-    const handleAppState = (next) => {
+    const handleAppState = async (next) => {
       const prev = appState.current;
       appState.current = next;
       if (prev?.match(/inactive|background/) && next === 'active') {
         const now = Date.now();
         if (now - lastFocusAtRef.current > 5000) {
           lastFocusAtRef.current = now;
+          // Beim Zurückkehren in den Vordergrund: Heartbeat + Refresh
+          if (lastTokenRef.current) {
+            await sendHeartbeat(lastTokenRef.current); // ✅ Heartbeat on focus
+          }
           fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
         }
       }
     };
     const sub = AppState.addEventListener('change', handleAppState);
 
+    // Regelmäßige Reloads (bestehend)
     refreshTimerRef.current = setInterval(() => {
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
     }, 180000);
 
+    // Regelmäßiger Heartbeat alle 10 Minuten
+    heartbeatTimerRef.current = setInterval(() => {
+      if (lastTokenRef.current) {
+        sendHeartbeat(lastTokenRef.current);
+      }
+    }, 600000);
+
     return () => {
       sub.remove();
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     };
-  }, []);
+  }, [sendHeartbeat]);
 
   /* DEV: „Test Arrival“ (Long‑Press = Reset) */
   const triggerTestArrival = useCallback(async () => {
@@ -688,8 +820,9 @@ export default function HomeTab() {
         lat: userLoc.lat,
         lng: userLoc.lng,
         token: expoToken,
-        platform: Platform.OS === 'ios' ? 'ios' : 'android', // ✅ wichtig für Filterkette
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
         eventType: 'enter',
+        channelId: 'offers', // ✅ passt zum angelegten Android-Kanal
       });
       const d = res?.data || {};
       const msg = `[TEST] ${best.name ?? best._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
