@@ -290,7 +290,6 @@ function isOfferActiveNow(offer, now = new Date()) {
 
 /* ─────────── Endzeit/Restlaufzeit ─────────── */
 
-// 1) Explizite Endzeit aus Feldern
 function pickOfferEndDate(item) {
   if (!item || typeof item !== 'object') return null;
   const directKeys = [
@@ -312,29 +311,21 @@ function pickOfferEndDate(item) {
   return null;
 }
 
-// 2) Restlaufzeit berechnen (Ende > validTimes > Tagesende(falls aktiv))
 function getRemainingMs(item, now = new Date()) {
-  // a) harte Endzeit (Datum/Zeit)
   const hardEnd = pickOfferEndDate(item);
   if (hardEnd) {
     const diff = hardEnd.getTime() - now.getTime();
     if (diff > 0) return diff;
     return null;
   }
-
-  // b) validTimes (heutiges Ende berechnen)
   const vt = item?.validTimes || item?.times || null;
   if (vt && typeof vt === 'object') {
     const fromS = parseHM(vt.from ?? vt.start ?? vt.fromTime);
     const toS   = parseHM(vt.to   ?? vt.end   ?? vt.toTime);
     if (toS != null) {
       const nowS = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
-
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
       if (fromS != null && fromS > toS) {
-        // Fenster geht über Mitternacht (z.B. 20:00–02:00)
-        // Wenn jetzt >= fromS → Ende ist MORGEN um toS, sonst (nach Mitternacht) → heute um toS
         const endBase = (nowS >= fromS)
           ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
           : todayStart;
@@ -342,21 +333,17 @@ function getRemainingMs(item, now = new Date()) {
         const diff = end.getTime() - now.getTime();
         return diff > 0 ? diff : null;
       } else {
-        // normales Tagesfenster (z.B. 00:00–20:30)
         const end = new Date(todayStart.getTime() + toS * 1000);
         const diff = end.getTime() - now.getTime();
         return diff > 0 ? diff : null;
       }
     }
   }
-
-  // c) Fallback: wenn heute aktiv, bis Tagesende
   if (isOfferActiveNow(item, now)) {
     const end = endOfDayLocal(now);
     const diff = end.getTime() - now.getTime();
     return diff > 0 ? diff : null;
   }
-
   return null;
 }
 
@@ -578,15 +565,6 @@ export default function HomeTab() {
     } catch {}
   }, []);
 
-  const resetSeenIds = useCallback(async () => {
-    try {
-      seenIdsRef.current = new Set();
-      await AsyncStorage.removeItem(SEEN_IDS_KEY);
-    } catch (e) {
-      if (__DEV__) showDev(`DEV: reset error ${e?.message || e}`);
-    }
-  }, [showDev]);
-
   const interestsCSVFromStorage = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem('userInterests');
@@ -800,38 +778,6 @@ export default function HomeTab() {
     };
   }, [sendHeartbeat]);
 
-  /* DEV: „Test Arrival“ (Long-Press = Reset) */
-  const triggerTestArrival = useCallback(async () => {
-    try {
-      const expoToken = await AsyncStorage.getItem('expoPushToken');
-      if (!expoToken) { if (__DEV__) showDev('Kein expoPushToken im AsyncStorage'); return; }
-      if (!userLoc || !offers.length) { if (__DEV__) showDev('Kein Standort oder kein Offer geladen'); return; }
-
-      let best = null, bestD = Infinity;
-      for (const o of offers) {
-        const geo = pickOfferLatLng(o);
-        const r = pickRadiusMeters(o);
-        if (!geo || !Number.isFinite(r)) continue;
-        const d = haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng);
-        if (d < bestD) { best = o; bestD = d; }
-      }
-      if (!best) { if (__DEV__) showDev('Kein gültiges Offer für Test gefunden'); return; }
-
-      await api.post('/location/geofence-enter', {
-        offerId: best._id,
-        lat: userLoc.lat,
-        lng: userLoc.lng,
-        token: expoToken,
-        platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        eventType: 'enter',
-        channelId: 'offers',
-      });
-      if (__DEV__) showDev('[TEST] Geofence-Enter gesendet');
-    } catch (e) {
-      if (__DEV__) showDev(`[TEST] ERROR → ${e?.message || e}`);
-    }
-  }, [offers, userLoc, showDev]);
-
   /* UI */
 
   const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
@@ -872,23 +818,6 @@ export default function HomeTab() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {lastUpdated && <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>}
-
-        {__DEV__ && (
-          <>
-            <TouchableOpacity
-              onPress={triggerTestArrival}
-              onLongPress={resetSeenIds}
-              delayLongPress={450}
-              style={styles.testBtn}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.testBtnText}>Test Arrival</Text>
-            </TouchableOpacity>
-            <Text style={{ color: '#6b7280', fontSize: 11, marginBottom: 8 }}>
-              DEV: Long-Press auf „Test Arrival“ = Reset der gesehenen Offer-IDs
-            </Text>
-          </>
-        )}
 
         {groupedEntries.length === 0 ? (
           <Text style={styles.empty}>Zurzeit leider keine passenden Angebote in deiner Nähe!</Text>
@@ -979,7 +908,6 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
-  // Karte bekommt nur „aktive“ Offers angezeigt, daher Badge konstant
   const isActiveNow = true;
 
   const remainingMs = getRemainingMs(item);
@@ -1099,18 +1027,6 @@ const styles = StyleSheet.create({
   horizontalList: { paddingLeft: 2, paddingRight: 2 },
 
   updatedHint: { color: '#6b7280', fontSize: 12, marginBottom: 8 },
-
-  testBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#eef2ff',
-    borderColor: '#c7d2fe',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  testBtnText: { color: colors.primary, fontWeight: '800' },
 
   card: {
     backgroundColor: '#f7f8fb',

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useRootNavigationState } from 'expo-router';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PushInitializer from '../components/PushInitializer';
 
-// ------- utils -------
+/* ---------------- utils ---------------- */
 const getQueryParam = (url, key) => {
   if (typeof url !== 'string') return null;
   const m = url.match(new RegExp(`[?&]${key}=([^&]+)`, 'i'));
@@ -28,8 +28,18 @@ const normalizePath = (p) => {
   if (!path.startsWith('/')) path = `/${path}`;
   return path.replace(/\/{2,}/g, '/');
 };
+const getQuery = (url) => {
+  try {
+    if (!url) return {};
+    const parsed = Linking.parse(url);
+    return parsed?.queryParams || {};
+  } catch {
+    return {};
+  }
+};
 const extractOfferId = (data, url) => {
-  const candidates = [data?.offerId, data?._id, data?.id, getQueryParam(url || '', 'id')];
+  const qp = getQuery(url);
+  const candidates = [data?.offerId, data?._id, data?.id, qp?.id, getQueryParam(url, 'id')];
   const id = candidates.find((v) => v != null && String(v).trim().length > 0);
   return id ? String(id).trim() : null;
 };
@@ -60,7 +70,7 @@ const navigateFromData = (router, raw) => {
   return false;
 };
 
-// ------- Root -------
+/* ---------------- Root ---------------- */
 export default function RootLayout() {
   const router = useRouter();
   const navState = useRootNavigationState();
@@ -70,7 +80,7 @@ export default function RootLayout() {
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [mustOnboard, setMustOnboard] = useState(false);
 
-  // System-Splash sofort freigeben (Expo-Native Splash); unser eigenes Overlay gibt es nicht mehr
+  // System-Splash sofort freigeben (Expo Splash)
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
@@ -94,14 +104,13 @@ export default function RootLayout() {
         const flag = await AsyncStorage.getItem('hasOnboarded');
         const needs = !flag || flag !== '1';
         setMustOnboard(needs);
-        // kein harter Lock mehr – nur direkte Navigation gleich unten
       } finally {
         setOnboardingChecked(true);
       }
     })();
   }, []);
 
-  // A) Sobald Router ready & Check fertig → entweder Onboarding oder Deeplink/Push
+  // A) Sobald Router ready & Check fertig → Onboarding oder Deeplink/Push
   useEffect(() => {
     if (!onboardingChecked) return;
     whenReady(async () => {
@@ -112,7 +121,7 @@ export default function RootLayout() {
         }
         return;
       }
-      // kein Onboarding nötig → Deeplink bevorzugen
+      // Deeplink bevorzugen
       try {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl && !lockRef.current) {
@@ -122,7 +131,7 @@ export default function RootLayout() {
           return;
         }
       } catch {}
-      // Last notification fallback
+      // Letzte Notification als Fallback
       try {
         const last = await Notifications.getLastNotificationResponseAsync();
         const data = last?.notification?.request?.content?.data ?? null;
@@ -131,7 +140,7 @@ export default function RootLayout() {
           navigateFromData(router, data);
         }
       } catch {}
-      // sonst nix tun → Tabs bleiben initialer Screen
+      // sonst Tabs als Start
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingChecked, mustOnboard, navState?.key]);
@@ -143,7 +152,9 @@ export default function RootLayout() {
       whenReady(() => {
         lockRef.current = true;
         navigateFromData(router, data);
-        setTimeout(() => { lockRef.current = false; }, 300); // kurz entprellen
+        setTimeout(() => {
+          lockRef.current = false;
+        }, 300); // Entprellen
       });
     });
     return () => sub.remove();
@@ -160,9 +171,13 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      {/* Expo-StatusBar; verwende "light"/"dark"/"auto" je nach Design */}
       <StatusBar style="auto" />
       <InitializerOnce />
-      <Stack screenOptions={{ headerShown: false }} />
+      {/* SafeArea nur oben, damit Tabs unten ihre eigene Safe-Area regeln */}
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
