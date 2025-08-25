@@ -46,7 +46,9 @@
     "react-native-webview": "13.13.5",
     "expo-av": "~15.1.7",
     "expo-task-manager": "~13.1.6",
-    "expo-notifications": "~0.31.4"
+    "expo-notifications": "~0.31.4",
+    "expo-battery": "~9.1.4",
+    "expo-sensors": "~14.1.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
