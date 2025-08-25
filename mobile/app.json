@@ -1,28 +1,31 @@
 {
   "expo": {
     "name": "Stepsmatch",
-    "slug": "Stepsmatch",
+    "slug": "stepsmatch",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
+
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "cover",
       "backgroundColor": "#0d4ea6"
     },
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B3B68"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.ecily.mobile",
-      "googleServicesFile": "./android/app/google-services.json",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"
@@ -36,17 +39,19 @@
         "POST_NOTIFICATIONS"
       ]
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
-          "resizeMode": "contain",
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
           "backgroundColor": "#0d4ea6"
         }
       ],
@@ -58,9 +63,11 @@
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "extra": {
       "eas": {
         "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed"

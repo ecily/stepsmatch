@@ -1,111 +1,245 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
+import * as Haptics from 'expo-haptics';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import colors from '../../theme/colors';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+
+/* ---------- Kleine Chip-Komponente mit Press-Scale ---------- */
+function InterestChip({ label, selected, onToggle }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const pressIn = () =>
+    Animated.timing(scale, { toValue: 0.96, duration: 90, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+
+  const pressOut = () =>
+    Animated.timing(scale, { toValue: 1, duration: 140, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+
+  const handlePress = async () => {
+    try { await Haptics.selectionAsync(); } catch {}
+    onToggle(label);
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPressIn={pressIn}
+        onPressOut={pressOut}
+        onPress={handlePress}
+        activeOpacity={0.9}
+        style={[styles.chip, selected && styles.chipSelected]}
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        accessibilityLabel={label}
+      >
+        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function InterestsScreen() {
   const router = useRouter();
   const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  // Micro-motions (Screen-In)
+  const headOpacity = useRef(new Animated.Value(0)).current;
+  const headY = useRef(new Animated.Value(12)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const fetchCats = async () => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(headOpacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(headY, { toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]),
+      Animated.timing(contentOpacity, { toValue: 1, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, [headOpacity, headY, contentOpacity]);
+
+  // Daten laden + lokale Auswahl wiederherstellen
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
       try {
-        const res = await axios.get(`${API_URL}/categories`);
-        setCategories(res.data || []);
+        const [res, stored] = await Promise.all([
+          axios.get(`${API_URL}/categories`),
+          AsyncStorage.getItem('userInterests'),
+        ]);
+        if (!mounted) return;
+        setCategories(Array.isArray(res.data) ? res.data : []);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) setSelected(parsed);
+          } catch {}
+        }
+        setLoadError(false);
       } catch (err) {
+        if (!mounted) return;
         setCategories([]);
+        setLoadError(true);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
-    };
-    fetchCats();
-    AsyncStorage.getItem('userInterests').then((data) => {
-      if (data) setSelected(JSON.parse(data));
-    });
+    })();
+    return () => { mounted = false; };
   }, []);
 
+  const allSubcats = useMemo(() => {
+    return categories.flatMap((c) => (Array.isArray(c.subcategories) ? c.subcategories : []));
+  }, [categories]);
+
   const toggleInterest = (interest) => {
-    setSelected((curr) =>
-      curr.includes(interest) ? curr.filter((x) => x !== interest) : [...curr, interest]
-    );
+    setSelected((curr) => {
+      const has = curr.includes(interest);
+      if (has) return curr.filter((x) => x !== interest);
+      return [...new Set([...curr, interest])];
+    });
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setLoadError(false);
+    setTimeout(() => {
+      (async () => {
+        try {
+          const res = await axios.get(`${API_URL}/categories`);
+          setCategories(Array.isArray(res.data) ? res.data : []);
+          setLoadError(false);
+        } catch {
+          setCategories([]);
+          setLoadError(true);
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }, 50);
+  };
+
+  // ✅ Änderung: Speichern → DoneScreen + hasOnboarded setzen
   const handleSave = async () => {
-    await AsyncStorage.setItem('userInterests', JSON.stringify(selected));
-    router.replace('/(tabs)');
+    try { await Haptics.selectionAsync(); } catch {}
+    const interestsJson = JSON.stringify(selected);
+    try {
+      await AsyncStorage.multiSet([
+        ['userInterests', interestsJson],
+        ['hasOnboarded', '1'],
+      ]);
+    } catch {
+      // Fallback, falls multiSet fehlschlägt
+      await AsyncStorage.setItem('userInterests', interestsJson);
+      await AsyncStorage.setItem('hasOnboarded', '1');
+    }
+    router.replace('/(onboarding)/DoneScreen');
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+        <Text style={styles.loadingText}>Lade Kategorien…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Text style={styles.errorText}>Kategorien konnten nicht geladen werden.</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={handleRetry} activeOpacity={0.9}>
+          <Text style={styles.retryText}>Erneut versuchen</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.saveButton, { marginTop: 12, backgroundColor: selected.length ? colors.primary : '#ccc' }]}
+          onPress={handleSave}
+          disabled={selected.length === 0}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.saveText}>Trotzdem fortfahren</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      <Text style={styles.headline}>Wähle deine Interessen</Text>
-      {categories.map((cat) => (
-        <View key={cat._id} style={styles.categorySection}>
-          <Text style={styles.categoryTitle}>{cat.name}</Text>
-          <View style={styles.subcatRow}>
-            {(cat.subcategories || []).map((subcat) => (
-              <TouchableOpacity
-                key={subcat}
-                style={[
-                  styles.chip,
-                  selected.includes(subcat) && styles.chipSelected,
-                ]}
-                onPress={() => toggleInterest(subcat)}
-              >
-                <Text style={[
-                  styles.chipText,
-                  selected.includes(subcat) && styles.chipTextSelected,
-                ]}>
-                  {subcat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+    <SafeAreaView style={styles.container}>
+      <Animated.Text style={[styles.headline, { opacity: headOpacity, transform: [{ translateY: headY }] }]}>
+        Wähle deine Interessen
+      </Animated.Text>
+
+      <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          {categories.map((cat) => (
+            <View key={cat._id} style={styles.categorySection}>
+              <Text style={styles.categoryTitle}>{cat.name}</Text>
+              <View style={styles.subcatRow}>
+                {(cat.subcategories || []).map((subcat) => (
+                  <InterestChip
+                    key={subcat}
+                    label={subcat}
+                    selected={selected.includes(subcat)}
+                    onToggle={toggleInterest}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.saveButton, selected.length === 0 && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={selected.length === 0}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Auswahl speichern"
+          >
+            <Text style={styles.saveText}>Auswahl speichern</Text>
+          </TouchableOpacity>
         </View>
-      ))}
-      <TouchableOpacity
-        style={[
-          styles.saveButton,
-          selected.length === 0 && { backgroundColor: '#ccc' },
-        ]}
-        onPress={handleSave}
-        disabled={selected.length === 0}
-      >
-        <Text style={styles.saveText}>Auswahl speichern</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      </Animated.View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { padding: 28, paddingBottom: 64 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
-  headline: { fontSize: 24, fontWeight: 'bold', color: colors.primary, marginBottom: 18, textAlign: 'center' },
-  categorySection: { marginBottom: 28 },
-  categoryTitle: { fontSize: 19, fontWeight: 'bold', color: colors.accent || colors.primary, marginBottom: 7 },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 96 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, paddingHorizontal: 24 },
+  loadingText: { marginTop: 12, color: colors.text },
+  errorText: { color: colors.text, textAlign: 'center', marginBottom: 16, fontSize: 16 },
+  headline: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.primary,
+    textAlign: 'center',
+    paddingTop: 8,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+    letterSpacing: 0.2,
+  },
+  categorySection: { marginBottom: 22 },
+  categoryTitle: { fontSize: 18, fontWeight: 'bold', color: colors.accent || colors.primary, marginBottom: 8 },
   subcatRow: { flexDirection: 'row', flexWrap: 'wrap' },
+
   chip: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f2f3f5',
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 18,
     margin: 6,
     borderWidth: 2,
-    borderColor: '#e0e0e0',
+    borderColor: '#e6e8eb',
   },
   chipSelected: {
     backgroundColor: colors.primary,
@@ -113,23 +247,30 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 15,
-    color: '#444',
+    color: '#3f3f46',
   },
   chipTextSelected: {
     color: '#fff',
     fontWeight: 'bold',
   },
+
+  footer: { paddingHorizontal: 24, paddingBottom: 18, paddingTop: 8 },
   saveButton: {
     backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 12,
   },
-  saveText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: 'bold',
+  saveButtonDisabled: { backgroundColor: '#ccc' },
+  saveText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
+
+  retryButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    marginTop: 8,
   },
+  retryText: { color: '#fff', fontWeight: 'bold' },
 });

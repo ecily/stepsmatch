@@ -13,7 +13,7 @@ import {
   Animated,
   Easing,
   Platform,
-  InteractionManager, // ⬅️ NEU
+  InteractionManager,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,7 +29,7 @@ const CATEGORY_ID = 'offers-actions'; // 🔔 Actions: ➡️ / ❌ / 💤
 /* ─────────── PUSH: Handler (zeigt Banner auch im Vordergrund) ─────────── */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,      // ← wichtig: sonst kein Banner im Vordergrund
+    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -38,7 +38,6 @@ Notifications.setNotificationHandler({
 /* ─────────── PUSH: Setup (Channels + Permission + Token + Kategorie) ─────────── */
 async function ensurePushReady() {
   try {
-    // Android: Kanäle mit hoher Importance
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Default',
@@ -60,14 +59,12 @@ async function ensurePushReady() {
       });
     }
 
-    // 🔔 Kategorie für Aktionen (➡️ / ❌ / 💤)
     await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
-      { identifier: 'go',      buttonTitle: '➡️', options: { isDestructive: false, isAuthenticationRequired: false } },
-      { identifier: 'dismiss', buttonTitle: '❌', options: { isDestructive: true,  isAuthenticationRequired: false } },
-      { identifier: 'snooze',  buttonTitle: '💤', options: { isDestructive: false, isAuthenticationRequired: false } },
+      { identifier: 'go', buttonTitle: '➡️', options: { isDestructive: false, isAuthenticationRequired: false } },
+      { identifier: 'dismiss', buttonTitle: '❌', options: { isDestructive: true, isAuthenticationRequired: false } },
+      { identifier: 'snooze', buttonTitle: '💤', options: { isDestructive: false, isAuthenticationRequired: false } },
     ]);
 
-    // Permissions
     const perm = await Notifications.getPermissionsAsync();
     if (!perm.granted) {
       const req = await Notifications.requestPermissionsAsync();
@@ -77,22 +74,17 @@ async function ensurePushReady() {
       }
     }
 
-    // Expo Push Token (SDK 50): projectId muss gesetzt sein
     const projectId =
       Constants?.expoConfig?.extra?.eas?.projectId ??
       Constants?.easConfig?.projectId ??
       null;
 
-    const tokenResp = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined
-    );
+    const tokenResp = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
     const token = tokenResp?.data || null;
 
     if (token) {
       const old = await AsyncStorage.getItem('expoPushToken');
-      if (old !== token) {
-        await AsyncStorage.setItem('expoPushToken', token);
-      }
+      if (old !== token) await AsyncStorage.setItem('expoPushToken', token);
       console.log('[Push] Expo token', token);
     } else {
       console.log('[Push] no token received');
@@ -111,9 +103,7 @@ function withTimeout(promise, ms, label = 'operation') {
   let timer;
   return Promise.race([
     promise,
-    new Promise((_, reject) =>
-      (timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms))
-    ),
+    new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms))),
   ]).finally(() => clearTimeout(timer));
 }
 
@@ -160,35 +150,6 @@ function isNear(metersLike) {
   return m != null && m <= 500;
 }
 
-// Restlaufzeit lesen (best effort)
-function getRemainingMs(item) {
-  const keys = [
-    'activeUntil', 'activeEnd', 'validUntil', 'endAt',
-    'validTo', 'dateTo', 'activeWindowEnd', 'endTime'
-  ];
-  for (const k of keys) {
-    const v = item?.[k];
-    if (!v) continue;
-    const d = new Date(v);
-    if (!isNaN(d.getTime())) {
-      const diff = d.getTime() - Date.now();
-      if (diff > 0) return diff;
-    }
-  }
-  return null;
-}
-
-function formatRemaining(diffMs) {
-  if (diffMs == null) return 'Rest: —';
-  const totalMin = Math.ceil(diffMs / 60000);
-  if (totalMin <= 0) return 'Rest: —';
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h <= 0) return `Rest: ${m}\u00A0min`;
-  if (m === 0) return `Rest: ${h}\u00A0h`;
-  return `Rest: ${h}\u00A0h ${m}\u00A0min`;
-}
-
 /* ───────────── Filter-Helfer ───────────── */
 
 const normalizeToken = (s) =>
@@ -210,9 +171,11 @@ function matchesInterests(offer, interestSet) {
   const name = normalizeToken(offer?.name);
   for (const t of interestSet) {
     if (!t) continue;
-    if ((cat && (cat === t || cat.includes(t))) ||
-        (sub && (sub === t || sub.includes(t))) ||
-        (name && name.includes(t))) {
+    if (
+      (cat && (cat === t || cat.includes(t))) ||
+      (sub && (sub === t || sub.includes(t))) ||
+      (name && name.includes(t))
+    ) {
       return true;
     }
   }
@@ -237,24 +200,59 @@ function pickRadiusMeters(item) {
   if (r1 != null && isFinite(r1) && r1 >= 0) return r1;
   const r2 = toNumber(item?.provider?.radius);
   if (r2 != null && isFinite(r2) && r2 >= 0) return r2;
-  return null; // ohne Radius → AUS
+  return null;
 }
 
-/** Robust gegen verschiedene Felder/Strukturen. Wenn keine Angaben vorhanden → true (gilt). */
+/* ─────────── Datums-/Zeit-Parsing ─────────── */
+function startOfDayLocal(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0); }
+function endOfDayLocal(d)   { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999); }
+
+function parseDateLike(x, role /* 'from' | 'to' */) {
+  if (!x) return null;
+  if (x instanceof Date) return isNaN(x) ? null : x;
+  if (typeof x === 'number') { const d = new Date(x); return isNaN(d) ? null : d; }
+  const s = String(x).trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnly) {
+    const y = Number(dateOnly[1]), m = Number(dateOnly[2]) - 1, d = Number(dateOnly[3]);
+    const base = new Date(y, m, d);
+    return role === 'to' ? endOfDayLocal(base) : startOfDayLocal(base);
+  }
+  const d = new Date(s);
+  if (isNaN(d)) return null;
+
+  // Falls Server "Z-Mitternacht" liefert → als lokaler Tag interpretieren
+  const isZMidnight = /T00:00:00(\.000)?Z$/.test(s);
+  if (isZMidnight) {
+    const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
+    const local = new Date(y, m, day);
+    return role === 'to' ? endOfDayLocal(local) : startOfDayLocal(local);
+  }
+  return d;
+}
+
+// HH:mm[:ss] → Sekunden seit Mitternacht
+function parseHM(x) {
+  if (!x) return null;
+  const m = String(x).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]), s = Number(m[3] || 0);
+  if (h < 0 || h > 23 || min < 0 || min > 59 || s < 0 || s > 59) return null;
+  return h * 3600 + min * 60 + s;
+}
+
+/* ─────────── „Aktiv jetzt?“ ─────────── */
 function isOfferActiveNow(offer, now = new Date()) {
   const vd = offer?.validDates || offer?.dates || null;
   if (vd && typeof vd === 'object') {
     const fromRaw = vd.from ?? vd.start ?? vd.fromDate ?? vd.startDate;
     const toRaw   = vd.to   ?? vd.end   ?? vd.toDate   ?? vd.endDate;
-    const from = fromRaw ? new Date(fromRaw) : null;
-    const to   = toRaw   ? new Date(toRaw)   : null;
-    if ((from && isNaN(from)) || (to && isNaN(to))) {
-      // ignorieren
-    } else {
-      if (from && now < from) return false;
-      if (to && now > to) return false;
-    }
+    const from = parseDateLike(fromRaw, 'from');
+    const to   = parseDateLike(toRaw, 'to');
+    if (from && now < from) return false;
+    if (to && now > to)     return false;
   }
+
   const vdDays = offer?.validDays || offer?.days || null;
   if (Array.isArray(vdDays) && vdDays.length) {
     const day = now.getDay();
@@ -272,16 +270,9 @@ function isOfferActiveNow(offer, now = new Date()) {
     }).filter((n) => Number.isInteger(n));
     if (norm.length && !norm.includes(day)) return false;
   }
+
   const vt = offer?.validTimes || offer?.times || null;
   if (vt && typeof vt === 'object') {
-    const parseHM = (x) => {
-      if (!x) return null;
-      const m = String(x).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-      if (!m) return null;
-      const h = Number(m[1]), min = Number(m[2]), s = Number(m[3] || 0);
-      if (h<0||h>23||min<0||min>59||s<0||s>59) return null;
-      return h*3600 + min*60 + s;
-    };
     const fromS = parseHM(vt.from ?? vt.start ?? vt.fromTime);
     const toS   = parseHM(vt.to   ?? vt.end   ?? vt.toTime);
     if (fromS != null && toS != null) {
@@ -289,11 +280,95 @@ function isOfferActiveNow(offer, now = new Date()) {
       if (fromS <= toS) {
         if (!(nowS >= fromS && nowS <= toS)) return false;
       } else {
+        // Zeitfenster über Mitternacht
         if (!(nowS >= fromS || nowS <= toS)) return false;
       }
     }
   }
   return true;
+}
+
+/* ─────────── Endzeit/Restlaufzeit ─────────── */
+
+// 1) Explizite Endzeit aus Feldern
+function pickOfferEndDate(item) {
+  if (!item || typeof item !== 'object') return null;
+  const directKeys = [
+    'activeUntil','activeEnd','validUntil','endAt',
+    'validTo','dateTo','activeWindowEnd','endTime',
+    'expiresAt','expiry','until'
+  ];
+  for (const k of directKeys) {
+    const v = item?.[k];
+    const d = parseDateLike(v, 'to');
+    if (d) return d;
+  }
+  const vd = item?.validDates || item?.dates || null;
+  if (vd && typeof vd === 'object') {
+    const toRaw = vd.to ?? vd.end ?? vd.toDate ?? vd.endDate;
+    const d = parseDateLike(toRaw, 'to');
+    if (d) return d;
+  }
+  return null;
+}
+
+// 2) Restlaufzeit berechnen (Ende > validTimes > Tagesende(falls aktiv))
+function getRemainingMs(item, now = new Date()) {
+  // a) harte Endzeit (Datum/Zeit)
+  const hardEnd = pickOfferEndDate(item);
+  if (hardEnd) {
+    const diff = hardEnd.getTime() - now.getTime();
+    if (diff > 0) return diff;
+    return null;
+  }
+
+  // b) validTimes (heutiges Ende berechnen)
+  const vt = item?.validTimes || item?.times || null;
+  if (vt && typeof vt === 'object') {
+    const fromS = parseHM(vt.from ?? vt.start ?? vt.fromTime);
+    const toS   = parseHM(vt.to   ?? vt.end   ?? vt.toTime);
+    if (toS != null) {
+      const nowS = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+      if (fromS != null && fromS > toS) {
+        // Fenster geht über Mitternacht (z.B. 20:00–02:00)
+        // Wenn jetzt >= fromS → Ende ist MORGEN um toS, sonst (nach Mitternacht) → heute um toS
+        const endBase = (nowS >= fromS)
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
+          : todayStart;
+        const end = new Date(endBase.getTime() + toS * 1000);
+        const diff = end.getTime() - now.getTime();
+        return diff > 0 ? diff : null;
+      } else {
+        // normales Tagesfenster (z.B. 00:00–20:30)
+        const end = new Date(todayStart.getTime() + toS * 1000);
+        const diff = end.getTime() - now.getTime();
+        return diff > 0 ? diff : null;
+      }
+    }
+  }
+
+  // c) Fallback: wenn heute aktiv, bis Tagesende
+  if (isOfferActiveNow(item, now)) {
+    const end = endOfDayLocal(now);
+    const diff = end.getTime() - now.getTime();
+    return diff > 0 ? diff : null;
+  }
+
+  return null;
+}
+
+function formatRemaining(diffMs) {
+  if (diffMs == null) return 'Rest: —';
+  const totalMin = Math.ceil(diffMs / 60000);
+  if (totalMin <= 0) return 'Rest: —';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `Rest: ${m}\u00A0min`;
+  if (m === 0) return `Rest: ${h}\u00A0h`;
+  return `Rest: ${h}\u00A0h ${m}\u00A0min`;
 }
 
 /* ───────────── Screen ───────────── */
@@ -319,7 +394,7 @@ export default function HomeTab() {
   // Location
   const [userLoc, setUserLoc] = useState(null);
 
-  // Dev‑Banner
+  // Dev-Banner
   const [devMsg, setDevMsg] = useState(null);
   const showDev = useCallback((msg) => {
     setDevMsg(String(msg || ''));
@@ -331,14 +406,14 @@ export default function HomeTab() {
   const inFlightRef = useRef(false);
   const abortRef = useRef(null);
   const refreshTimerRef = useRef(null);
-  const heartbeatTimerRef = useRef(null);          // ✅ neu: regelmäßiger Heartbeat
+  const heartbeatTimerRef = useRef(null);
   const lastFocusAtRef = useRef(0);
   const appState = useRef(AppState.currentState);
-  const lastTokenRef = useRef(null);               // ✅ neu: letzter Token für Heartbeat
+  const lastTokenRef = useRef(null);
 
   const fetchFnRef = useRef(null);
 
-  // ⬇️ NEU: Dedupe & Helper für Notif‑Navigation
+  // Dedupe & Helper für Notif-Navigation
   const lastHandledNotifIdRef = useRef(null);
 
   const navigateFromNotifData = useCallback((originLabel, data) => {
@@ -368,11 +443,10 @@ export default function HomeTab() {
     }
   }, [router]);
 
-  /* ───────── Heartbeat Helper ───────── */
+  /* Heartbeat Helper */
   const sendHeartbeat = useCallback(async (token) => {
     if (!token) return;
     try {
-      // Grobe Position reicht dem Backend
       let pos = await Location.getLastKnownPositionAsync();
       if (!pos) {
         try {
@@ -401,7 +475,7 @@ export default function HomeTab() {
     }
   }, []);
 
-  /* ───────── PUSH: Setup einmalig beim Mount ───────── */
+  /* PUSH: Setup */
   useEffect(() => {
     (async () => {
       const token = await ensurePushReady();
@@ -410,32 +484,27 @@ export default function HomeTab() {
         return;
       }
       lastTokenRef.current = token;
-      // Initialer Heartbeat direkt nach App-Start
       await sendHeartbeat(token);
     })();
   }, [showDev, sendHeartbeat]);
 
-  /* 🔔 PUSH: Response Listener — behandelt **Actions** und **Standard‑Tap** */
+  /* Notif-Response Listener */
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       try {
         const notifId = response?.notification?.request?.identifier;
-        if (notifId && lastHandledNotifIdRef.current === notifId) {
-          return; // schon gehandhabt
-        }
+        if (notifId && lastHandledNotifIdRef.current === notifId) return;
         lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
 
         const actionId = response?.actionIdentifier;
         const data = response?.notification?.request?.content?.data || {};
         const offerId = String(data?.offerId || '');
 
-        // 1) Standard‑Tap (kein Button) → direkt navigieren
         if (!actionId || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
           navigateFromNotifData('tap-live', data);
           return;
         }
 
-        // 2) Button‑Actions (go/dismiss/snooze)
         let action = null;
         if (actionId === 'go') action = 'go';
         else if (actionId === 'dismiss') action = 'dismiss';
@@ -444,27 +513,20 @@ export default function HomeTab() {
         if (action && offerId) {
           const token = await AsyncStorage.getItem('expoPushToken');
           if (token) {
-            try {
-              await api.post('/location/notify-action', { offerId, action, token });
-            } catch (e) {
-              console.log('[notify-action] error', e?.message || e);
-            }
+            try { await api.post('/location/notify-action', { offerId, action, token }); }
+            catch (e) { console.log('[notify-action] error', e?.message || e); }
           }
-          if (action === 'go') {
-            navigateFromNotifData('tap-action-go', data);
-          }
+          if (action === 'go') navigateFromNotifData('tap-action-go', data);
         }
       } catch (e) {
         console.log('[Push] response listener error', e?.message || e);
       }
     });
 
-    return () => {
-      try { sub?.remove?.(); } catch {}
-    };
+    return () => { try { sub?.remove?.(); } catch {} };
   }, [navigateFromNotifData]);
 
-  /* 🔔 NEU: Cold‑Start Navigation (App komplett beendet, Tap vom Lockscreen) */
+  /* Cold-Start Navigation */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -473,9 +535,7 @@ export default function HomeTab() {
         if (!mounted || !resp) return;
 
         const notifId = resp?.notification?.request?.identifier;
-        if (notifId && lastHandledNotifIdRef.current === notifId) {
-          return; // schon gehandhabt
-        }
+        if (notifId && lastHandledNotifIdRef.current === notifId) return;
         lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
 
         const actionId = resp?.actionIdentifier;
@@ -485,18 +545,15 @@ export default function HomeTab() {
           navigateFromNotifData('tap-cold-start', data);
           return;
         }
-        if (actionId === 'go') {
-          navigateFromNotifData('tap-cold-start-action-go', data);
-        }
+        if (actionId === 'go') navigateFromNotifData('tap-cold-start-action-go', data);
       } catch (e) {
         console.warn('[NotifNav] getLastNotificationResponseAsync Fehler:', e);
       }
     })();
-
     return () => { mounted = false; };
   }, [navigateFromNotifData]);
 
-  /* ───────── Gesehen-IDs (Client) – unverändert aus deiner Version ───────── */
+  /* Gesehen-IDs */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
   const BASELINE_ON_FIRST_LOAD = false;
   const MAX_POSTS_PER_RELOAD = 1;
@@ -517,8 +574,7 @@ export default function HomeTab() {
 
   const saveSeenIds = useCallback(async () => {
     try {
-      const arr = Array.from(seenIdsRef.current);
-      await AsyncStorage.setItem(SEEN_IDS_KEY, JSON.stringify(arr));
+      await AsyncStorage.setItem(SEEN_IDS_KEY, JSON.stringify(Array.from(seenIdsRef.current)));
     } catch {}
   }, []);
 
@@ -526,8 +582,6 @@ export default function HomeTab() {
     try {
       seenIdsRef.current = new Set();
       await AsyncStorage.removeItem(SEEN_IDS_KEY);
-      baselineAppliedRef.current = BASELINE_ON_FIRST_LOAD;
-      if (__DEV__) showDev('DEV: seenOfferIds reset.');
     } catch (e) {
       if (__DEV__) showDev(`DEV: reset error ${e?.message || e}`);
     }
@@ -543,11 +597,7 @@ export default function HomeTab() {
   }, []);
 
   const getLocation = useCallback(async () => {
-    const { status } = await withTimeout(
-      Location.requestForegroundPermissionsAsync(),
-      5000,
-      'location permission'
-    );
+    const { status } = await withTimeout(Location.requestForegroundPermissionsAsync(), 5000, 'location permission');
     if (status !== 'granted') throw new Error('Location permission denied');
 
     let pos = await Location.getLastKnownPositionAsync();
@@ -561,7 +611,7 @@ export default function HomeTab() {
     return { lat: pos.coords.latitude, lng: pos.coords.longitude };
   }, []);
 
-  // Fetch (deine bestehende Logik – unverändert, nur kürzer gezeigt)
+  // Fetch
   const fetchPage = useCallback(
     async ({ pageToLoad = 1, mode = 'initial' } = {}) => {
       if (inFlightRef.current) return;
@@ -571,27 +621,18 @@ export default function HomeTab() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      if (mode === 'initial' && !hasLoadedOnce) {
-        setInitialLoading(true);
-        setError(null);
-      }
+      if (mode === 'initial' && !hasLoadedOnce) { setInitialLoading(true); setError(null); }
       if (mode === 'pull') { setRefreshing(true); setError(null); }
       if (mode === 'more') { setLoadingMore(true); }
 
       let postsThisReload = 0;
 
       try {
-        if (!baselineAppliedRef.current) {
-          await loadSeenIds();
-        }
+        if (!baselineAppliedRef.current) { await loadSeenIds(); }
 
-        const [interestsCSV, loc] = await Promise.all([
-          interestsCSVFromStorage(),
-          getLocation(),
-        ]);
+        const [interestsCSV, loc] = await Promise.all([interestsCSVFromStorage(), getLocation()]);
         setUserLoc(loc);
         const interestSet = csvToSet(interestsCSV);
-        console.log('[HomeTab] Interests:', Array.from(interestSet));
 
         let expoToken = null;
         try { expoToken = await AsyncStorage.getItem('expoPushToken'); } catch {}
@@ -617,8 +658,6 @@ export default function HomeTab() {
              (payload?.nextPage != null) ??
              (rows.length === limit));
 
-        if (rows[0]) console.log('[HomeTab] sample item keys:', Object.keys(rows[0]));
-
         const now = new Date();
         const filtered = [];
         const newlySeenThisRun = [];
@@ -643,7 +682,6 @@ export default function HomeTab() {
               const isNew = id && !seenSet.has(id);
 
               if (isNew) {
-                console.log('[HomeTab][autopost] NEW offer -> posting', id, o.name);
                 seenSet.add(id);
                 newlySeenThisRun.push(id);
 
@@ -652,31 +690,22 @@ export default function HomeTab() {
                   lat: loc.lat,
                   lng: loc.lng,
                   token: expoToken,
-                  platform: Platform.OS === 'ios' ? 'ios' : 'android', // ✅ wichtig für Filterkette
+                  platform: Platform.OS === 'ios' ? 'ios' : 'android',
                   eventType: 'enter',
-                  channelId: 'offers', // ✅ sichert Sichtbarkeit, wenn Server es durchreicht
-                }).then((r) => {
-                  const d = r?.data || {};
-                  const msg = `[geofence-enter] ${o.name ?? o._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
-                  console.log(msg);
-                  if (__DEV__) showDev(msg);
-                }).catch((err) => {
-                  const msg = `[geofence-enter] ERROR ${o.name ?? o._id} → ${err?.message || err}`;
-                  console.log(msg);
-                  if (__DEV__) showDev(msg);
-                });
+                  channelId: 'offers',
+                }).catch(() => {});
 
                 postsThisReload += 1;
-              } else {
-                console.log('[HomeTab][autopost] SKIP already seen', id, o.name);
               }
             }
           }
         }
 
         filtered.sort((a, b) => {
-          const da = toNumber(a.distance) ?? haversineMeters(loc.lat, loc.lng, pickOfferLatLng(a)?.lat ?? loc.lat, pickOfferLatLng(a)?.lng ?? loc.lng);
-          const db = toNumber(b.distance) ?? haversineMeters(loc.lat, loc.lng, pickOfferLatLng(b)?.lat ?? loc.lat, pickOfferLatLng(b)?.lng ?? loc.lng);
+          const da = toNumber(a.distance) ??
+            haversineMeters(loc.lat, loc.lng, pickOfferLatLng(a)?.lat ?? loc.lat, pickOfferLatLng(a)?.lng ?? loc.lng);
+          const db = toNumber(b.distance) ??
+            haversineMeters(loc.lat, loc.lng, pickOfferLatLng(b)?.lat ?? loc.lat, pickOfferLatLng(b)?.lng ?? loc.lng);
           return da - db;
         });
 
@@ -700,22 +729,8 @@ export default function HomeTab() {
 
         if (!hasLoadedOnce) setHasLoadedOnce(true);
 
-        const netMs = (t1 - t0).toFixed(0);
-        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${netMs}ms took=${payload.tookMs ?? '—'}ms`);
-
-        if (mode === 'initial' && !baselineAppliedRef.current && false /* Baseline AUS */) {
-          for (const o of filtered) {
-            const id = String(o._id || '');
-            if (id) seenIdsRef.current.add(id);
-          }
-          baselineAppliedRef.current = true;
-          await saveSeenIds();
-          console.log('[HomeTab] Baseline seeded with', filtered.length, 'ids');
-        } else {
-          if (newlySeenThisRun.length > 0) {
-            await saveSeenIds();
-          }
-        }
+        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${(t1 - t0).toFixed(0)}ms`);
+        if (newlySeenThisRun.length > 0) { await saveSeenIds(); }
       } catch (e) {
         if (mountedRef.current) {
           const msg = e?.message?.includes('timeout')
@@ -723,7 +738,6 @@ export default function HomeTab() {
             : 'Fehler beim Laden der Angebote.';
           setError(msg);
           console.warn('[HomeTab] fetch error:', e?.message || e);
-          if (__DEV__) showDev(`[fetch offers] ${e?.message || e}`);
         }
       } finally {
         inFlightRef.current = false;
@@ -733,7 +747,7 @@ export default function HomeTab() {
         if (mode === 'more') setLoadingMore(false);
       }
     },
-    [limit, interestsCSVFromStorage, getLocation, hasLoadedOnce, showDev, loadSeenIds, saveSeenIds]
+    [limit, interestsCSVFromStorage, getLocation, hasLoadedOnce, loadSeenIds, saveSeenIds]
   );
 
   useEffect(() => { fetchFnRef.current = fetchPage; }, [fetchPage]);
@@ -746,7 +760,7 @@ export default function HomeTab() {
       mountedRef.current = false;
       if (abortRef.current) try { abortRef.current.abort(); } catch {}
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); // ✅ cleanup
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     };
   }, []);
 
@@ -762,26 +776,21 @@ export default function HomeTab() {
         const now = Date.now();
         if (now - lastFocusAtRef.current > 5000) {
           lastFocusAtRef.current = now;
-          // Beim Zurückkehren in den Vordergrund: Heartbeat + Refresh
-          if (lastTokenRef.current) {
-            await sendHeartbeat(lastTokenRef.current); // ✅ Heartbeat on focus
-          }
+          if (lastTokenRef.current) await sendHeartbeat(lastTokenRef.current);
           fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
         }
       }
     };
     const sub = AppState.addEventListener('change', handleAppState);
 
-    // Regelmäßige Reloads (bestehend)
+    // Auto-Refresh
     refreshTimerRef.current = setInterval(() => {
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
     }, 180000);
 
-    // Regelmäßiger Heartbeat alle 10 Minuten
+    // Heartbeat alle 10 Min
     heartbeatTimerRef.current = setInterval(() => {
-      if (lastTokenRef.current) {
-        sendHeartbeat(lastTokenRef.current);
-      }
+      if (lastTokenRef.current) sendHeartbeat(lastTokenRef.current);
     }, 600000);
 
     return () => {
@@ -791,18 +800,13 @@ export default function HomeTab() {
     };
   }, [sendHeartbeat]);
 
-  /* DEV: „Test Arrival“ (Long‑Press = Reset) */
+  /* DEV: „Test Arrival“ (Long-Press = Reset) */
   const triggerTestArrival = useCallback(async () => {
     try {
       const expoToken = await AsyncStorage.getItem('expoPushToken');
-      if (!expoToken) {
-        if (__DEV__) showDev('Kein expoPushToken im AsyncStorage');
-        return;
-      }
-      if (!userLoc || !offers.length) {
-        if (__DEV__) showDev('Kein Standort oder kein Offer geladen');
-        return;
-      }
+      if (!expoToken) { if (__DEV__) showDev('Kein expoPushToken im AsyncStorage'); return; }
+      if (!userLoc || !offers.length) { if (__DEV__) showDev('Kein Standort oder kein Offer geladen'); return; }
+
       let best = null, bestD = Infinity;
       for (const o of offers) {
         const geo = pickOfferLatLng(o);
@@ -811,31 +815,24 @@ export default function HomeTab() {
         const d = haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng);
         if (d < bestD) { best = o; bestD = d; }
       }
-      if (!best) {
-        if (__DEV__) showDev('Kein gültiges Offer für Test gefunden');
-        return;
-      }
-      const res = await api.post('/location/geofence-enter', {
+      if (!best) { if (__DEV__) showDev('Kein gültiges Offer für Test gefunden'); return; }
+
+      await api.post('/location/geofence-enter', {
         offerId: best._id,
         lat: userLoc.lat,
         lng: userLoc.lng,
         token: expoToken,
         platform: Platform.OS === 'ios' ? 'ios' : 'android',
         eventType: 'enter',
-        channelId: 'offers', // ✅ passt zum angelegten Android-Kanal
+        channelId: 'offers',
       });
-      const d = res?.data || {};
-      const msg = `[TEST] ${best.name ?? best._id} → pushSent:${d.pushSent ? 'true' : 'false'}${d.reason ? ` | ${d.reason}` : ''}`;
-      console.log(msg);
-      if (__DEV__) showDev(msg);
+      if (__DEV__) showDev('[TEST] Geofence-Enter gesendet');
     } catch (e) {
-      const msg = `[TEST] ERROR → ${e?.message || e}`;
-      console.warn(msg);
-      if (__DEV__) showDev(msg);
+      if (__DEV__) showDev(`[TEST] ERROR → ${e?.message || e}`);
     }
   }, [offers, userLoc, showDev]);
 
-  /* UI (unverändert) */
+  /* UI */
 
   const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
 
@@ -874,9 +871,7 @@ export default function HomeTab() {
         contentContainerStyle={styles.categoryContainer}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {lastUpdated && (
-          <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>
-        )}
+        {lastUpdated && <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>}
 
         {__DEV__ && (
           <>
@@ -890,7 +885,7 @@ export default function HomeTab() {
               <Text style={styles.testBtnText}>Test Arrival</Text>
             </TouchableOpacity>
             <Text style={{ color: '#6b7280', fontSize: 11, marginBottom: 8 }}>
-              DEV: Long‑Press auf „Test Arrival“ = Reset der gesehenen Offer‑IDs
+              DEV: Long-Press auf „Test Arrival“ = Reset der gesehenen Offer-IDs
             </Text>
           </>
         )}
@@ -984,7 +979,9 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
+  // Karte bekommt nur „aktive“ Offers angezeigt, daher Badge konstant
   const isActiveNow = true;
+
   const remainingMs = getRemainingMs(item);
   const remainingLabel = formatRemaining(remainingMs);
   const hurry = remainingMs != null && remainingMs <= 60 * 60 * 1000;
@@ -1043,7 +1040,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   );
 }
 
-/* ───────────── Dev‑Banner & Skeletons & Styles (wie gehabt) ───────────── */
+/* ───────────── Dev-Banner & Skeletons & Styles ───────────── */
 
 function DevBanner({ msg, onClose }) {
   return (

@@ -1,43 +1,93 @@
 import React, { useRef, useEffect } from 'react';
-import { Text, StyleSheet, Image, TouchableOpacity, Animated } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import colors from '../../theme/colors';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Animation Refs
-  const logoAnim = useRef(new Animated.Value(0)).current;
-  const headlineAnim = useRef(new Animated.Value(0)).current;
-  const textAnim = useRef(new Animated.Value(0)).current;
-  const buttonAnim = useRef(new Animated.Value(0)).current;
+  // Animations
+  const logoScale = useRef(new Animated.Value(0.8)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const headlineY = useRef(new Animated.Value(12)).current;
+  const headlineOpacity = useRef(new Animated.Value(0)).current;
+  const textY = useRef(new Animated.Value(12)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const buttonY = useRef(new Animated.Value(16)).current;
+  const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // sanfter „pop-in“ fürs Logo, danach Stagger für Text & Button
     Animated.sequence([
-      Animated.timing(logoAnim, {
-        toValue: 1,
-        duration: 700,
-        useNativeDriver: true,
-      }),
-      Animated.timing(headlineAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.timing(textAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
+      Animated.parallel([
+        Animated.timing(logoOpacity, {
+          toValue: 1,
+          duration: 420,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.stagger(90, [
+        Animated.parallel([
+          Animated.timing(headlineOpacity, {
+            toValue: 1,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(headlineY, {
+            toValue: 0,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(textOpacity, {
+            toValue: 1,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(textY, {
+            toValue: 0,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(buttonOpacity, {
+            toValue: 1,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(buttonY, {
+            toValue: 0,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]),
     ]).start();
-  }, []);
+  }, [logoOpacity, logoScale, headlineOpacity, headlineY, textOpacity, textY, buttonOpacity, buttonY]);
+
+  const handleStart = async () => {
+    // kleines, wertiges Feedback
+    try { await Haptics.selectionAsync(); } catch {}
+    router.replace('/(onboarding)/LocationScreen');
+  };
 
   return (
     <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom || 24 }]}>
@@ -46,45 +96,53 @@ export default function WelcomeScreen() {
         style={[
           styles.logo,
           {
-            opacity: logoAnim,
-            transform: [{ scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+            opacity: logoOpacity,
+            transform: [{ scale: logoScale }],
           },
         ]}
         resizeMode="contain"
+        accessibilityIgnoresInvertColors
+        accessible
+        accessibilityLabel="StepsMatch Logo"
       />
+
       <Animated.Text
         style={[
           styles.headline,
           {
-            opacity: headlineAnim,
-            transform: [{ translateY: headlineAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+            opacity: headlineOpacity,
+            transform: [{ translateY: headlineY }],
           },
         ]}
       >
         finden. nicht suchen.
       </Animated.Text>
+
       <Animated.Text
         style={[
           styles.subheadline,
           {
-            opacity: textAnim,
-            transform: [{ translateY: textAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+            opacity: textOpacity,
+            transform: [{ translateY: textY }],
           },
         ]}
       >
         Willkommen bei Stepsmatch! Finde Angebote in deiner Nähe, die wirklich zu dir passen.
       </Animated.Text>
+
       <Animated.View
         style={{
-          opacity: buttonAnim,
-          transform: [{ translateY: buttonAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+          opacity: buttonOpacity,
+          transform: [{ translateY: buttonY }],
           width: '100%',
         }}
       >
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.replace('/(onboarding)/LocationScreen')}
-          activeOpacity={0.85}
+          onPress={handleStart}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Jetzt starten"
         >
           <Text style={styles.buttonText}>Jetzt starten</Text>
         </TouchableOpacity>
@@ -102,8 +160,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   logo: {
-    width: 110,
-    height: 110,
+    width: 120,
+    height: 120,
     marginBottom: 32,
   },
   headline: {
@@ -119,16 +177,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
     marginBottom: 32,
+    lineHeight: 24,
   },
   button: {
     backgroundColor: colors.primary,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 44,
     shadowColor: colors.primary,
-    shadowOpacity: 0.18,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
     elevation: 3,
     alignSelf: 'center',
   },
