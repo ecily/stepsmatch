@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, Animated, PanResponder, Easing } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
@@ -12,6 +12,7 @@ import colors from '../../theme/colors';
 import { fetchRoute } from '../../services/directions';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark'; // <- so belassen
 import { MaterialIcons } from '@expo/vector-icons'; // Accessible-Icon
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ NEU: Aktiv-Check (Europe/Vienna)
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -118,7 +119,7 @@ const HEADING_SNAP_DEG = 15;
 const REMAINING_TICK_MS = 1000;
 const ARRIVAL_THRESHOLD_METERS = 15;
 
-/* Off‑Route Tuning */
+/* Off-Route Tuning */
 const OFF_ROUTE_THRESHOLD_M = 35;
 const OFF_ROUTE_CONFIRM_SECS = 3;
 const REROUTE_COOLDOWN_MS = 15000;
@@ -128,7 +129,7 @@ const ARRIVAL_HAPTIC_BURSTS = 3;
 const ARRIVAL_HAPTIC_INTERVAL_MS = 120;
 const ARRIVAL_VIBRATION_PATTERN = [0, 220, 80, 260, 80, 300];
 
-/* Turn‑Hints */
+/* Turn-Hints */
 const TURN_MIN_ANGLE_DEG = 30;
 const TURN_HINT_DIST_1 = 30;
 const TURN_HINT_DIST_2 = 10;
@@ -185,7 +186,7 @@ export default function NavigationScreen() {
   const sheetY = useRef(new Animated.Value(0)).current;
   const destPulse = useRef(new Animated.Value(1)).current;
 
-  // Turn‑hint control
+  // Turn-hint control
   const nextTurnRef = useRef(null);
   const turnHintFlagsRef = useRef({ d30: false, d10: false });
 
@@ -194,7 +195,7 @@ export default function NavigationScreen() {
   const lastSpeedRef = useRef(0);
   const headingBiasUntilRef = useRef(0);
 
-  // HUD‑Pull‑Down
+  // HUD-Pull-Down
   const hudPullY = useRef(new Animated.Value(0)).current;
   const addrOpacity = useMemo(
     () => hudPullY.interpolate({ inputRange: [0, 20, 120], outputRange: [0, 0.4, 1], extrapolate: 'clamp' }),
@@ -225,9 +226,9 @@ export default function NavigationScreen() {
     return [];
   }, [routeCoords, userLocation, offerPos]);
 
-  const dottedRoute = useMemo(() => sampleEvery(remainingRoute, 18, 420), [remainingRoute]);
+  // (vorher: dottedRoute via Marker) — entfällt zugunsten Polyline
 
-  // Adresse – robust: erst Offer.provider.address, sonst nachgeladenes ProviderDoc
+  // Adresse – robust
   const providerAddress = useMemo(() => {
     const fromOffer =
       (offer && typeof offer.provider === 'object' && offer.provider?.address) ||
@@ -235,6 +236,14 @@ export default function NavigationScreen() {
     const fromDoc = providerDoc?.address;
     return fromOffer || fromDoc || 'Adresse nicht verfügbar';
   }, [offer, providerDoc]);
+
+  // ✅ Aktivitäts-Flag streng in Europe/Vienna
+  const activeNow = useMemo(() => {
+    if (!offer) return false;
+    const ok = isOfferActiveNow(offer, 'Europe/Vienna');
+    console.log('[NavigationScreen] activeNow:', ok, 'offerId:', offer?._id || offer?.id);
+    return ok;
+  }, [offer]);
 
   /* ── 4) Animations/Helpers ── */
   const openSheet = useCallback(() => {
@@ -346,7 +355,7 @@ export default function NavigationScreen() {
     return () => { try { soundRef.current?.unloadAsync?.(); } catch {} };
   }, []);
 
-  // Ziel‑Pin Animation
+  // Ziel-Pin Animation
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -358,7 +367,7 @@ export default function NavigationScreen() {
     return () => loop.stop();
   }, [destPulse]);
 
-  // Avoid‑Stairs Präferenz laden
+  // Avoid-Stairs Präferenz laden
   useEffect(() => {
     (async () => {
       const saved = await AsyncStorage.getItem(STORE_AVOID_STAIRS);
@@ -439,7 +448,7 @@ export default function NavigationScreen() {
           }
         );
       } catch {
-        // Offline‑Fallback
+        // Offline-Fallback
         try {
           const cachedOffer = await AsyncStorage.getItem(STORE_OFFER);
           if (cachedOffer) setOffer(JSON.parse(cachedOffer));
@@ -456,7 +465,7 @@ export default function NavigationScreen() {
     };
   }, [id, animateTo]);
 
-  // Distanz + Turn‑Hints alle 1s
+  // Distanz + Turn-Hints alle 1s
   useEffect(() => {
     const t = setInterval(() => {
       const pos = lastPosRef.current;
@@ -537,7 +546,7 @@ export default function NavigationScreen() {
     else { setRouteCoords([]); setRouteError(!DIRECTIONS_KEY ? 'Kein Directions-Key' : null); }
   }, [offerPos, userLocation, loadRouteFrom]);
 
-  // Off‑Route Monitor (+ Toast)
+  // Off-Route Monitor (+ Toast)
   useEffect(() => {
     const t = setInterval(async () => {
       const pos = lastPosRef.current;
@@ -579,7 +588,7 @@ export default function NavigationScreen() {
     return () => clearInterval(t);
   }, [routeCoords, isOffRoute, reroutePending, loadRouteFrom]);
 
-  // Bottom‑Sheet öffnen, sobald Höhe bekannt & arrived
+  // Bottom-Sheet öffnen, sobald Höhe bekannt & arrived
   useEffect(() => {
     if (arrived && sheetH) {
       sheetY.setValue(sheetH);
@@ -670,9 +679,9 @@ export default function NavigationScreen() {
         onMapReady={() => console.log('Map ready')}
         onError={(e) => console.log('Nav map error', e?.nativeEvent)}
       >
-        {/* Ziel‑Marker */}
+        {/* Ziel-Marker */}
         {offerPos && (
-          <Marker coordinate={offerPos} title={offer?.name || 'Ziel'}>
+          <Marker coordinate={offerPos} title={offer?.name || 'Ziel'} opacity={activeNow ? 1 : 0.5}>
             <Animated.View style={{ alignItems: 'center', transform: [{ scale: destPulse }] }}>
               <View style={styles.pinCore} />
               <View style={styles.pinDot} />
@@ -680,7 +689,7 @@ export default function NavigationScreen() {
           </Marker>
         )}
 
-        {/* Confidence‑Ring */}
+        {/* Confidence-Ring */}
         {userLocation && userAccuracy != null && userAccuracy > 0 && (
           <Circle
             center={userLocation}
@@ -691,17 +700,15 @@ export default function NavigationScreen() {
           />
         )}
 
-        {/* Dotted remaining route */}
-        {dottedRoute.map((pt, i) => (
-          <Marker
-            key={`dot-${i}-${pt.latitude}-${pt.longitude}`}
-            coordinate={pt}
-            anchor={{ x: 0.5, y: 0.5 }}
+        {/* Leichte Route als Polyline (statt 100e Marker) */}
+        {remainingRoute.length >= 2 && (
+          <Polyline
+            coordinates={remainingRoute}
+            strokeWidth={6}
+            strokeColor="rgba(0,122,255,0.92)"
             zIndex={2}
-          >
-            <View style={styles.dot} />
-          </Marker>
-        ))}
+          />
+        )}
       </MapView>
 
       {/* HUD oben – „ziehbar“ mit Adresse */}
@@ -711,6 +718,11 @@ export default function NavigationScreen() {
             {offer?.name || 'Navigation'}
           </Text>
           <View style={styles.pillsRow}>
+            {/* ✅ Mini-Status-Pill für Aktivität (Europe/Vienna) */}
+            <Text style={[styles.hudPill, activeNow ? styles.pillOk : styles.pillWarn]}>
+              {activeNow ? 'Aktiv' : 'Derzeit nicht aktiv'}
+            </Text>
+
             {!follow && <Text style={followPillStyle}>Folgen aus</Text>}
             {avoidStairs && <Text style={[styles.hudPill, styles.pillNeutral]}>Stufenfrei</Text>}
             <Text style={navPillStyle}>{navPillText}</Text>
@@ -732,13 +744,13 @@ export default function NavigationScreen() {
         </Animated.View>
 
         {isOffRoute && offRouteDist != null && (
-          <Text style={styles.hudWarnSmall}>Du bist ca. {Math.round(offRouteDist)} m neben der Route.</Text>
+          <Text style={styles.hudWarnSmall}>Du bist ca. {Math.round(offRouteDist)} m neben der Route.</Text>
         )}
         {!DIRECTIONS_KEY && <Text style={styles.hudWarn}>Kein Google Directions API-Key verfügbar.</Text>}
         {routeError && <Text style={styles.hudWarnSmall}>Hinweis: {String(routeError).replace('Error: ', '')}</Text>}
       </Animated.View>
 
-      {/* FAB‑Cluster */}
+      {/* FAB-Cluster */}
       <View style={styles.fabCluster}>
         <TouchableOpacity onPress={actionFollow} style={styles.fab} activeOpacity={0.9}>
           <Text style={styles.fabText}>{follow ? '◎' : '⟲'}</Text>
@@ -749,7 +761,7 @@ export default function NavigationScreen() {
         <TouchableOpacity onPress={actionToggleMapType} style={styles.fab} activeOpacity={0.9}>
           <Text style={styles.fabText}>{mapType === 'standard' ? 'SAT' : 'MAP'}</Text>
         </TouchableOpacity>
-        {/* Accessible‑Icon nur hier */}
+        {/* Accessible-Icon nur hier */}
         <TouchableOpacity onPress={actionToggleAvoidStairs} style={styles.fab} activeOpacity={0.9}>
           <MaterialIcons name="accessible" size={22} color="#fff" />
         </TouchableOpacity>
@@ -762,7 +774,7 @@ export default function NavigationScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Off‑Route Toast */}
+      {/* Off-Route Toast */}
       {showOffRouteToast && (
         <View style={styles.toastWrap} pointerEvents="none">
           <View style={styles.toast}>
@@ -771,7 +783,7 @@ export default function NavigationScreen() {
         </View>
       )}
 
-      {/* Arrival Bottom‑Sheet */}
+      {/* Arrival Bottom-Sheet */}
       {arrived && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <ConfettiOverlay />
@@ -798,7 +810,7 @@ export default function NavigationScreen() {
   );
 }
 
-/* ─────────── Turn‑Hint Utils ─────────── */
+/* ─────────── Turn-Hint Utils ─────────── */
 function segmentBearing(a, b) { return bearingDegrees(a, b); }
 function findNextTurn(fromPos, remRoute, minAngleDeg = 30) {
   if (!remRoute || remRoute.length < 3) return null;

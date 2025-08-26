@@ -7,6 +7,9 @@ import * as TaskManager from 'expo-task-manager';
 // ⚠️ PASST den Namen an, falls ihr schon einen anderen verwendet:
 const GEOFENCE_TASK = 'geofencing-task';
 
+// Neuer, expliziter Android-Channel mit Sound & Vibration
+const ANDROID_CHANNEL_ID = 'stepsmatch-default-v2';
+
 // --- Globale (module-scope) Guards: verhindern doppelte Registrierung ---
 let INIT_DONE = false;
 let NOTI_LISTENER_ADDED = false;
@@ -37,7 +40,7 @@ export default function PushInitializer() {
           Notifications.setNotificationHandler({
             handleNotification: async () => ({
               shouldShowAlert: true,
-              shouldPlaySound: true,
+              shouldPlaySound: true,    // 🔊 wichtig für Foreground
               shouldSetBadge: false,
             }),
           });
@@ -85,7 +88,43 @@ export default function PushInitializer() {
           console.log('[Geofencing] Läuft bereits – kein erneutes Registrieren');
         }
 
-        // 4) Markiere Initialisierung als abgeschlossen (global)
+        // 4) Expo-Push-Token + Android-Channel einrichten (einmalig)
+        try {
+          // a) Berechtigungen sicherstellen
+          const perm = await Notifications.getPermissionsAsync();
+          if (perm.status !== 'granted') {
+            const req = await Notifications.requestPermissionsAsync();
+            if (req.status !== 'granted') {
+              console.log('[push] permission denied');
+            }
+          }
+
+          // b) Android-Channel **neu** anlegen (mit Sound & Vibration)
+          try {
+            await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+              name: 'StepsMatch',
+              importance: Notifications.AndroidImportance.MAX,
+              sound: 'default',                 // 🔊 Standard-Ton
+              enableVibrate: true,              // 💥 Vibration an
+              vibrationPattern: [0, 220, 80, 260],
+              lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+              bypassDnd: false,
+            });
+            console.log('[push] channel ready:', ANDROID_CHANNEL_ID);
+          } catch (e) {
+            console.log('[push] channel error:', e?.message || String(e));
+          }
+
+          // c) Expo-Push-Token holen
+          const { data: expoToken } = await Notifications.getExpoPushTokenAsync();
+          console.log('[push] expoToken =', expoToken);
+          // Optionales Caching:
+          // await AsyncStorage.setItem('expoPushToken', expoToken);
+        } catch (e) {
+          console.log('[push] token error:', e?.message || String(e));
+        }
+
+        // 5) Markiere Initialisierung als abgeschlossen (global)
         INIT_DONE = true;
       } catch (e) {
         console.log('[PushInitializer] Setup-Fehler:', e?.message || String(e));

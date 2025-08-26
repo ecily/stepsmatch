@@ -19,6 +19,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ Aktivitäts-Check (Europe/Vienna)
 
 const API_BASE_URL =
   (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
@@ -164,7 +165,11 @@ export default function OffersScreen() {
         const loc = pickOfferLocation(offer);
         const radiusM = pickRadiusMeters(offer);
         const distanceM = loc ? haversineM(userPos, loc) : Number.POSITIVE_INFINITY;
-        setOffers([{ offer, loc, radiusM, distanceM, include: true }]);
+
+        // Aktivitäts-Flag hier berechnen
+        const activeNow = isOfferActiveNow(offer, 'Europe/Vienna');
+
+        setOffers([{ offer, loc, radiusM, distanceM, include: true, activeNow }]);
 
         if (offer?.provider && typeof offer.provider === 'object') setProvider(offer.provider);
         else if (offer?.provider) {
@@ -188,7 +193,8 @@ export default function OffersScreen() {
           const radiusM = pickRadiusMeters(offer);
           const distanceM = loc ? haversineM(userPos, loc) : Number.POSITIVE_INFINITY;
           const include = !!loc && Number.isFinite(radiusM) && distanceM <= radiusM;
-          return { offer, loc, radiusM, distanceM, include };
+          const activeNow = isOfferActiveNow(offer, 'Europe/Vienna');
+          return { offer, loc, radiusM, distanceM, include, activeNow };
         })
         .filter((r) => r.include)
         .sort((a, b) => a.distanceM - b.distanceM);
@@ -205,16 +211,22 @@ export default function OffersScreen() {
   useEffect(() => { setLoading(true); load(); }, [load, id]);
   const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
 
-  /* List Items (unchanged) */
+  /* List Items */
   const renderItem = useCallback(({ item }) => {
-    const { offer, distanceM, radiusM } = item;
+    const { offer, distanceM, radiusM, activeNow } = item;
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => router.push({ pathname: '/offers/[id]', params: { id: offer._id } })}
+        activeOpacity={0.9}
       >
         {offer.images?.[0] ? <Image source={{ uri: offer.images[0] }} style={styles.cardImage} /> : null}
-        <Text style={styles.cardTitle}>{offer.name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{offer.name}</Text>
+          <Text style={[styles.badgeMini, activeNow ? styles.badgeOk : styles.badgeWarn]}>
+            {activeNow ? 'Aktiv' : 'Derzeit nicht aktiv'}
+          </Text>
+        </View>
         {!!offer.description && <Text style={styles.cardDesc} numberOfLines={2}>{offer.description}</Text>}
         <View style={styles.bottomRow}>
           <Text style={styles.distance}>{fmtDistance(distanceM)} innerhalb Radius ✅</Text>
@@ -228,6 +240,8 @@ export default function OffersScreen() {
   const first = offers?.[0];
   const offer = first?.offer;
   const offerLoc = first?.loc || (offer ? pickOfferLocation(offer) : null);
+  const activeNowDetail = first?.activeNow ?? (offer ? isOfferActiveNow(offer, 'Europe/Vienna') : false);
+
   const distanceMDetail = useMemo(() => {
     if (Number.isFinite(first?.distanceM)) return first.distanceM;
     const prm = typeof paramDistance === 'string' ? Number(paramDistance) : null;
@@ -255,134 +269,178 @@ export default function OffersScreen() {
   };
   const handleBackToIndex = () => {
     try {
-    if (router.canGoBack?.()) {
-      router.back();
-      return;
-    }
-  } catch {}
-  // (tabs) ist eine URL‑Gruppe → Index ist unter "/"
-  router.replace('/');
+      if (router.canGoBack?.()) {
+        router.back();
+        return;
+      }
+    } catch {}
+    router.replace('/');
   };
+
+  // ---- Image pager (Detail) ----
+  const images = useMemo(() => {
+    if (!offer) return (paramImage ? [paramImage] : []);
+    const arr = Array.isArray(offer.images) ? offer.images : [];
+    return arr.length ? arr : (paramImage ? [paramImage] : []);
+  }, [offer, paramImage]);
+  const heroHeight = 220;
+  const heroRef = useRef(null);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const hasMultiple = images.length > 1;
+
+  const onHeroScroll = useCallback((e) => {
+    const x = e.nativeEvent.contentOffset.x || 0;
+    const idx = Math.round(x / SCREEN_W);
+    if (idx !== heroIndex) setHeroIndex(idx);
+  }, [heroIndex]);
+
+  const goHero = useCallback((dir) => {
+    if (!heroRef.current) return;
+    const next = Math.max(0, Math.min(images.length - 1, heroIndex + dir));
+    if (next === heroIndex) return;
+    heroRef.current.scrollToIndex({ index: next, animated: true });
+    setHeroIndex(next);
+  }, [heroIndex, images.length]);
 
   /* Render */
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.muted}>Angebote werden geladen…</Text>
-      </View>
+      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.muted}>Angebote werden geladen…</Text>
+        </View>
+      </SafeAreaView>
     );
   }
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>Fehler: {error}</Text>
-        <TouchableOpacity style={styles.btn} onPress={load}>
-          <Text style={styles.btnText}>Erneut versuchen</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.center}>
+          <Text style={styles.error}>Fehler: {error}</Text>
+          <TouchableOpacity style={styles.btn} onPress={load}>
+            <Text style={styles.btnText}>Erneut versuchen</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (id && offer) {
-    const images = Array.isArray(offer.images) && offer.images.length ? offer.images : (paramImage ? [paramImage] : []);
-    const heroHeight = 200;
-
     return (
-      <SafeAreaView style={{ flex: 1 }}>
-        {/* HERO */}
-        {images.length ? (
-          <FlatList
-            data={images}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(uri, i) => `${offer._id}-img-${i}`}
-            renderItem={({ item: uri }) => (
-              <Image
-                source={{ uri }}
-                style={{ width: SCREEN_W, height: heroHeight }}
-                resizeMode="cover"
+      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: 0 }]}>
+        {/* HERO Card */}
+        <View style={[styles.card, styles.heroCard, { height: heroHeight }]}>
+          {images.length ? (
+            <>
+              <FlatList
+                ref={heroRef}
+                data={images}
+                horizontal
+                pagingEnabled
+                onScroll={onHeroScroll}
+                scrollEventThrottle={16}
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(uri, i) => `${offer._id}-img-${i}`}
+                renderItem={({ item: uri }) => (
+                  <Image
+                    source={{ uri }}
+                    style={{ width: SCREEN_W - 24, height: heroHeight - 24, borderRadius: 12 }}
+                    resizeMode="cover"
+                  />
+                )}
+                style={{ height: heroHeight - 24 }}
+                contentContainerStyle={{ alignItems: 'center' }}
+                getItemLayout={(_, index) => ({ length: SCREEN_W - 24, offset: (SCREEN_W - 24) * index, index })}
               />
-            )}
-            style={{ height: heroHeight }}
-            getItemLayout={(_, index) => ({ length: SCREEN_W, offset: SCREEN_W * index, index })}
-          />
-        ) : (
-          <View style={[styles.heroPlaceholder, { height: heroHeight }]}>
-            <Text style={styles.heroPlaceholderText}>Sorry. Kein Bild.</Text>
-          </View>
-        )}
+
+              {hasMultiple && (
+                <>
+                  <TouchableOpacity style={[styles.heroArrow, styles.heroArrowLeft]} onPress={() => goHero(-1)} activeOpacity={0.8}>
+                    <Text style={styles.arrowText}>{'‹'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.heroArrow, styles.heroArrowRight]} onPress={() => goHero(1)} activeOpacity={0.8}>
+                    <Text style={styles.arrowText}>{'›'}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.heroHintWrap}>
+                    <Text style={styles.heroHint}>Wischen</Text>
+                  </View>
+                </>
+              )}
+            </>
+          ) : (
+            <View style={[styles.heroPlaceholder, { flex: 1, borderRadius: 12 }]}>
+              <Text style={styles.heroPlaceholderText}>Sorry. Kein Bild.</Text>
+            </View>
+          )}
+        </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
-          {/* MAP */}
-          <View style={styles.mapWrap}>
-            <MapView
-              ref={mapRef}
-              style={styles.map}
-              provider={PROVIDER_GOOGLE}
-              mapType={mapType}
-              initialRegion={{
-                latitude: offerLoc?.latitude || (userPosRef.current?.latitude ?? 47.0707),
-                longitude: offerLoc?.longitude || (userPosRef.current?.longitude ?? 15.4395),
-                latitudeDelta: 0.02,
-                longitudeDelta: 0.02,
-              }}
-            >
-              {userPosRef.current && <Marker coordinate={userPosRef.current} title="Du" />}
-              {offerLoc && <Marker coordinate={offerLoc} title={offer?.name || 'Ziel'} pinColor="#0077FF" />}
-            </MapView>
+          {/* Map Card */}
+          <View style={[styles.card, { padding: 12 }]}>
+            <View style={{ height: 220, borderRadius: 12, overflow: 'hidden' }}>
+              <MapView
+                ref={mapRef}
+                style={{ flex: 1 }}
+                provider={PROVIDER_GOOGLE}
+                mapType={mapType}
+                initialRegion={{
+                  latitude: offerLoc?.latitude || (userPosRef.current?.latitude ?? 47.0707),
+                  longitude: offerLoc?.longitude || (userPosRef.current?.longitude ?? 15.4395),
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
+                }}
+              >
+                {userPosRef.current && <Marker coordinate={userPosRef.current} title="Du" />}
+                {offerLoc && <Marker coordinate={offerLoc} title={offer?.name || 'Ziel'} pinColor="#0077FF" />}
+              </MapView>
 
-            <View style={styles.mapToggle}>
-              <TouchableOpacity
-                onPress={() => setMapType('standard')}
-                style={[styles.toggleBtn, mapType === 'standard' && styles.toggleBtnActive]}
-              >
-                <Text style={[styles.toggleText, mapType === 'standard' && styles.toggleTextActive]}>Map</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setMapType('satellite')}
-                style={[styles.toggleBtn, mapType === 'satellite' && styles.toggleBtnActive]}
-              >
-                <Text style={[styles.toggleText, mapType === 'satellite' && styles.toggleTextActive]}>Sat</Text>
-              </TouchableOpacity>
+              <View style={styles.mapToggle}>
+                <TouchableOpacity
+                  onPress={() => setMapType('standard')}
+                  style={[styles.toggleBtn, mapType === 'standard' && styles.toggleBtnActive]}
+                >
+                  <Text style={[styles.toggleText, mapType === 'standard' && styles.toggleTextActive]}>Map</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setMapType('satellite')}
+                  style={[styles.toggleBtn, mapType === 'satellite' && styles.toggleBtnActive]}
+                >
+                  <Text style={[styles.toggleText, mapType === 'satellite' && styles.toggleTextActive]}>Sat</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
-          {/* Badges */}
-          <View style={styles.badgesRow}>
-            {!!offer.category && (
-              <View style={[styles.badge, styles.badgeNeutral]}>
-                <Text style={styles.badgeText}>{offer.category}</Text>
-              </View>
-            )}
-            {!!offer.subcategory && (
-              <View style={[styles.badge, styles.badgeNeutral]}>
-                <Text style={styles.badgeText}>{offer.subcategory}</Text>
-              </View>
-            )}
-            {Number.isFinite(distanceMDetail) && (
-              <View style={[styles.badge, styles.badgeBlue]}>
-                <Text style={styles.badgeText}>Entf.: {fmtDistance(distanceMDetail)}</Text>
-              </View>
-            )}
-            <View style={[styles.badge, styles.badgeOrange]}>
-              <Text style={styles.badgeText}>Rest: {formatRemaining(remainingMs)}</Text>
+          {/* Badges Row (inkl. Aktivität) */}
+          <View style={[styles.card, { paddingVertical: 12, paddingHorizontal: 12 }]}>
+            <View style={styles.badgesRow}>
+              <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText}>{offer.category || 'Kategorie'}</Text></Text>
+              {!!offer.subcategory && (
+                <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText}>{offer.subcategory}</Text></Text>
+              )}
+              {Number.isFinite(distanceMDetail) && (
+                <Text style={[styles.badge, styles.badgeBlue]}><Text style={styles.badgeText}>Entf.: {fmtDistance(distanceMDetail)}</Text></Text>
+              )}
+              <Text style={[styles.badge, styles.badgeOrange]}><Text style={styles.badgeText}>Rest: {formatRemaining(remainingMs)}</Text></Text>
+              {activeNowDetail
+                ? <Text style={[styles.badge, styles.badgeOk]}><Text style={styles.badgeText}>Aktiv</Text></Text>
+                : <Text style={[styles.badge, styles.badgeWarn]}><Text style={styles.badgeText}>Derzeit nicht aktiv</Text></Text>}
             </View>
-            {hurry && (
-              <View style={[styles.badge, styles.badgeRed]}>
-                <Text style={[styles.badgeText, { color: '#7c2d12' }]}>Beeilung!</Text>
-              </View>
-            )}
           </View>
 
-          {/* Offer Card (wie Index-Card) */}
+          {/* Offer Card */}
           <View style={styles.infoCard}>
-            <Text style={styles.cardTitleBig}>{offer?.name || paramName || 'Angebot'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.cardTitleBig}>{offer?.name || paramName || 'Angebot'}</Text>
+              <Text style={[styles.badgeMini, activeNowDetail ? styles.badgeOk : styles.badgeWarn]}>
+                {activeNowDetail ? 'Aktiv' : 'Derzeit nicht aktiv'}
+              </Text>
+            </View>
             {!!offer?.description && <Text style={styles.cardBody}>{offer.description}</Text>}
           </View>
 
-          {/* Provider Card (wie Index-Card; ohne Labels) */}
+          {/* Provider Card */}
           <View style={styles.infoCard}>
             <Text style={styles.cardTitleBig}>{provider?.name || offer?.provider?.name || 'Anbieter'}</Text>
             {!!(provider?.address || offer?.provider?.address) && (
@@ -412,41 +470,48 @@ export default function OffersScreen() {
 
   if (!offers.length) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.muted}>Keine Angebote im Radius deiner Interessen.</Text>
-        <TouchableOpacity style={styles.btn} onPress={load}>
-          <Text style={styles.btnText}>Neu laden</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.center}>
+          <Text style={styles.muted}>Keine Angebote im Radius deiner Interessen.</Text>
+          <TouchableOpacity style={styles.btn} onPress={load}>
+            <Text style={styles.btnText}>Neu laden</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <FlatList
-      contentContainerStyle={styles.list}
-      data={offers}
-      keyExtractor={(row) => row.offer._id}
-      renderItem={renderItem}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    />
+    <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: 0 }]}>
+      <FlatList
+        contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
+        data={offers}
+        keyExtractor={(row) => row.offer._id}
+        renderItem={renderItem}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      />
+    </SafeAreaView>
   );
 }
 
 /* ───────── Styles ───────── */
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#f3f4f6' },
+
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   muted: { color: '#777', marginTop: 8 },
   error: { color: '#B00020', marginBottom: 12, textAlign: 'center' },
   btn: { backgroundColor: '#111827', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   btnText: { color: '#fff', fontWeight: '600' },
 
-  list: { padding: 12 },
+  list: { paddingHorizontal: 12, paddingTop: 8 },
 
-  /* Index-like card for list mode */
+  /* Generic card */
   card: {
-    backgroundColor: '#f7f8fb',
+    backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
+    marginHorizontal: 12,
     marginBottom: 12,
     elevation: 2,
     shadowColor: '#000',
@@ -454,20 +519,34 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 5,
   },
+
+  /* Index card */
   cardImage: { width: '100%', height: 140, borderRadius: 10, marginBottom: 8, backgroundColor: '#eee' },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: '#1f2937' },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#1f2937' },
   cardDesc: { marginTop: 6, color: '#4b5563' },
 
   bottomRow: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   distance: { fontWeight: '600', color: '#111827' },
   radius: { color: '#6b7280' },
 
+  /* Hero */
+  heroCard: { marginTop: 8, marginBottom: 8, padding: 12 },
   heroPlaceholder: { width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' },
   heroPlaceholderText: { color: '#6b7280', fontWeight: '600' },
+  heroArrow: {
+    position: 'absolute',
+    top: '45%',
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(17,24,39,0.65)',
+  },
+  heroArrowLeft: { left: 14 },
+  heroArrowRight: { right: 14 },
+  arrowText: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  heroHintWrap: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: 'rgba(17,24,39,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  heroHint: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
-  mapWrap: { height: 220, marginTop: 10 },
-  map: { flex: 1, borderRadius: 10 },
-
+  /* Map toggle */
   mapToggle: {
     position: 'absolute', top: 10, right: 10, flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, overflow: 'hidden',
@@ -477,17 +556,19 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 12, color: '#111827', fontWeight: '700' },
   toggleTextActive: { color: '#fff' },
 
-  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingTop: 12 },
+  /* Badges */
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap' },
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, marginRight: 8, marginBottom: 8 },
   badgeNeutral: { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' },
   badgeBlue: { backgroundColor: '#e5f0ff', borderColor: '#bfdbfe' },
   badgeOrange: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' },
-  badgeRed: { backgroundColor: '#ffe4e6', borderColor: '#fecdd3' },
+  badgeWarn: { backgroundColor: 'rgba(255,149,0,0.18)', borderColor: 'rgba(255,149,0,0.45)' },
+  badgeOk: { backgroundColor: 'rgba(46,213,115,0.22)', borderColor: 'rgba(46,213,115,0.45)' },
   badgeText: { fontSize: 12, fontWeight: '700', color: '#0f172a' },
 
-  /* Info cards (like index) */
+  /* Info cards (detailliert) */
   infoCard: {
-    backgroundColor: '#f7f8fb',
+    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 12,
@@ -500,6 +581,13 @@ const styles = StyleSheet.create({
   },
   cardTitleBig: { fontSize: 18, fontWeight: '800', color: '#1f2937', marginBottom: 6, lineHeight: 22 },
   cardBody: { fontSize: 14, color: '#4b5563', lineHeight: 20, marginBottom: 6 },
+
+  /* mini pill */
+  badgeMini: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+    fontSize: 12, fontWeight: '700', color: '#0f172a',
+  },
 
   /* CTA */
   ctaBar: {

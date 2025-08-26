@@ -3,55 +3,31 @@ import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendOffersPushSafe } from '../utils/push.js';
+import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ zentraler TZ-sicherer Helper
 
 /* ───────── Helpers ───────── */
 function envMs(name, def) {
   const v = process.env[name];
   if (v === undefined) return def;
   const s = String(v).trim().toLowerCase();
-  if (s === '' || s === '0' || s === 'false' || s === 'off' || s === 'null' || s === 'none') return 0;
+  if (['', '0', 'false', 'off', 'null', 'none'].includes(s)) return 0;
   const n = Number(s);
   return Number.isFinite(n) ? n : def;
 }
-function toHM(str) {
-  if (!str) return null;
-  const [h, m] = String(str).split(':').map(Number);
-  if (Number.isFinite(h) && Number.isFinite(m)) return { h, m };
-  return null;
+
+function normalizeInterests(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((s) => String(s || '').toLowerCase().normalize('NFKD').trim())
+    .filter(Boolean);
 }
-function nowInMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-function isWithinTimeWindow(validTimes) {
-  if (!validTimes) return true;
-  const start = toHM(validTimes.start);
-  const end = toHM(validTimes.end);
-  if (!start || !end) return true;
-  const nowM = nowInMinutes();
-  const startM = start.h * 60 + start.m;
-  const endM = end.h * 60 + end.m;
-  if (startM <= endM) return nowM >= startM && nowM <= endM;
-  return nowM >= startM || nowM <= endM; // über Mitternacht
-}
-function isWithinDateWindow(validDates) {
-  if (!validDates) return true;
-  const { from, to } = validDates;
-  const now = new Date();
-  if (from && now < new Date(from)) return false;
-  if (to && now > new Date(to)) return false;
-  return true;
-}
-function weekdayMatch(weekdays) {
-  if (!Array.isArray(weekdays) || weekdays.length === 0) return true;
-  const jsDay = new Date().getDay(); // 0=So … 6=Sa
-  return weekdays.includes(jsDay) || weekdays.includes(((jsDay + 6) % 7) + 1);
-}
+
 function interestsMatch(offer, token) {
-  if (!offer?.interestsRequired || offer.interestsRequired.length === 0) return true;
-  if (!token?.interests || token.interests.length === 0) return false;
-  const set = new Set(token.interests);
-  return offer.interestsRequired.some((i) => set.has(i));
+  const req = normalizeInterests(offer?.interestsRequired);
+  if (req.length === 0) return true; // kein Filter
+  const have = new Set(normalizeInterests(token?.interests));
+  if (have.size === 0) return false;
+  return req.some((r) => have.has(r));
 }
 
 /* ───────── Konfig ───────── */
@@ -59,6 +35,7 @@ const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 30 * 60_000);
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
+const TZ = 'Europe/Vienna';
 
 let timer = null;
 
@@ -73,26 +50,28 @@ export function startOfferPoller() {
     try {
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
 
-      // 1) Neu/aktualisierte Offers
+      // 1) Neu/aktualisierte Offers (wir holen genug Felder für Aktiv- & Geo-Check)
       const candidateOffers = await Offer.find({
         $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
       })
-        .select('_id name location radiusMeters radius validDates validTimes weekdays interestsRequired')
+        .select(
+          '_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired'
+        )
         .lean();
 
-      const activeOffers = candidateOffers.filter(
-        (o) => isWithinDateWindow(o.validDates) && isWithinTimeWindow(o.validTimes) && weekdayMatch(o.weekdays)
-      );
+      const now = new Date();
+      // ✅ EINHEITLICHER Aktiv-Check (TZ-fest, erkennt Einzeltage / Nachtfenster / Wochentage)
+      const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
       // 2) Tokens mit frischer Location
       const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
       const tokensFresh = await PushToken.find({
         disabled: { $ne: true },
-        'lastLocation.coordinates.0': { $exists: true }, // robustere Existenzprüfung
+        'lastLocation.coordinates.0': { $exists: true },
         $or: [
           { lastHeartbeatAt: { $gte: freshSince } },
           { lastSeenAt: { $gte: freshSince } },
-          { updatedAt: { $gte: freshSince } }, // Fallback
+          { updatedAt: { $gte: freshSince } },
         ],
       })
         .select('_id token platform interests lastLocation')
@@ -116,13 +95,22 @@ export function startOfferPoller() {
 
       // 3) Für jedes Offer → Tokens im Radius
       for (const offer of activeOffers) {
-        const [lng, lat] = offer?.location?.coordinates || [];
+        const coords = offer?.location?.coordinates;
+        const [lng, lat] = Array.isArray(coords) ? coords : [];
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
         // Radius: erst radiusMeters, dann radius, sonst Default
         const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
-        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM}`);
+        if (!Number.isFinite(radiusM) || radiusM <= 0) continue;
 
+        if (DEBUG)
+          console.log(
+            `[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM} @ [${lat.toFixed(
+              5
+            )},${lng.toFixed(5)}]`
+          );
+
+        // Geo-Query gegen frische Tokens
         const nearTokens = await PushToken.find({
           _id: { $in: tokensFresh.map((t) => t._id) },
           lastLocation: {
@@ -135,6 +123,7 @@ export function startOfferPoller() {
           .select('_id token platform interests lastLocation')
           .lean();
 
+        // Interessen-Matching
         const matched = nearTokens.filter((t) => interestsMatch(offer, t));
 
         if (DEBUG) {
@@ -148,16 +137,11 @@ export function startOfferPoller() {
         // blockiere:
         // - notified (bereits gepusht)
         // - dismissed (nie wieder)
-        // - snoozed, wenn remindAt > now (Snooze noch aktiv)
-        const now = new Date();
+        // - snoozed (solange remindAt > now)
         const vis = await OfferVisibility.find({
           offerId: offer._id,
-          deviceToken: { $in: matched.map((t) => t._id) },
-          $or: [
-            { status: 'notified' },
-            { status: 'dismissed' },
-            { status: 'snoozed', remindAt: { $gt: now } },
-          ],
+          deviceToken: { $in: matched.map((t) => t._id) }, // deviceToken referenziert PushToken._id
+          $or: [{ status: 'notified' }, { status: 'dismissed' }, { status: 'snoozed', remindAt: { $gt: now } }],
         })
           .select('deviceToken status remindAt')
           .lean();
@@ -177,12 +161,14 @@ export function startOfferPoller() {
           }
         );
 
+        // Upsert Visibility (idempotent)
+        const nowIso = new Date();
         const bulk = toNotify.map((t) => ({
           updateOne: {
-            filter: { offerId: offer._id, deviceToken: t._id }, // ← Feldname korrigiert
+            filter: { offerId: offer._id, deviceToken: t._id },
             update: {
-              $setOnInsert: { offerId: offer._id, deviceToken: t._id, firstSeenAt: new Date() },
-              $set: { status: 'notified', remindAt: null, lastNotifiedAt: new Date(), updatedAt: new Date() },
+              $setOnInsert: { offerId: offer._id, deviceToken: t._id, firstSeenAt: nowIso },
+              $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
             },
             upsert: true,
           },

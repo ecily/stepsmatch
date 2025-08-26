@@ -22,6 +22,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import colors from '../../theme/colors';
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ zentraler Helper (Europe/Vienna)
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 const CATEGORY_ID = 'offers-actions'; // 🔔 Actions: ➡️ / ❌ / 💤
@@ -241,55 +242,7 @@ function parseHM(x) {
   return h * 3600 + min * 60 + s;
 }
 
-/* ─────────── „Aktiv jetzt?“ ─────────── */
-function isOfferActiveNow(offer, now = new Date()) {
-  const vd = offer?.validDates || offer?.dates || null;
-  if (vd && typeof vd === 'object') {
-    const fromRaw = vd.from ?? vd.start ?? vd.fromDate ?? vd.startDate;
-    const toRaw   = vd.to   ?? vd.end   ?? vd.toDate   ?? vd.endDate;
-    const from = parseDateLike(fromRaw, 'from');
-    const to   = parseDateLike(toRaw, 'to');
-    if (from && now < from) return false;
-    if (to && now > to)     return false;
-  }
-
-  const vdDays = offer?.validDays || offer?.days || null;
-  if (Array.isArray(vdDays) && vdDays.length) {
-    const day = now.getDay();
-    const norm = vdDays.map((d) => {
-      if (typeof d === 'number') return d;
-      const s = normalizeToken(d);
-      const map = { 'so':0,'sonntag':0,'su':0,'sun':0,
-                    'mo':1,'montag':1,'mon':1,
-                    'di':2,'dienstag':2,'tue':2,
-                    'mi':3,'mittwoch':3,'wed':3,
-                    'do':4,'donnerstag':4,'thu':4,
-                    'fr':5,'freitag':5,'fri':5,
-                    'sa':6,'samstag':6,'sat':6 };
-      return map[s];
-    }).filter((n) => Number.isInteger(n));
-    if (norm.length && !norm.includes(day)) return false;
-  }
-
-  const vt = offer?.validTimes || offer?.times || null;
-  if (vt && typeof vt === 'object') {
-    const fromS = parseHM(vt.from ?? vt.start ?? vt.fromTime);
-    const toS   = parseHM(vt.to   ?? vt.end   ?? vt.toTime);
-    if (fromS != null && toS != null) {
-      const nowS = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
-      if (fromS <= toS) {
-        if (!(nowS >= fromS && nowS <= toS)) return false;
-      } else {
-        // Zeitfenster über Mitternacht
-        if (!(nowS >= fromS || nowS <= toS)) return false;
-      }
-    }
-  }
-  return true;
-}
-
-/* ─────────── Endzeit/Restlaufzeit ─────────── */
-
+/* ─────────── Endzeit/Restlaufzeit (nutzt zentralen Aktiv-Check) ─────────── */
 function pickOfferEndDate(item) {
   if (!item || typeof item !== 'object') return null;
   const directKeys = [
@@ -339,7 +292,8 @@ function getRemainingMs(item, now = new Date()) {
       }
     }
   }
-  if (isOfferActiveNow(item, now)) {
+  // Fallback: solange aktiv → bis Tagesende anzeigen
+  if (isOfferActiveNow(item, 'Europe/Vienna', now)) {
     const end = endOfDayLocal(now);
     const diff = end.getTime() - now.getTime();
     return diff > 0 ? diff : null;
@@ -642,7 +596,9 @@ export default function HomeTab() {
 
         for (const o of rows) {
           if (!matchesInterests(o, interestSet)) continue;
-          if (!isOfferActiveNow(o, now)) continue;
+          // ✅ zentraler Aktivitäts-Check mit fixer TZ
+          if (!isOfferActiveNow(o, 'Europe/Vienna', now)) continue;
+
           const geo = pickOfferLatLng(o);
           const radiusM = pickRadiusMeters(o);
           if (!geo || !Number.isFinite(radiusM)) continue;
@@ -654,6 +610,7 @@ export default function HomeTab() {
           if (inside) {
             filtered.push(o);
 
+            // Push-Trigger: „neu gesehen“ in diesem Client → Backend informiert (das pusht weiter)
             if (expoToken && postsThisReload < MAX_POSTS_PER_RELOAD) {
               const id = String(o._id || '');
               const seenSet = seenIdsRef.current;
@@ -680,10 +637,10 @@ export default function HomeTab() {
         }
 
         filtered.sort((a, b) => {
-          const da = toNumber(a.distance) ??
-            haversineMeters(loc.lat, loc.lng, pickOfferLatLng(a)?.lat ?? loc.lat, pickOfferLatLng(a)?.lng ?? loc.lng);
-          const db = toNumber(b.distance) ??
-            haversineMeters(loc.lat, loc.lng, pickOfferLatLng(b)?.lat ?? loc.lat, pickOfferLatLng(b)?.lng ?? loc.lng);
+          const pa = pickOfferLatLng(a);
+          const pb = pickOfferLatLng(b);
+          const da = toNumber(a.distance) ?? (pa ? haversineMeters(loc.lat, loc.lng, pa.lat, pa.lng) : Infinity);
+          const db = toNumber(b.distance) ?? (pb ? haversineMeters(loc.lat, loc.lng, pb.lat, pb.lng) : Infinity);
           return da - db;
         });
 
@@ -908,7 +865,8 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
-  const isActiveNow = true;
+  // ✅ echtes Aktiv-Flag (Europe/Vienna)
+  const isActiveNowFlag = isOfferActiveNow(item, 'Europe/Vienna', new Date());
 
   const remainingMs = getRemainingMs(item);
   const remainingLabel = formatRemaining(remainingMs);
@@ -921,7 +879,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
     <Animated.View style={[styles.card, { opacity, transform: [{ translateY }], overflow: 'hidden' }]}>
       <TouchableOpacity style={{ flex: 1 }} onPress={onPress} activeOpacity={0.9}>
         <View style={styles.badgeRow}>
-          {isActiveNow && (
+          {isActiveNowFlag && (
             <View style={[styles.badge, styles.badgeNow]}>
               <Text style={styles.badgeText}>Jetzt gültig</Text>
             </View>
