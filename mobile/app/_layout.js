@@ -8,6 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PushInitializer from '../components/PushInitializer';
+import BackgroundLocationManager from '../components/BackgroundLocationManager';
 
 /* ---------------- helpers (strict) ---------------- */
 const extractOfferIdStrict = (data) => {
@@ -157,6 +158,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <InitializerOnce />
+      <BackgroundLocationManager />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Stack screenOptions={{ headerShown: false }} />
       </SafeAreaView>

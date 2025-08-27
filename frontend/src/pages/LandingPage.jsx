@@ -4,6 +4,54 @@ import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
 import heroBg from "../assets/hero-bg-urban.png";
 
+const PhonePushMock = () => {
+  return (
+    <div className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]">
+      {/* Phone frame */}
+      <div className="relative rounded-[36px] border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
+        {/* Notch */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-0 h-6 w-36 bg-black/70 rounded-b-2xl z-20" />
+        {/* Map placeholder */}
+        <div className="h-[520px] w-full bg-gradient-to-br from-blue-900/30 via-blue-700/30 to-indigo-700/30">
+          {/* Radius bubble */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="relative">
+              <span className="absolute inset-0 rounded-full bg-blue-400/20 animate-ping" />
+              <span className="block h-28 w-28 rounded-full bg-blue-500/25 border border-white/30" />
+            </div>
+          </div>
+          {/* Location dot */}
+          <div className="absolute left-1/2 top-[54%] -translate-x-1/2 -translate-y-1/2">
+            <span className="block h-3 w-3 rounded-full bg-emerald-400 shadow shadow-emerald-900/40" />
+          </div>
+        </div>
+
+        {/* Push bubble */}
+        <div className="absolute left-4 right-4 top-16">
+          <div className="rounded-2xl bg-white text-gray-900 shadow-xl shadow-black/10 border border-gray-100 overflow-hidden opacity-0 animate-[fadein_800ms_ease-out_300ms_forwards,up_600ms_ease-out_300ms_forwards]">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">S</div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold">StepsMatch</div>
+                <div className="text-xs text-gray-600">
+                  Du bist <b>120 m</b> entfernt – <b>11–14 Uhr</b> heute <b>10 % Pasta</b>
+                </div>
+              </div>
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tailwind keyframes für dezente Motion */}
+      <style>{`
+        @keyframes fadein { to { opacity: 1 } }
+        @keyframes up { from { transform: translateY(8px) } to { transform: translateY(0) } }
+      `}</style>
+    </div>
+  );
+};
+
 const LandingPage = () => {
   return (
     <div className="bg-white min-h-screen flex flex-col font-sans text-gray-900">
@@ -12,86 +60,89 @@ const LandingPage = () => {
 
       {/* ───────── HERO ───────── */}
       <header
-        className="relative w-full min-h[92vh] md:min-h-screen bg-cover bg-center pt-16"
+        className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
       >
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/30" />
+        {/* Overlay (etwas stärker unten für Lesbarkeit) */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
         {/* Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 md:py-28">
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              Live-Kontext • Standortbasiert • Zero-Search
-            </span>
+        <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
+          <div className="grid md:grid-cols-2 gap-10 items-center">
+            {/* Left: Text */}
+            <div className="max-w-3xl">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                Live-Kontext • Standortbasiert • Zero-Search
+              </span>
 
-            <h1 className="mt-5 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white">
-              Finden. Nicht suchen. <span className="text-blue-300">Genau im richtigen Moment.</span>
-            </h1>
+              <h1 className="mt-5 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white">
+                finden. nicht suchen.
+              </h1>
 
-            <p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl">
-              StepsMatch zeigt dir Angebote in deiner Nähe genau dann, wenn sie relevant sind.
-              Keine Suche, keine Werbung – nur das, was jetzt zählt.
-            </p>
+              <p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl">
+                StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe
+                <span className="whitespace-nowrap"> wirklich passt.</span>
+              </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                to="/register"
-                className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
-              >
-                Für Anbieter: Jetzt starten
-              </Link>
-              <Link
-                to="/login"
-                className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
-              >
-                Ich habe bereits einen Account
-              </Link>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                {/* Primär: Anbieter */}
+                <Link
+                  to="/register"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
+                >
+                  Für Anbieter: Jetzt starten
+                </Link>
+                {/* Sekundär: Nutzer */}
+                <a
+                  href="#how"
+                  className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
+                >
+                  Für Nutzer: So funktioniert’s
+                </a>
+                {/* Pitch (untergeordnet als Link-Button) */}
+                <Link
+                  to="/pitch"
+                  className="inline-flex items-center gap-2 rounded-full bg-blue-600/90 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
+                >
+                  Pitch ansehen
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
+                  </svg>
+                </Link>
+                {/* Admin-Demo bleibt möglich, aber nicht zu dominant */}
+                <Link
+                  to="/admin/offers"
+                  className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
+                  title="Admin-Demo: Angebote auf der Karte"
+                >
+                  Admin-Demo öffnen
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="scale(-1,1) translate(-24,0)" />
+                  </svg>
+                </Link>
+              </div>
 
-              {/* Pitch-Button (Hero – Platz 1) */}
-              <Link
-                to="/pitch"
-                className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
-              >
-                Pitch ansehen
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z"/>
-                </svg>
-              </Link>
-
-              {/* Admin-Demo prominent im Hero für Pitch */}
-              <Link
-                to="/admin/offers"
-                className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
-              >
-                Admin-Demo öffnen
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="scale(-1,1) translate(-24,0)"/>
-                </svg>
-              </Link>
+              {/* Trust bar – kompakt & edel */}
+              <div className="mt-10 flex flex-wrap items-center gap-4 text-white/80">
+                {["DSGVO", "Zero-Search", "Echtzeit"].map((t, i) => (
+                  <div key={i} className="inline-flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+                    <span className="tracking-wide">{t}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Trust badges */}
-            <div className="mt-10 flex flex-wrap items-center gap-4 text-white/70">
-              <div className="inline-flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                DSGVO-konform
-              </div>
-              <div className="inline-flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-sky-400" />
-                Keine nervige Werbung
-              </div>
-              <div className="inline-flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-400" />
-                Echtzeit-Relevanz
-              </div>
+            {/* Right: Visual (Phone + Push) */}
+            <div className="hidden md:block">
+              <PhonePushMock />
             </div>
           </div>
         </div>
       </header>
 
-      {/* ───────── FEATURES ───────── */}
+      {/* ───────── USP PERSONAS (Nutzer/Anbieter/Investoren) ───────── */}
       <section id="features" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl">
@@ -107,31 +158,19 @@ const LandingPage = () => {
           <div className="mt-10 grid md:grid-cols-3 gap-6">
             {[
               {
-                icon: (
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M12 2a7 7 0 017 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 017-7zm0 9.5A2.5 2.5 0 109.5 9 2.5 2.5 0 0012 11.5z" />
-                  </svg>
-                ),
-                title: "Ortsspezifisch",
-                text: "Angebote in deiner Nähe – automatisch, ohne zu tippen.",
+                title: "Für Nutzer",
+                lead: "Nichts mehr suchen.",
+                text: "Du bekommst nur, was genau jetzt passt – am Ort, zur Zeit, mit deinen Interessen.",
               },
               {
-                icon: (
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M13 3a9 9 0 100 18 9 9 0 000-18zm1 4v6l4 2-1 1-5-3V7h2z" />
-                  </svg>
-                ),
-                title: "Echtzeit",
-                text: "Wir prüfen live, was jetzt für dich relevant ist.",
+                title: "Für Anbieter",
+                lead: "Sichtbar im richtigen Moment.",
+                text: "Erreiche Menschen, die gerade in der Nähe sind. Null Streuverlust, volle Relevanz.",
               },
               {
-                icon: (
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M21 7L9 19l-6-6 1.41-1.41L9 16.17 19.59 5.59 21 7z" />
-                  </svg>
-                ),
-                title: "Fokussiert",
-                text: "Keine Werbung, keine Ablenkung – nur Nutzen im richtigen Moment.",
+                title: "Für Investoren",
+                lead: "Skalierbar & datengetrieben.",
+                text: "Event-Streams (Enter/Exit/Heartbeat), Privacy-by-Design, klare Unit-Economics.",
               },
             ].map((f, i) => (
               <div
@@ -139,9 +178,15 @@ const LandingPage = () => {
                 className="group rounded-2xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition"
               >
                 <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-700 grid place-items-center mb-4">
-                  {f.icon}
+                  {/* simple icon dots */}
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <circle cx="6" cy="12" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="18" cy="12" r="2" />
+                  </svg>
                 </div>
-                <h3 className="text-lg font-semibold">{f.title}</h3>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{f.title}</p>
+                <h3 className="mt-1 text-lg font-semibold">{f.lead}</h3>
                 <p className="mt-2 text-gray-600">{f.text}</p>
                 <div className="mt-4 text-sm text-blue-700 opacity-0 group-hover:opacity-100 transition">
                   Mehr erfahren →
@@ -164,18 +209,18 @@ const LandingPage = () => {
                 {[
                   {
                     step: "01",
-                    title: "Registrieren & Profil anlegen",
-                    text: "Anbieter definieren Zeitfenster, Standort-Radius und Kategorie.",
+                    title: "Interessen & Radius",
+                    text: "Definiere Interessen, Ort und Radius – oder richte ein Angebot ein.",
                   },
                   {
                     step: "02",
-                    title: "Live gehen",
-                    text: "Deine Angebote werden im definierten Radius und Zeitfenster live ausgespielt.",
+                    title: "Zeitfenster aktivieren",
+                    text: "Mittags, abends oder flexibel – du bestimmst, wann es relevant ist.",
                   },
                   {
                     step: "03",
-                    title: "Gefunden werden",
-                    text: "Nutzer erhalten genau dann ein Signal, wenn sie in der Nähe sind – ohne Suche.",
+                    title: "Automatisch gefunden werden",
+                    text: "Wir benachrichtigen nur passende Personen in der Nähe – ohne Suche.",
                   },
                 ].map((s, i) => (
                   <li key={i} className="flex gap-4">
@@ -206,13 +251,13 @@ const LandingPage = () => {
               </div>
             </div>
 
-            {/* Glass Card */}
+            {/* Glass Card – Live-Beispiel */}
             <div className="relative">
               <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-lg">
                 <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
                   <p className="text-sm font-semibold text-blue-700">Live-Beispiel</p>
                   <p className="mt-2 text-gray-700">
-                    „Heute von 11–14 Uhr frische Pasta – 10% für alle in 150m.“
+                    „Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“
                   </p>
                   <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                     <div className="rounded-xl bg-white p-3 border border-gray-200">
@@ -235,7 +280,7 @@ const LandingPage = () => {
                 </div>
               </div>
 
-              {/* Floating Admin Demo button for pitch on mobile */}
+              {/* Floating Admin Demo button on mobile */}
               <Link
                 to="/admin/offers"
                 className="md:hidden fixed right-4 bottom-4 z-40 rounded-full bg-blue-600 px-4 py-3 text-white font-semibold shadow-lg hover:bg-blue-700 transition"
@@ -248,7 +293,30 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ───────── TRUST / CTA FOR PROVIDERS ───────── */}
+      {/* ───────── MINI-KPI / PRIVACY STRIP ───────── */}
+      <section className="py-8 bg-gray-900">
+        <div className="max-w-7xl mx-auto px-6 text-gray-100">
+          <div className="grid sm:grid-cols-3 gap-6 text-sm">
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              Echtzeit-Matching im Millisekunden-Bereich
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-sky-400" />
+              DSGVO-konform • Privacy-by-Design
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              Event-Modell: Enter / Exit / Heartbeat
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-gray-300">
+            Wir tracken keine Wege. Wir triggern nur kontextuelle Ereignisse.
+          </p>
+        </div>
+      </section>
+
+      {/* ───────── PROVIDER ROI ───────── */}
       <section id="trust" className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6 text-center">
           <h3 className="text-2xl md:text-3xl font-extrabold">
@@ -258,6 +326,21 @@ const LandingPage = () => {
             Perfekt für Gastronomie, lokale Shops, Services und Events – zeitlich limitiert,
             ortsgenau und ohne Streuverlust.
           </p>
+
+          <div className="mt-8 grid sm:grid-cols-3 gap-4 text-left max-w-4xl mx-auto">
+            {[
+              "Nur Personen im definierten Radius & Zeitfenster",
+              "Null Streuverlust – nur Relevanz",
+              "Selbstverwaltete Kampagnen in Minuten",
+            ].map((b, i) => (
+              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-blue-600" />
+                  <p className="text-gray-800">{b}</p>
+                </div>
+              </div>
+            ))}
+          </div>
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
@@ -273,14 +356,36 @@ const LandingPage = () => {
               Admin-Demo ansehen
             </Link>
           </div>
+        </div>
+      </section>
 
-          {/* Simple logos / badges placeholder */}
-          <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-6 opacity-70">
-            {["Schnell", "Lokal", " DSGVO", "Zero-Search"].map((t, i) => (
-              <div key={i} className="rounded-xl border border-gray-200 bg-white py-4 text-sm font-semibold">
-                {t}
-              </div>
-            ))}
+      {/* ───────── PITCH STRIP ───────── */}
+      <section className="py-8 bg-blue-900">
+        <div className="max-w-7xl mx-auto px-6 text-white">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-lg font-semibold">
+              Die Infrastruktur für <span className="opacity-90">Zero-Search</span> in der realen Welt.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                to="/pitch"
+                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
+              >
+                Pitch ansehen
+              </Link>
+              <Link
+                to="/admin/offers"
+                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
+              >
+                Tech-Demo (Karte)
+              </Link>
+              <Link
+                to="/register"
+                className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition"
+              >
+                Anbieter: Jetzt starten
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -303,16 +408,16 @@ const LandingPage = () => {
             <Link to="/pitch" className="hover:text-gray-900">Pitch</Link>
           </div>
           <div>
-  Ein Projekt von{" "}
-  <a
-    href="https://www.ecily.com"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="hover:underline"
-  >
-    ecily / Webentwicklung
-  </a>
-</div>
+            Ein Projekt von{" "}
+            <a
+              href="https://www.ecily.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              ecily / Webentwicklung
+            </a>
+          </div>
         </div>
       </footer>
     </div>

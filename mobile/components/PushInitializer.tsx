@@ -3,6 +3,8 @@ import React, { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 // ⚠️ PASST den Namen an, falls ihr schon einen anderen verwendet:
 const GEOFENCE_TASK = 'geofencing-task';
@@ -40,7 +42,7 @@ export default function PushInitializer() {
           Notifications.setNotificationHandler({
             handleNotification: async () => ({
               shouldShowAlert: true,
-              shouldPlaySound: true,    // 🔊 wichtig für Foreground
+              shouldPlaySound: true, // 🔊 wichtig für Foreground
               shouldSetBadge: false,
             }),
           });
@@ -104,8 +106,8 @@ export default function PushInitializer() {
             await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
               name: 'StepsMatch',
               importance: Notifications.AndroidImportance.MAX,
-              sound: 'default',                 // 🔊 Standard-Ton
-              enableVibrate: true,              // 💥 Vibration an
+              sound: 'default', // 🔊 Standard-Ton
+              enableVibrate: true, // 💥 Vibration an
               vibrationPattern: [0, 220, 80, 260],
               lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
               bypassDnd: false,
@@ -115,11 +117,31 @@ export default function PushInitializer() {
             console.log('[push] channel error:', e?.message || String(e));
           }
 
-          // c) Expo-Push-Token holen
-          const { data: expoToken } = await Notifications.getExpoPushTokenAsync();
+          // c) Expo-Push-Token holen & PERSISTIEREN (wichtig für BG-Task!)
+          //    → In Bare/Run:Android-Umgebungen ist das projectId-Argument robust.
+          const projectId =
+            Constants?.expoConfig?.extra?.eas?.projectId ||
+            Constants?.easConfig?.projectId ||
+            undefined;
+
+          const { data: expoToken } = await Notifications.getExpoPushTokenAsync(
+            projectId ? { projectId } : undefined
+          );
+
           console.log('[push] expoToken =', expoToken);
-          // Optionales Caching:
-          // await AsyncStorage.setItem('expoPushToken', expoToken);
+
+          // Persistieren für BG-Task:
+          try {
+            const prev = (await AsyncStorage.getItem('expoPushToken')) || '';
+            if (prev !== expoToken) {
+              await AsyncStorage.setItem('expoPushToken', String(expoToken));
+              console.log('[push] token stored in AsyncStorage');
+            } else {
+              console.log('[push] token unchanged (already in AsyncStorage)');
+            }
+          } catch (e) {
+            console.log('[push] token store error:', e?.message || String(e));
+          }
         } catch (e) {
           console.log('[push] token error:', e?.message || String(e));
         }

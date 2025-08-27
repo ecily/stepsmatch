@@ -36,8 +36,13 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
         "POST_NOTIFICATIONS"
-      ]
+      ],
+      "foregroundService": {
+        "notificationTitle": "StepsMatch läuft im Hintergrund",
+        "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden."
+      }
     },
 
     "web": {
@@ -61,7 +66,8 @@
         {
           "sounds": ["./assets/sounds/arrival.mp3"]
         }
-      ]
+      ],
+      "expo-location"
     ],
 
     "experiments": {
