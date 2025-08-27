@@ -1,12 +1,27 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
 import heroBg from "../assets/hero-bg-urban.png";
 
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut", delay } },
+});
+
+const fadeIn = (delay = 0) => ({
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.6, ease: "easeOut", delay } },
+});
+
 const PhonePushMock = () => {
   return (
-    <div className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]">
+    <motion.div
+      className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]"
+      {...fadeUp(0.2)}
+    >
       {/* Phone frame */}
       <div className="relative rounded-[36px] border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
         {/* Notch */}
@@ -27,10 +42,12 @@ const PhonePushMock = () => {
         </div>
 
         {/* Push bubble */}
-        <div className="absolute left-4 right-4 top-16">
-          <div className="rounded-2xl bg-white text-gray-900 shadow-xl shadow-black/10 border border-gray-100 overflow-hidden opacity-0 animate-[fadein_800ms_ease-out_300ms_forwards,up_600ms_ease-out_300ms_forwards]">
+        <motion.div className="absolute left-4 right-4 top-16" {...fadeUp(0.35)}>
+          <div className="rounded-2xl bg-white text-gray-900 shadow-xl shadow-black/10 border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">S</div>
+              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">
+                S
+              </div>
               <div className="flex-1">
                 <div className="text-sm font-semibold">StepsMatch</div>
                 <div className="text-xs text-gray-600">
@@ -40,21 +57,80 @@ const PhonePushMock = () => {
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
-
-      {/* Tailwind keyframes für dezente Motion */}
-      <style>{`
-        @keyframes fadein { to { opacity: 1 } }
-        @keyframes up { from { transform: translateY(8px) } to { transform: translateY(0) } }
-      `}</style>
-    </div>
+    </motion.div>
   );
 };
 
 const LandingPage = () => {
+  const title = "StepsMatch – finden. nicht suchen.";
+  const description =
+    "StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe wirklich passt – Zero-Search, DSGVO-konform und in Echtzeit.";
+  const url = "https://www.stepsmatch.com/";
+  const ogImage = heroBg; // Alternativ ein dediziertes 1200x630-OG-Bild exportieren
+  const twitterHandle = "@stepsmatch"; // falls vorhanden, sonst leer lassen
+
+  const jsonLdOrganization = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "StepsMatch",
+    url,
+    logo: logoIcon,
+    sameAs: ["https://www.ecily.com"],
+  };
+
+  const jsonLdApp = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "StepsMatch",
+    operatingSystem: "Android",
+    applicationCategory: "LifestyleApplication",
+    description,
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "EUR",
+    },
+  };
+
   return (
     <div className="bg-white min-h-screen flex flex-col font-sans text-gray-900">
+      {/* ───────── SEO / SHARING ───────── */}
+      <Helmet>
+        {/* Base */}
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <link rel="canonical" href={url} />
+
+        {/* Preconnects (Performance-Hint) */}
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        {/* Falls ihr ein CDN nutzt:
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        */}
+
+        {/* Open Graph */}
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="StepsMatch" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:url" content={url} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:image:alt" content="StepsMatch – Zero-Search Benachrichtigungsvorschau" />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        {twitterHandle && <meta name="twitter:site" content={twitterHandle} />}
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={ogImage} />
+
+        {/* JSON-LD */}
+        <script type="application/ld+json">{JSON.stringify(jsonLdOrganization)}</script>
+        <script type="application/ld+json">{JSON.stringify(jsonLdApp)}</script>
+      </Helmet>
+
       {/* ───────── NAVBAR ───────── */}
       <Navbar />
 
@@ -62,45 +138,52 @@ const LandingPage = () => {
       <header
         className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
+        aria-label="Hero Hintergrundbild Stadtansicht"
       >
-        {/* Overlay (etwas stärker unten für Lesbarkeit) */}
+        {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
         {/* Content */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
           <div className="grid md:grid-cols-2 gap-10 items-center">
             {/* Left: Text */}
-            <div className="max-w-3xl">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur">
+            <motion.div className="max-w-3xl" {...fadeIn(0.05)}>
+              <motion.span
+                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur"
+                {...fadeUp(0.1)}
+              >
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 Live-Kontext • Standortbasiert • Zero-Search
-              </span>
+              </motion.span>
 
-              <h1 className="mt-5 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white">
+              <motion.h1
+                className="mt-5 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white"
+                {...fadeUp(0.15)}
+              >
                 finden. nicht suchen.
-              </h1>
+              </motion.h1>
 
-              <p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl">
-                StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe
-                <span className="whitespace-nowrap"> wirklich passt.</span>
-              </p>
+              <motion.p
+                className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl"
+                {...fadeUp(0.2)}
+              >
+                StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe{" "}
+                <span className="whitespace-nowrap">wirklich passt.</span>
+              </motion.p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                {/* Primär: Anbieter */}
+              <motion.div className="mt-8 flex flex-wrap items-center gap-3" {...fadeUp(0.25)}>
                 <Link
                   to="/register"
                   className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
                 >
                   Für Anbieter: Jetzt starten
                 </Link>
-                {/* Sekundär: Nutzer */}
                 <a
                   href="#how"
                   className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
                 >
                   Für Nutzer: So funktioniert’s
                 </a>
-                {/* Pitch (untergeordnet als Link-Button) */}
                 <Link
                   to="/pitch"
                   className="inline-flex items-center gap-2 rounded-full bg-blue-600/90 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
@@ -110,7 +193,6 @@ const LandingPage = () => {
                     <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
                   </svg>
                 </Link>
-                {/* Admin-Demo bleibt möglich, aber nicht zu dominant */}
                 <Link
                   to="/admin/offers"
                   className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
@@ -118,23 +200,26 @@ const LandingPage = () => {
                 >
                   Admin-Demo öffnen
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="scale(-1,1) translate(-24,0)" />
+                    <path
+                      d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z"
+                      transform="scale(-1,1) translate(-24,0)"
+                    />
                   </svg>
                 </Link>
-              </div>
+              </motion.div>
 
-              {/* Trust bar – kompakt & edel */}
-              <div className="mt-10 flex flex-wrap items-center gap-4 text-white/80">
+              {/* Trust bar */}
+              <motion.div className="mt-10 flex flex-wrap items-center gap-4 text-white/80" {...fadeUp(0.3)}>
                 {["DSGVO", "Zero-Search", "Echtzeit"].map((t, i) => (
                   <div key={i} className="inline-flex items-center gap-2">
                     <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
                     <span className="tracking-wide">{t}</span>
                   </div>
                 ))}
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
 
-            {/* Right: Visual (Phone + Push) */}
+            {/* Right: Visual */}
             <div className="hidden md:block">
               <PhonePushMock />
             </div>
@@ -142,7 +227,7 @@ const LandingPage = () => {
         </div>
       </header>
 
-      {/* ───────── USP PERSONAS (Nutzer/Anbieter/Investoren) ───────── */}
+      {/* ───────── USP PERSONAS ───────── */}
       <section id="features" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl">
@@ -173,12 +258,13 @@ const LandingPage = () => {
                 text: "Event-Streams (Enter/Exit/Heartbeat), Privacy-by-Design, klare Unit-Economics.",
               },
             ].map((f, i) => (
-              <div
+              <motion.div
                 key={i}
                 className="group rounded-2xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition"
+                whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                {...fadeUp(0.05 * i)}
               >
                 <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-700 grid place-items-center mb-4">
-                  {/* simple icon dots */}
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                     <circle cx="6" cy="12" r="2" />
                     <circle cx="12" cy="12" r="2" />
@@ -191,7 +277,7 @@ const LandingPage = () => {
                 <div className="mt-4 text-sm text-blue-700 opacity-0 group-hover:opacity-100 transition">
                   Mehr erfahren →
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>
@@ -223,7 +309,7 @@ const LandingPage = () => {
                     text: "Wir benachrichtigen nur passende Personen in der Nähe – ohne Suche.",
                   },
                 ].map((s, i) => (
-                  <li key={i} className="flex gap-4">
+                  <motion.li key={i} className="flex gap-4" {...fadeUp(0.05 * i)}>
                     <div className="shrink-0 h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">
                       {s.step}
                     </div>
@@ -231,11 +317,11 @@ const LandingPage = () => {
                       <h3 className="font-semibold text-lg">{s.title}</h3>
                       <p className="text-gray-600">{s.text}</p>
                     </div>
-                  </li>
+                  </motion.li>
                 ))}
               </ol>
 
-              <div className="mt-8 flex flex-wrap gap-3">
+              <motion.div className="mt-8 flex flex-wrap gap-3" {...fadeUp(0.2)}>
                 <Link
                   to="/register"
                   className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
@@ -248,11 +334,11 @@ const LandingPage = () => {
                 >
                   Anbieter-Login
                 </Link>
-              </div>
+              </motion.div>
             </div>
 
             {/* Glass Card – Live-Beispiel */}
-            <div className="relative">
+            <motion.div className="relative" {...fadeUp(0.1)}>
               <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-lg">
                 <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
                   <p className="text-sm font-semibold text-blue-700">Live-Beispiel</p>
@@ -288,7 +374,7 @@ const LandingPage = () => {
               >
                 Admin-Demo
               </Link>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
@@ -333,16 +419,21 @@ const LandingPage = () => {
               "Null Streuverlust – nur Relevanz",
               "Selbstverwaltete Kampagnen in Minuten",
             ].map((b, i) => (
-              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4">
+              <motion.div
+                key={i}
+                className="rounded-xl border border-gray-200 bg-white p-4"
+                whileHover={{ scale: 1.01 }}
+                transition={{ type: "spring", stiffness: 250, damping: 20 }}
+              >
                 <div className="flex items-start gap-3">
                   <span className="mt-1 h-2 w-2 rounded-full bg-blue-600" />
                   <p className="text-gray-800">{b}</p>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <motion.div className="mt-8 flex flex-wrap justify-center gap-3" {...fadeUp(0.05)}>
             <Link
               to="/register"
               className="rounded-full bg-blue-600 px-6 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
@@ -355,7 +446,7 @@ const LandingPage = () => {
             >
               Admin-Demo ansehen
             </Link>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -394,7 +485,7 @@ const LandingPage = () => {
       <footer className="mt-auto bg-gray-100 py-8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600">
           <div className="flex items-center gap-3">
-            <img src={logoIcon} alt="StepsMatch" className="h-7 w-7 rounded-md" />
+            <img src={logoIcon} alt="StepsMatch Logo" className="h-7 w-7 rounded-md" />
             <span>© {new Date().getFullYear()} stepsmatch.com</span>
           </div>
           <div className="flex items-center gap-4">
