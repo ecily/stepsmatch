@@ -4,7 +4,7 @@ import { Helmet } from "@dr.pogodin/react-helmet";
 import { motion } from "motion/react";
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
-import heroBg from "../assets/hero-bg-urban.png";
+import heroBg from "../assets/hero-bg-pitch2.jpg";
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 12 },
@@ -103,6 +103,9 @@ const LandingPage = () => {
         <meta name="description" content={description} />
         <link rel="canonical" href={url} />
 
+        {/* Preload Hero (schneller First Paint) */}
+        <link rel="preload" as="image" href={heroBg} />
+
         {/* Preconnects (Performance-Hint) */}
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -144,7 +147,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
         {/* Content */}
-        <div className="relative z-10 max-w-7xl mx_auto px-6 py-16 md:py-24">
+        <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
           <div className="grid md:grid-cols-2 gap-10 items-center">
             {/* Left: Text */}
             <motion.div className="max-w-3xl" {...fadeIn(0.05)}>
