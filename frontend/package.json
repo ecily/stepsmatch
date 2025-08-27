@@ -11,10 +11,12 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@dr.pogodin/react-helmet": "3.0.2",
         "@hello-pangea/dnd": "^18.0.1",
         "@react-google-maps/api": "^2.20.6",
         "axios": "^1.8.4",
         "lucide-react": "^0.488.0",
+        "motion": "12.23.12",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "react-image-file-resizer": "^0.4.8",
