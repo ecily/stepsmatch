@@ -37,8 +37,13 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK",
         "POST_NOTIFICATIONS"
       ],
+      "notification": {
+        "channelId": "stepsmatch-default-v2"
+      },
       "foregroundService": {
         "notificationTitle": "StepsMatch läuft im Hintergrund",
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden."

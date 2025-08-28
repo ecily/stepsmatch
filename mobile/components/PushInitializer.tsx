@@ -1,175 +1,239 @@
-// mobile/components/PushInitializer.js
+// stepsmatch/mobile/components/PushInitializer.js
 import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-// ⚠️ PASST den Namen an, falls ihr schon einen anderen verwendet:
-const GEOFENCE_TASK = 'geofencing-task';
+const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 
-// Neuer, expliziter Android-Channel mit Sound & Vibration
-const ANDROID_CHANNEL_ID = 'stepsmatch-default-v2';
+// Produktionswerte
+const HEARTBEAT_MIN_SECONDS = 45;          // Anti-Spam-Puffer
+const TIME_INTERVAL_MS = 60 * 1000;        // ~1x/Minute im Stillstand
+const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-// --- Globale (module-scope) Guards: verhindern doppelte Registrierung ---
-let INIT_DONE = false;
-let NOTI_LISTENER_ADDED = false;
-let RESPONSE_LISTENER_ADDED = false;
+let lastHeartbeatAt = 0;
 
-// Falls die Task woanders bereits definiert ist, vermeiden wir eine Exception
-try {
-  // defineTask ist idempotent im try/catch – wenn schon definiert, knallt’s, dann ignorieren
-  TaskManager.defineTask(GEOFENCE_TASK, ({ data, error }) => {
-    if (error) return;
-    // hier NICHT geofences erneut registrieren! Nur Events verarbeiten.
-    // console.log('[Geofencing][BG Task]', data?.eventType, data?.region);
+/* ---------- Helpers ---------- */
+
+async function ensureAndroidChannel() {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
+    name: 'StepsMatch',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: 'default',
   });
-} catch {}
+}
+
+async function getStoredOrFetchExpoToken() {
+  let t =
+    Constants.expoConfig?.extra?.expoPushToken ||
+    Constants.manifest2?.extra?.expoPushToken ||
+    null;
+  if (!t) {
+    try {
+      const { data } = await Notifications.getExpoPushTokenAsync();
+      t = data;
+      if (!Constants.expoConfig) Constants.expoConfig = { extra: {} };
+      if (!Constants.expoConfig.extra) Constants.expoConfig.extra = {};
+      Constants.expoConfig.extra.expoPushToken = t;
+      console.log('[push] fetched expoToken (fallback) =', t);
+    } catch (e) {
+      console.log('[push] fallback token error', e?.message || e);
+    }
+  }
+  return t || null;
+}
+
+/** Baut Payload & sendet Heartbeat nur wenn token/coords valide sind */
+async function sendHeartbeat(coords, label = 'Heartbeat') {
+  try {
+    if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
+      console.log('[BGLOC] skip send (no coords)');
+      return false;
+    }
+
+    const expoToken = await getStoredOrFetchExpoToken();
+    if (!expoToken) {
+      console.log('[BGLOC] skip send (no expoToken)');
+      return false;
+    }
+
+    const payload = {
+      token: expoToken,
+      platform: Platform.OS,
+      lat: coords.latitude,
+      lng: coords.longitude, // wichtig: 'lng' (nicht 'lon')
+      acc: coords.accuracy ?? null,
+      speed: coords.speed ?? null,
+      heading: coords.heading ?? null,
+    };
+
+    const res = await fetch(`${API_BASE}/location/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const txt = await res.text();
+    console.log(`[BGLOC] ${label} HTTP`, res.status, txt);
+
+    if (res.ok) {
+      console.log(
+        `[BGLOC] ${label} sent lat=${coords.latitude?.toFixed?.(5)} lng=${coords.longitude?.toFixed?.(5)} acc=${coords.accuracy}`
+      );
+      return true;
+    } else {
+      console.log('[BGLOC] server rejected; payload was', JSON.stringify(payload));
+      return false;
+    }
+  } catch (e) {
+    console.log('[BGLOC] Exception in sendHeartbeat:', e?.message || e);
+    return false;
+  }
+}
+
+/* ---------- Background Task ---------- */
+
+// Task nur einmal definieren (wichtig bei Hot-Reload)
+if (!TaskManager.isTaskDefined?.(BG_LOCATION_TASK)) {
+  TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
+    try {
+      if (error) {
+        console.log('[BGLOC] Task error:', error);
+        return;
+      }
+
+      const locs = data?.locations || [];
+      if (!locs.length) {
+        console.log('[BGLOC] locations: 0');
+        return;
+      }
+      console.log('[BGLOC] locations batch size =', locs.length);
+
+      const now = Math.floor(Date.now() / 1000);
+      if (now - lastHeartbeatAt < HEARTBEAT_MIN_SECONDS) {
+        console.log('[BGLOC] skip (debounce)', now - lastHeartbeatAt, 's since last');
+        return;
+      }
+
+      const latest = locs[locs.length - 1];
+      const { coords } = latest || {};
+      const ok = await sendHeartbeat(coords, 'Heartbeat');
+      if (ok) lastHeartbeatAt = now;
+    } catch (e) {
+      console.log('[BGLOC] Exception in task:', e?.message || e);
+    }
+  });
+}
+
+/* ---------- Component Bootstrapping ---------- */
 
 export default function PushInitializer() {
-  const initRef = useRef(false);
+  const initDone = useRef(false);
 
   useEffect(() => {
-    // Harte Einmal-Sperre für diese Komponente
-    if (INIT_DONE || initRef.current) return;
-    initRef.current = true;
+    if (initDone.current) return;
+    initDone.current = true;
 
     (async () => {
       try {
-        // 1) Notification-Handler (einmalig)
-        if (!NOTI_LISTENER_ADDED) {
-          Notifications.setNotificationHandler({
-            handleNotification: async () => ({
-              shouldShowAlert: true,
-              shouldPlaySound: true, // 🔊 wichtig für Foreground
-              shouldSetBadge: false,
-            }),
-          });
-          NOTI_LISTENER_ADDED = true;
+        // Notifications-Permission (Android 13+)
+        const notiPerm0 = await Notifications.getPermissionsAsync();
+        let notiStatus = notiPerm0.status;
+        if (notiStatus !== 'granted') {
+          const asked = await Notifications.requestPermissionsAsync();
+          notiStatus = asked.status;
         }
+        console.log('[push] notification permission =', notiStatus);
 
-        // 2) Foreground/Background Response Listener (einmalig)
-        if (!RESPONSE_LISTENER_ADDED) {
-          Notifications.addNotificationResponseReceivedListener(() => {
-            // nichts weiter hier – Navigation passiert zentral im RootLayout
-          });
-          RESPONSE_LISTENER_ADDED = true;
-        }
+        await ensureAndroidChannel();
 
-        // 3) Geofencing-Setup (idempotent)
-        //    - prüfe, ob bereits läuft
-        let hasStarted = false;
+        // Expo Push Token beim Start ziehen & merken
         try {
-          hasStarted = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
-        } catch {
-          // Manche Android-Versionen werfen hier, wenn Task noch nie versucht wurde – ignorieren
-          hasStarted = false;
+          const { data: expoPushToken } = await Notifications.getExpoPushTokenAsync();
+          if (!Constants.expoConfig) Constants.expoConfig = { extra: {} };
+          if (!Constants.expoConfig.extra) Constants.expoConfig.extra = {};
+          Constants.expoConfig.extra.expoPushToken = expoPushToken;
+          console.log('[push] expoToken (init) =', expoPushToken);
+        } catch (e) {
+          console.log('[push] token error (init)', e?.message || e);
         }
 
-        if (!hasStarted) {
-          // a) ggf. Standort-Permissions prüfen (Foreground reicht für Geofencing)
-          const perm = await Location.getForegroundPermissionsAsync();
-          if (perm.status !== 'granted') {
-            // versuch's leise – Onboarding fragt ohnehin aktiv
-            await Location.requestForegroundPermissionsAsync().catch(() => {});
-          }
-
-          // b) Regionen besorgen (aus eurer API oder lokalem Store)
-          //    ⚠️ Hier nur Beispiel: bitte durch eure echte Quelle ersetzen.
-          //    Wichtig ist: KEIN erneutes Registrieren im Event-Callback!
-          const regions = await loadGeofenceRegionsSafe();
-
-          if (Array.isArray(regions) && regions.length > 0) {
-            await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
-            console.log(`[Geofencing] Registriert: ${regions.length} Regionen`);
-          } else {
-            console.log('[Geofencing] Keine Regionen zu registrieren');
-          }
-        } else {
-          console.log('[Geofencing] Läuft bereits – kein erneutes Registrieren');
+        // Standort-Berechtigungen
+        const fg = await Location.requestForegroundPermissionsAsync();
+        const bg = await Location.requestBackgroundPermissionsAsync();
+        console.log('[BGLOC] permissions', { fg: fg.status, bg: bg.status });
+        if (fg.status !== 'granted' || bg.status !== 'granted') {
+          console.log('[BGLOC] Missing location permissions -> abort start');
+          return;
         }
 
-        // 4) Expo-Push-Token + Android-Channel einrichten (einmalig)
+        // Provider-Status (Debug)
         try {
-          // a) Berechtigungen sicherstellen
-          const perm = await Notifications.getPermissionsAsync();
-          if (perm.status !== 'granted') {
-            const req = await Notifications.requestPermissionsAsync();
-            if (req.status !== 'granted') {
-              console.log('[push] permission denied');
-            }
-          }
+          const prov = await Location.getProviderStatusAsync();
+          console.log('[BGLOC] providerStatus', prov);
+        } catch (e) {
+          console.log('[BGLOC] providerStatus error', e?.message || e);
+        }
 
-          // b) Android-Channel **neu** anlegen (mit Sound & Vibration)
-          try {
-            await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-              name: 'StepsMatch',
-              importance: Notifications.AndroidImportance.MAX,
-              sound: 'default', // 🔊 Standard-Ton
-              enableVibrate: true, // 💥 Vibration an
-              vibrationPattern: [0, 220, 80, 260],
-              lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-              bypassDnd: false,
+        // **Kickstart**: einmalig aktuelle Position holen und sofort senden
+        try {
+          // lastKnown spart Akku; bei null fallback auf currentPosition
+          let pos = await Location.getLastKnownPositionAsync();
+          if (!pos) {
+            pos = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              mayShowUserSettingsDialog: false,
             });
-            console.log('[push] channel ready:', ANDROID_CHANNEL_ID);
-          } catch (e) {
-            console.log('[push] channel error:', e?.message || String(e));
           }
-
-          // c) Expo-Push-Token holen & PERSISTIEREN (wichtig für BG-Task!)
-          //    → In Bare/Run:Android-Umgebungen ist das projectId-Argument robust.
-          const projectId =
-            Constants?.expoConfig?.extra?.eas?.projectId ||
-            Constants?.easConfig?.projectId ||
-            undefined;
-
-          const { data: expoToken } = await Notifications.getExpoPushTokenAsync(
-            projectId ? { projectId } : undefined
-          );
-
-          console.log('[push] expoToken =', expoToken);
-
-          // Persistieren für BG-Task:
-          try {
-            const prev = (await AsyncStorage.getItem('expoPushToken')) || '';
-            if (prev !== expoToken) {
-              await AsyncStorage.setItem('expoPushToken', String(expoToken));
-              console.log('[push] token stored in AsyncStorage');
-            } else {
-              console.log('[push] token unchanged (already in AsyncStorage)');
-            }
-          } catch (e) {
-            console.log('[push] token store error:', e?.message || String(e));
+          if (pos?.coords) {
+            await sendHeartbeat(pos.coords, 'Kickstart');
+          } else {
+            console.log('[BGLOC] Kickstart: no position available');
           }
         } catch (e) {
-          console.log('[push] token error:', e?.message || String(e));
+          console.log('[BGLOC] Kickstart error', e?.message || e);
         }
 
-        // 5) Markiere Initialisierung als abgeschlossen (global)
-        INIT_DONE = true;
+        // Hintergrund-Updates (Produktionswerte)
+        const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+        if (!started) {
+          console.log('[BGLOC] Starting background updates…');
+          await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
+            // Events auch ohne Bewegung, alle ~60s
+            distanceInterval: 0,
+            timeInterval: TIME_INTERVAL_MS,
+
+            // Balanced spart Akku und bleibt im Hintergrund aktiv
+            accuracy: Location.Accuracy.Balanced,
+
+            // Foreground Service (Android)
+            foregroundService: {
+              notificationTitle: 'StepsMatch aktiv',
+              notificationBody: 'Standortabgleich läuft im Hintergrund.',
+            },
+
+            // iOS-Felder (unschädlich auf Android)
+            showsBackgroundLocationIndicator: false,
+            pausesUpdatesAutomatically: false,
+            activityType: Location.ActivityType.Other,
+
+            // sofort liefern
+            deferredUpdatesInterval: 0,
+            deferredUpdatesDistance: 0,
+          });
+        } else {
+          console.log('[BGLOC] Background updates already started.');
+        }
       } catch (e) {
-        console.log('[PushInitializer] Setup-Fehler:', e?.message || String(e));
-        // nicht erneut versuchen – lieber im nächsten App-Start oder via explizitem Refresh
-        INIT_DONE = true;
+        console.log('[BGLOC] init error', e?.message || e);
       }
     })();
   }, []);
 
   return null;
-}
-
-// --- Hilfsfunktion: Regionen laden (Dummy/Platzhalter) ---
-async function loadGeofenceRegionsSafe() {
-  // ⚠️ ERSETZEN: Holt eure echten Regionen (z. B. aus AsyncStorage oder API).
-  // Struktur-Beispiel für Expo Geofencing:
-  // [{ identifier: 'offer:123', latitude: 47.1, longitude: 15.4, radius: 150, notifyOnEnter: true, notifyOnExit: false }]
-  try {
-    // Beispiel: holt zuletzt bekannte Regionen aus AsyncStorage (falls ihr das nutzt)
-    // const json = await AsyncStorage.getItem('geofenceRegions');
-    // return json ? JSON.parse(json) : [];
-    return []; // ← vorerst leer lassen; eure bestehende Logik befüllt das an anderer Stelle
-  } catch {
-    return [];
-  }
 }
