@@ -1,4 +1,6 @@
+// stepsmatch/mobile/app/(tabs)/index.js
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { sendHeartbeat } from '../../components/PushInitializer'; // ✅ zentraler Heartbeat
 import {
   View,
   Text,
@@ -384,37 +386,7 @@ export default function HomeTab() {
     }
   }, [router]);
 
-  /* Heartbeat Helper */
-  const sendHeartbeat = useCallback(async (token) => {
-    if (!token) return;
-    try {
-      let pos = await Location.getLastKnownPositionAsync();
-      if (!pos) {
-        try {
-          pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            6000,
-            'heartbeat position'
-          );
-        } catch {}
-      }
-      const lat = pos?.coords?.latitude ?? null;
-      const lng = pos?.coords?.longitude ?? null;
-      if (lat == null || lng == null) {
-        console.log('[heartbeat] skip (no position)');
-        return;
-      }
-      await api.post('/location/heartbeat', {
-        token,
-        platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        lat,
-        lng,
-      });
-      console.log('[heartbeat] sent');
-    } catch (e) {
-      console.log('[heartbeat] error', e?.message || e);
-    }
-  }, []);
+  // ⬇️ lokaler Heartbeat-Helper entfernt – zentraler `sendHeartbeat` wird importiert
 
   /* PUSH: Setup */
   useEffect(() => {
@@ -427,7 +399,7 @@ export default function HomeTab() {
       lastTokenRef.current = token;
       await sendHeartbeat(token);
     })();
-  }, [showDev, sendHeartbeat]);
+  }, [showDev]);
 
   /* Notif-Response Listener */
   useEffect(() => {
@@ -724,16 +696,16 @@ export default function HomeTab() {
     }, 180000);
 
     // Heartbeat alle 10 Min
-    heartbeatTimerRef.current = setInterval(() => {
-      if (lastTokenRef.current) sendHeartbeat(lastTokenRef.current);
-    }, 600000);
+    //heartbeatTimerRef.current = setInterval(() => {
+    //  if (lastTokenRef.current) sendHeartbeat(lastTokenRef.current);
+    //}, 600000);
 
     return () => {
       sub.remove();
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
       if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     };
-  }, [sendHeartbeat]);
+  }, []);
 
   /* UI */
 
