@@ -1,4 +1,4 @@
-// stepsmatch/backend/routes/push.js
+// backend/routes/push.js
 import express from 'express';
 import mongoose from 'mongoose';
 import { sendPush } from '../utils/push.js';
@@ -12,11 +12,7 @@ const normPlatform = (p) => {
   return PLATFORMS.has(s) ? s : 'android';
 };
 const isValidObjectId = (v) => {
-  try {
-    return !!v && mongoose.Types.ObjectId.isValid(String(v));
-  } catch {
-    return false;
-  }
+  try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
 };
 
 // POST /api/push/register
@@ -42,7 +38,7 @@ router.post('/register', async (req, res) => {
       { new: true, upsert: true }
     );
 
-    console.log('[push] register', token.slice(0, 18) + '…', 'platform=', doc.platform, 'deviceId=', doc.deviceId, 'projectId=', projectId);
+    console.log('[push] register', token.slice(0, 22) + '…', 'platform=', doc.platform, 'deviceId=', doc.deviceId, 'projectId=', projectId);
     res.json({
       success: true,
       id: doc._id,
@@ -62,31 +58,34 @@ router.post('/register', async (req, res) => {
 // POST /api/push/roundtrip
 router.post('/roundtrip', async (req, res) => {
   try {
-    const { offerId, title, body } = req.body || {};
+    const { offerId: rawOfferId, title: rawTitle, body: rawBody } = req.body || {};
 
-    // Neuesten aktiven Token nehmen
-    const last = await PushToken.findOne({ disabled: { $ne: true } })
-      .sort({ lastSeenAt: -1 })
-      .lean();
+    // Letzten frischen Token nehmen
+    const last = await PushToken.findOne({ disabled: { $ne: true } }).sort({ lastSeenAt: -1 }).lean();
+    if (!last?.token) return res.status(404).json({ success: false, error: 'no-token' });
 
-    if (!last?.token) {
-      return res.status(404).json({ success: false, error: 'no-token' });
-    }
-
+    const offerId = rawOfferId || 'TEST';
     const payload = {
-      offerId: offerId || 'TEST',
+      offerId,
       route: offerId ? `/offers/${offerId}` : null,
+      source: 'roundtrip',
       t: Date.now(),
     };
 
+    const title = rawTitle || 'StepsMatch';
+    const body = (rawBody || 'Test-Push (Roundtrip)') + ` [offerId:${offerId}]`;
+
+    // Sichtbares Server-Log des exakten Payloads
+    console.log('[push] roundtrip build', JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload }));
+
     const resp = await sendPush({
       tokens: [last.token],
-      title: title || 'StepsMatch',
-      body: body || 'Test-Push (Roundtrip)',
+      title,
+      body,
       data: payload,
     });
 
-    console.log('[push] roundtrip sent -> tokens=1', JSON.stringify(resp));
+    console.log('[push] roundtrip sent', JSON.stringify(resp));
     res.json({ success: true, projectId: last.projectId || null, meta: resp });
   } catch (e) {
     console.error('[push] roundtrip error', e);
