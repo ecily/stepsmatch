@@ -38,6 +38,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    // Android: Heads-Up begünstigen
+    priority: Notifications.AndroidNotificationPriority?.MAX ?? undefined,
   }),
 });
 
@@ -52,7 +54,7 @@ async function ensureAndroidChannel() {
       sound: 'default',
     });
 
-    // Alias-Channel für Server
+    // Alias-Channel (Server kann 'offers' schicken)
     await Notifications.setNotificationChannelAsync('offers', {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
@@ -61,6 +63,7 @@ async function ensureAndroidChannel() {
       sound: 'default',
     });
 
+    // Foreground-Service Channel
     await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
       name: 'StepsMatch – Standortdienst',
       description: 'Background location notification channel',
@@ -117,24 +120,51 @@ async function registerTokenOnBackend(token) {
   }
 }
 
-/** 🔁 End-to-End-Test: Server-Push direkt aus der App anstoßen */
+/** 🔁 Server-Roundtrip mit Fallback: wenn echte Push nicht ankommt → lokale Notif nach 5s */
+const roundtripProbe = {
+  pending: new Set(),
+};
+
 async function serverPushRoundtrip(token) {
   try {
     if (!token) return;
+    const rid = `rt_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
+    roundtripProbe.pending.add(rid);
+
     const res = await fetch(`${API_BASE}/push/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // channelId 'offers' ist serverseitig ohnehin gesetzt; mitschicken schadet nicht
       body: JSON.stringify({
         token,
         title: 'StepsMatch • Roundtrip',
         body: 'Push-Pipeline aktiv ✅',
-        data: { kind: 'roundtrip', ts: Date.now() },
+        data: { kind: 'roundtrip', rid, ts: Date.now() },
         channelId: 'offers',
+        categoryId: 'offer-go',
       }),
     });
     const json = await res.json().catch(() => ({}));
     console.log('[push] roundtrip =>', res.status, JSON.stringify(json || {}));
+
+    // ⏳ Falls binnen 5s kein [push] received mit exakt diesem rid kommt → lokaler Fallback
+    setTimeout(async () => {
+      if (roundtripProbe.pending.has(rid)) {
+        try {
+          await Notifications.presentNotificationAsync({
+            title: 'StepsMatch • Push aktiv (Fallback)',
+            body: 'Remote-Benachrichtigung nicht zugestellt – zeige lokale Fallback-Notif.',
+            data: { kind: 'roundtrip-fallback', rid },
+            categoryIdentifier: 'offer-go',
+            android: { channelId: 'offers', priority: Notifications.AndroidNotificationPriority.MAX },
+            sound: 'default',
+          });
+          roundtripProbe.pending.delete(rid);
+          console.log('[push] roundtrip fallback presented for', rid);
+        } catch (e) {
+          console.log('[push] roundtrip fallback error', e?.message || e);
+        }
+      }
+    }, 5000);
   } catch (e) {
     console.log('[push] roundtrip error', e?.message || e);
   }
@@ -245,7 +275,7 @@ export async function debugLocalPush() {
       body: 'Lokale Notification (Handler+Channel ok?)',
       data: { kind: 'debug-local' },
       categoryIdentifier: 'offer-go',
-      android: { channelId: 'offers' },
+      android: { channelId: 'offers', priority: Notifications.AndroidNotificationPriority.MAX },
       sound: 'default',
     });
     console.log('[push] presentNotificationAsync -> OK');
@@ -254,7 +284,7 @@ export async function debugLocalPush() {
   }
 }
 
-/* ---------- Foreground-Fallback & Logging ---------- */
+/* ---------- Foreground-Handling & Logging ---------- */
 
 let notifReceivedSub = null;
 let notifResponseSub = null;
@@ -270,23 +300,15 @@ function installNotificationListeners() {
         channelId: c.android?.channelId || c.channelId,
       }));
 
-      // 💡 Foreground-Fallback: wenn App aktiv, Notification sicher anzeigen
-      const state = AppState.currentState;
-      if (state === 'active' && Platform.OS === 'android') {
-        try {
-          await Notifications.presentNotificationAsync({
-            title: c.title || 'StepsMatch',
-            body: c.body || '',
-            data: c.data || {},
-            categoryIdentifier: c.categoryIdentifier || 'offer-go',
-            android: { channelId: 'offers' },
-            sound: 'default',
-          });
-          console.log('[push] foreground fallback presented');
-        } catch (e) {
-          console.log('[push] foreground fallback error', e?.message || e);
-        }
+      // Roundtrip: Erfolg markieren → Roundtrip-Fallback wird nicht abgefeuert
+      const rid = c?.data?.rid;
+      if (rid && roundtripProbe.pending.has(rid)) {
+        roundtripProbe.pending.delete(rid);
       }
+
+      // ❌ Entfernt: KEIN zusätzliches presentNotificationAsync im Vordergrund.
+      // Der globale setNotificationHandler zeigt die Notif bereits sichtbar an.
+      // Ein erneutes present* führte zu Doppel-Notifs / "verschluckt" Remote-Notif.
     });
 
     notifResponseSub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -314,7 +336,7 @@ function uninstallNotificationListeners() {
   notifResponseSub = null;
 }
 
-/* ---------- Geofence-Tools (unverändert) ---------- */
+/* ---------- Geofence-Tools ---------- */
 
 export async function forceRefreshGeofencesNow() {
   try {
@@ -401,7 +423,7 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
                 title, body, sound: 'default',
                 categoryIdentifier: 'offer-go',
                 data: { offerId: id, localFallback: true },
-                android: { channelId: 'offers' },
+                android: { channelId: 'offers', priority: Notifications.AndroidNotificationPriority.MAX },
               });
               console.log('[GEOFENCE] local fallback notification shown for', id);
 
@@ -581,7 +603,6 @@ export default function PushInitializer() {
         const freshToken = await fetchFreshExpoToken();
         if (freshToken) {
           await registerTokenOnBackend(freshToken);
-
           // 🔁 Direkt nach Registrierung: End-to-End-Serverpush anstoßen
           setTimeout(() => { serverPushRoundtrip(freshToken); }, 1200);
         } else {

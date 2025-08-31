@@ -6,36 +6,15 @@ import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 import PushInitializer from '../components/PushInitializer';
 import BackgroundLocationManager from '../components/BackgroundLocationManager';
 
-/* ---------------- Push handler & Android channel (neu) ---------------- */
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,   // ✅ zeigt Banner auch im Vordergrund
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-async function ensureAndroidChannel() {
-  if (Platform.OS !== 'android') return;
-  try {
-    await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
-      name: 'StepsMatch',
-      importance: Notifications.AndroidImportance.HIGH, // ✅ Heads-Up
-      vibrationPattern: [200, 200, 200],
-      lightColor: '#FFFFFF',
-      sound: 'default',
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    });
-    console.log('[push] channel ready: stepsmatch-default-v2');
-  } catch (e) {
-    console.warn('[push] channel fail', e);
-  }
-}
+/**
+ * Wichtig:
+ * - Notification-Handler + Channels werden EINHEITLICH in PushInitializer gesetzt.
+ * - _layout registriert NUR den Tap-Listener für die Navigation.
+ */
 
 /* ---------------- helpers (strict) ---------------- */
 const extractOfferIdStrict = (data) => {
@@ -79,11 +58,6 @@ export default function RootLayout() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // Android-Channel früh sicherstellen
-  useEffect(() => {
-    ensureAndroidChannel();
-  }, []);
-
   const whenReady = (fn) => {
     if (navReadyRef.current) return fn();
     const t = setInterval(() => {
@@ -122,7 +96,7 @@ export default function RootLayout() {
         return;
       }
 
-      // 1) Deeplink prüfen – aber NICHT wild rumspringen: nur wenn explizit /offers/<id> drinsteht
+      // 1) Deeplink prüfen – nur explizit /offers/<id>
       try {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl && !lockRef.current) {
@@ -160,7 +134,7 @@ export default function RootLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingChecked, mustOnboard, navState?.key]);
 
-  // B) Laufende App → Notification-Taps (zentral, 1 Listener)
+  // B) Laufende App → Notification-Taps (zentral, 1 Listener mit Navigation)
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       // Nur Standard-Tap oder "GO" navigiert (Actions wie DISMISS ignorieren)
@@ -189,7 +163,7 @@ export default function RootLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navState?.key]);
 
-  // PushInitializer nur einmal rendern
+  // PushInitializer nur einmal rendern (richtet Handler+Channels etc. zentral ein)
   const InitializerOnce = React.useMemo(() => () => {
     const once = React.useRef(false);
     if (once.current) return null;

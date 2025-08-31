@@ -41,9 +41,6 @@
         "WAKE_LOCK",
         "POST_NOTIFICATIONS"
       ],
-      "notification": {
-        "channelId": "stepsmatch-default-v2"
-      },
       "foregroundService": {
         "notificationTitle": "StepsMatch läuft im Hintergrund",
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden."

@@ -1,7 +1,6 @@
-// mobile/components/BackgroundLocationManager.js
+// stepsmatch/mobile/components/BackgroundLocationManager.js
 import React from 'react';
-import * as Location from 'expo-location';
-import { sendHeartbeat, getStoredOrFetchExpoToken } from './PushInitializer';
+import { sendHeartbeat } from './PushInitializer';
 
 // Hinweis in den Logs, damit klar ist, dass hier nichts mehr doppelt startet
 console.log('[BGLOC] BackgroundLocationManager: delegating to PushInitializer (no own task/start)');
@@ -9,22 +8,11 @@ console.log('[BGLOC] BackgroundLocationManager: delegating to PushInitializer (n
 /**
  * Optionaler, sicherer Kickstart – falls irgendwo im Code noch gebraucht.
  * Keine eigenen fetch()-Calls, kein doppelter Task-Start.
+ * sendHeartbeat() kümmert sich selbst um Token & Position.
  */
 export async function kickstartOnce() {
   try {
-    await getStoredOrFetchExpoToken(); // verhindert 400er
-    let pos = await Location.getLastKnownPositionAsync();
-    if (!pos) {
-      pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-        mayShowUserSettingsDialog: false,
-      });
-    }
-    if (pos?.coords) {
-      await sendHeartbeat(pos.coords, 'Kickstart(BackgroundManager)');
-    } else {
-      console.log('[BGLOC] Kickstart: no position available');
-    }
+    await sendHeartbeat(undefined, 'Kickstart(BackgroundManager)');
   } catch (e) {
     console.log('[BGLOC] Kickstart wrapper error', e?.message || e);
   }

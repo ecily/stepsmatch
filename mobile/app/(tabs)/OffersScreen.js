@@ -130,6 +130,7 @@ export default function OffersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id, name: paramName, image: paramImage, distance: paramDistance } = useLocalSearchParams();
+  const offerId = id ? String(id) : null;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -154,8 +155,8 @@ export default function OffersScreen() {
       const userPos = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       userPosRef.current = userPos;
 
-      if (id) {
-        const resDetail = await fetch(`${API_BASE_URL}/offers/${encodeURIComponent(id)}?withProvider=1`);
+      if (offerId) {
+        const resDetail = await fetch(`${API_BASE_URL}/offers/${encodeURIComponent(offerId)}?withProvider=1`);
         if (resDetail.status === 404) throw new Error('Offer nicht gefunden (404)');
         if (!resDetail.ok) throw new Error(`GET /offers/:id failed: ${resDetail.status}`);
         const obj = await resDetail.json();
@@ -206,9 +207,9 @@ export default function OffersScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id]);
+  }, [offerId]);
 
-  useEffect(() => { setLoading(true); load(); }, [load, id]);
+  useEffect(() => { setLoading(true); load(); }, [load, offerId]);
   const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
 
   /* List Items */
@@ -251,14 +252,14 @@ export default function OffersScreen() {
   }, [first, paramDistance, offerLoc]);
 
   useEffect(() => {
-    if (!id || !mapRef.current || !userPosRef.current || !offerLoc) return;
+    if (!offerId || !mapRef.current || !userPosRef.current || !offerLoc) return;
     try {
       mapRef.current.fitToCoordinates([userPosRef.current, offerLoc], {
         edgePadding: { top: 40, right: 40, bottom: 40, left: 40 },
         animated: true,
       });
     } catch {}
-  }, [id, offerLoc]);
+  }, [offerId, offerLoc]);
 
   const remainingMs = offer ? getRemainingMs(offer) : null;
   const hurry = remainingMs != null && remainingMs <= 60 * 60 * 1000;
@@ -326,7 +327,7 @@ export default function OffersScreen() {
     );
   }
 
-  if (id && offer) {
+  if (offerId && offer) {
     return (
       <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: 0 }]}>
         {/* HERO Card */}
@@ -486,7 +487,7 @@ export default function OffersScreen() {
       <FlatList
         contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
         data={offers}
-        keyExtractor={(row) => row.offer._id}
+        keyExtractor={(row) => String(row.offer._id)}
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       />
