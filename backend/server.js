@@ -19,7 +19,7 @@ import testerRoutes from "./routes/testers.js";
 import { startOfferPoller } from "./jobs/offerPoller.js";
 
 // ⬇️ NEU: Push-Test-Route
-import pushTestRouter from "./routes/pushTest.js";
+//import pushTestRouter from "./routes/pushTest.js";
 
 dotenv.config();
 
@@ -115,7 +115,7 @@ app.use("/api/uploads", uploadRoutes);
 app.use("/api/testers", testerRoutes);
 
 // ⬇️ NEU: Push-Test-Endpoint zum schnellen Prüfen der Expo-Notifications
-app.use("/api/push-test", pushTestRouter);
+//app.use("/api/push-test", pushTestRouter);
 
 // Healthcheck
 app.get("/api/ping", (_req, res) => {
