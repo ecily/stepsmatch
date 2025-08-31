@@ -2,7 +2,8 @@
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
-import { pushToTokens } from '../utils/push.js'; // ✅ zentrale Utility (macht ProjectId + Cleanup)
+// ⬇️ Wechsel auf dieselbe robuste Utility wie Roundtrip/Diagnose:
+import { sendPushAndCheckReceipts } from '../utils/push.js'; // ✅ konsistent zur Diagnose-Route
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ TZ-sicherer Helper (Europe/Vienna)
 
 /* ───────── Helpers ───────── */
@@ -38,7 +39,7 @@ const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (App-seitig existierende Channel/Category beachten)
-const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers'; // dank Weg B existiert 'offers' + 'stepsmatch-default-v2'
+const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
 const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go';
 const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
 const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
@@ -151,7 +152,7 @@ export function startOfferPoller() {
         if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
         if (!toNotifyDocs.length) continue;
 
-        // 5) Push senden (einheitlich) – 1 Batch pro Offer
+        // 5) Push senden (robust via sendPushAndCheckReceipts – wie Diagnose)
         const tokens = toNotifyDocs
           .map((t) => t.token)
           .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
@@ -168,12 +169,21 @@ export function startOfferPoller() {
           // categoryId: PUSH_CATEGORY_ID, // optional; falls du im Client Actions nutzt
         };
 
-        const result = await pushToTokens(tokens, payload);
-        // result: { tickets, receipts, disabledTokens, invalid }
+        // ⬇️ WICHTIG: identisch zur Diagnose-Route, liefert Tickets + Receipts
+        const diag = await sendPushAndCheckReceipts({
+          tokens,
+          title: payload.title,
+          body: payload.body,
+          data: payload.data,
+          channelId: payload.channelId,
+          priority: payload.priority,
+          sound: payload.sound,
+          delayMs: 2500,
+        });
 
-        // Erfolgreich gesendete Tokens (per Ticket-Reihenfolge)
+        // Erfolgreich gesendete Tokens (wie in roundtrip)
         const sentTokens = [];
-        const tickets = Array.isArray(result?.tickets) ? result.tickets : [];
+        const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
         for (let i = 0; i < tickets.length; i++) {
           const t = tickets[i];
           if (t?.status === 'ok' && tokens[i]) {
@@ -205,12 +215,13 @@ export function startOfferPoller() {
           if (bulk.length) await OfferVisibility.bulkWrite(bulk);
         }
 
-        // Logging zu diesem Offer-Batch
-        if (DEBUG) {
-          console.log(
-            `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} disabled=${(result?.disabledTokens || []).length} invalid=${(result?.invalid || []).length}`
-          );
-        }
+        // 🔎 Kurzes, immer sichtbares Batch-Log (auch ohne DEBUG), inkl. receipts summary
+        const summary = diag?.receipts?.summary || {};
+        console.log(
+          `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
+          `disabled=${(diag?.disabledTokens || []).length} invalid=${(diag?.invalid || []).length} ` +
+          `receipts=${JSON.stringify(summary)}`
+        );
       }
 
       if (!DEBUG && process.env.NODE_ENV !== 'production') {
