@@ -24,22 +24,30 @@ function chunk(arr, n = 99) {
   return out;
 }
 
-/** shared singleton */
-const expo = new Expo();
+/* ───────────────────────── Expo Client (mit projectId) ───────────────────────── */
+
+const PROJECT_ID =
+  process.env.EXPO_PROJECT_ID ||
+  process.env.EXPO_PROJECTID ||
+  process.env.EXPO_PROJECT ||
+  null;
+
+// ⚠️ Wichtig: projectId muss mit der App übereinstimmen (getExpoPushTokenAsync({ projectId }))
+const expo = new Expo(PROJECT_ID ? { projectId: PROJECT_ID } : {});
 
 /**
  * Sendet Push-Nachrichten über Expo mit korrekten Android-Parametern.
- * - Fügt channelId, categoryId, priority: 'high', ttl und data hinzu.
- * - Holt Expo-Receipts ab und deaktiviert ungültige Tokens.
+ * - Verwendet projectId (Header) → verhindert DeviceNotRegistered bei frischen Tokens
+ * - Fügt channelId, categoryId, priority, ttl, data hinzu
+ * - Holt Expo-Receipts ab und deaktiviert ungültige Tokens
  */
 async function sendExpoPushSafe(tokens, payload) {
-  const valid = (tokens || []).filter(t => t && Expo.isExpoPushToken(t.token) && !t.disabled);
-  if (valid.length === 0) {
+  const validDocs = (tokens || []).filter(t => t && Expo.isExpoPushToken(t.token) && !t.disabled);
+  if (validDocs.length === 0) {
     return { sent: 0, tickets: [], errors: ['no-valid-tokens'], disabledTokens: [] };
   }
 
-  const messages = valid.map(t => ({
-    to: t.token,
+  const base = {
     title: payload.title,
     body: payload.body,
     sound: payload.sound ?? 'default',
@@ -48,23 +56,32 @@ async function sendExpoPushSafe(tokens, payload) {
     data: payload.data || {},
     channelId: payload.channelId || 'offers',    // muss mit App-Channel übereinstimmen
     categoryId: payload.categoryId || 'offer-go' // muss mit App-Category übereinstimmen
-  }));
+  };
+
+  // Nachrichten bauen
+  const messages = validDocs.map(d => ({ to: d.token, ...base }));
 
   const tickets = [];
   const errors = [];
   const disabledTokens = [];
+  const idToToken = {}; // Map: receiptId -> token (via Send-Reihenfolge)
 
-  // Tickets holen
+  // Tickets holen (in geordneter Reihenfolge)
   for (const batch of chunk(messages, 99)) {
     try {
       const batchTickets = await expo.sendPushNotificationsAsync(batch);
+      // Mappe zurück: ticket[i] gehört zu batch[i]
+      batchTickets.forEach((t, i) => {
+        const msg = batch[i];
+        if (t && t.id && msg && msg.to) idToToken[t.id] = msg.to;
+      });
       tickets.push(...(Array.isArray(batchTickets) ? batchTickets : []));
     } catch (e) {
       errors.push(`expo-send:${e?.message || String(e)}`);
     }
   }
 
-  // Receipts holen
+  // Receipts holen und Tokens ggf. deaktivieren
   const ids = tickets.map(t => t?.id).filter(Boolean);
   for (const idBatch of chunk(ids, 99)) {
     try {
@@ -74,19 +91,21 @@ async function sendExpoPushSafe(tokens, payload) {
         if (r.status === 'ok') continue;
 
         if (r.status === 'error') {
-          const err = r.details?.error || r.message || 'unknown';
+          const err =
+            r.details?.error ||
+            r.details?.errorCode ||
+            r.message ||
+            'unknown';
           errors.push(`receipt:${id}:${err}`);
 
           // Bestimmte Fehler → Token deaktivieren
-          if (/DeviceNotRegistered|MessageTooBig|MessageRateExceeded|InvalidCredentials/i.test(err)) {
-            // Ticket -> Token-Auflösung
-            const ticket = tickets.find(t => t?.id === id);
-            const token = ticket?.to;
+          if (/DeviceNotRegistered|MessageTooBig|MessageRateExceeded|InvalidCredentials/i.test(String(err))) {
+            const token = idToToken[id];
             if (token) {
               try {
                 await PushToken.updateOne(
                   { token },
-                  { $set: { disabled: true, disabledReason: err, disabledAt: new Date() } }
+                  { $set: { disabled: true, disabledReason: String(err), disabledAt: new Date(), updatedAt: new Date() } }
                 );
                 disabledTokens.push(token);
               } catch {
@@ -103,7 +122,7 @@ async function sendExpoPushSafe(tokens, payload) {
 
   const sent = tickets.filter(t => t?.status === 'ok').length;
   if (errors.length) console.warn('[push] errors', errors.slice(0, 6));
-  return { sent, tickets, errors, disabledTokens };
+  return { sent, tickets, errors, disabledTokens, projectId: PROJECT_ID || null };
 }
 
 /* ───────────────────────── Routes ───────────────────────── */
@@ -137,6 +156,7 @@ router.post('/register', async (req, res) => {
       disabled: false,
       disabledReason: null,
       disabledAt: null,
+      updatedAt: new Date(),
     };
     if (userId && isValidObjectId(userId)) $set.userId = new mongoose.Types.ObjectId(userId);
     else $set.userId = null;
@@ -149,6 +169,7 @@ router.post('/register', async (req, res) => {
       { new: true, upsert: true }
     ).lean();
 
+    console.log('[push] register ok for', rawToken.slice(0, 28) + '…', 'projectId=', PROJECT_ID || '—');
     return res.json({
       success: true,
       id: String(doc?._id),
@@ -157,6 +178,7 @@ router.post('/register', async (req, res) => {
       deviceId: doc?.deviceId ?? null,
       disabled: !!doc?.disabled,
       lastSeenAt: doc?.lastSeenAt ?? null,
+      projectId: PROJECT_ID || null,
     });
   } catch (err) {
     console.error('Fehler bei /api/push/register:', err);
@@ -178,7 +200,7 @@ router.post('/unregister', async (req, res) => {
 
     const r = await PushToken.updateOne(
       { token: rawToken },
-      { $set: { disabled: true, disabledReason: 'manual-unregister', disabledAt: new Date() } }
+      { $set: { disabled: true, disabledReason: 'manual-unregister', disabledAt: new Date(), updatedAt: new Date() } }
     );
 
     return res.json({ success: true, matched: r.matchedCount || r.n, modified: r.modifiedCount || r.nModified });
@@ -276,6 +298,7 @@ router.post('/action', async (req, res) => {
  * (Debug) POST /api/push/test
  * Body: { token?: string, userId?: string, title?: string, body?: string, data?: object }
  * - Sendet sofort einen Push (Foreground-kompatibel, falls Client NotificationHandler zeigt).
+ * - Nutzt unified pipeline + projectId, wertet Receipts aus und deaktiviert ungültige Tokens.
  */
 router.post('/test', async (req, res) => {
   try {
@@ -299,7 +322,7 @@ router.post('/test', async (req, res) => {
       channelId: 'offers', categoryId: 'offer-go'
     });
 
-    return res.json({ success: true, meta });
+    return res.json({ success: true, projectId: PROJECT_ID || null, meta });
   } catch (err) {
     console.error('Fehler bei /api/push/test:', err);
     return res.status(500).json({ success: false, error: 'Serverfehler bei push/test' });

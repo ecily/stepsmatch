@@ -102,14 +102,64 @@ async function ensureCategories() {
 /* ---------- Push Token ---------- */
 
 function resolveProjectId() {
+  // bevorzugte Reihenfolge: app.json -> eas zur Laufzeit
   const viaExtra = Constants?.expoConfig?.extra?.eas?.projectId || null;
   const viaEas   = Constants?.easConfig?.projectId || null;
   return viaExtra || viaEas || null;
 }
 
+async function registerTokenOnBackend(token) {
+  try {
+    const res = await fetch(`${API_BASE}/push/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        platform: Platform.OS,
+        deviceId: Constants?.deviceName || null,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    console.log('[push] register =>', res.status, JSON.stringify(json || {}));
+  } catch (e) {
+    console.warn('[push] register failed', String(e));
+  }
+}
+
+/**
+ * Holt IMMER einen frischen Expo-Token mit korrektem projectId.
+ * Speichert ihn lokal (AsyncStorage) und cached ihn für Heartbeats/Geofences.
+ */
+async function fetchFreshExpoToken() {
+  try {
+    const projectId = resolveProjectId();
+    if (!projectId) {
+      console.warn('[push] WARN: projectId fehlt (expo.extra.eas.projectId). Token könnte ungültig sein.');
+    }
+    const { data: expoToken } = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+    const t = expoToken ? String(expoToken).trim() : null;
+    if (t) {
+      PUSH_TOKEN = t;
+      try { await AsyncStorage.setItem(PUSH_TOKEN_KEY, PUSH_TOKEN); } catch {}
+      console.log('[push] expoToken =', PUSH_TOKEN);
+      return PUSH_TOKEN;
+    }
+    console.warn('[push] kein Expo-Token erhalten');
+    return null;
+  } catch (e) {
+    console.warn('[push] getExpoPushTokenAsync failed', String(e));
+    return null;
+  }
+}
+
+/**
+ * Liefert Token aus Cache/Speicher; wenn fehlend → frisch holen.
+ * (Für BG-Tasks, wo wir synchron schnell einen Token brauchen.)
+ */
 async function getStoredOrFetchExpoToken() {
   if (PUSH_TOKEN && String(PUSH_TOKEN).trim()) return PUSH_TOKEN;
-
   try {
     const fromStore =
       (await AsyncStorage.getItem(PUSH_TOKEN_KEY)) ||
@@ -119,32 +169,7 @@ async function getStoredOrFetchExpoToken() {
       return PUSH_TOKEN;
     }
   } catch {}
-
-  let t = Constants.expoConfig?.extra?.expoPushToken || Constants.manifest2?.extra?.expoPushToken || null;
-
-  if (!t) {
-    try {
-      const projectId = resolveProjectId();
-      const resp = projectId
-        ? await Notifications.getExpoPushTokenAsync({ projectId })
-        : await Notifications.getExpoPushTokenAsync();
-      t = resp?.data || null;
-    } catch (e) {
-      console.log('[push] token fetch error', e?.message || e);
-    }
-  }
-
-  if (t) {
-    PUSH_TOKEN = String(t).trim();
-    try { await AsyncStorage.setItem(PUSH_TOKEN_KEY, PUSH_TOKEN); } catch {}
-    if (!Constants.expoConfig) Constants.expoConfig = { extra: {} };
-    if (!Constants.expoConfig.extra) Constants.expoConfig.extra = {};
-    Constants.expoConfig.extra.expoPushToken = PUSH_TOKEN;
-
-    console.log('[push] expoToken ready =', PUSH_TOKEN);
-    return PUSH_TOKEN;
-  }
-  return null;
+  return await fetchFreshExpoToken();
 }
 
 /* ---------- Heartbeat ---------- */
@@ -555,8 +580,13 @@ export default function PushInitializer() {
         await ensureAndroidChannel();
         await ensureCategories();
 
-        // Token VOR allem anderen sicherstellen
-        const token = await getStoredOrFetchExpoToken();
+        // >>> Token VOR allem anderen sicherstellen (FRISCH + projectId)
+        const freshToken = await fetchFreshExpoToken();
+        if (freshToken) {
+          await registerTokenOnBackend(freshToken);
+        } else {
+          console.warn('[push] no expo token -> push disabled for this session');
+        }
 
         // Standort-Berechtigungen
         const fg = await Location.requestForegroundPermissionsAsync();
@@ -576,8 +606,8 @@ export default function PushInitializer() {
               mayShowUserSettingsDialog: false,
             });
           }
-          if (pos?.coords && token) {
-            await postHeartbeat(token, pos.coords, 'Kickstart');
+          if (pos?.coords && freshToken) {
+            await postHeartbeat(freshToken, pos.coords, 'Kickstart');
           } else {
             console.log('[BGLOC] Kickstart: no position/token available');
           }
