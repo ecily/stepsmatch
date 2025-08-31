@@ -2,7 +2,7 @@
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
-import { pushToTokens, isExpoToken } from '../utils/push.js'; // ✅ zentral (sendet mit projectId & macht Cleanup)
+import { pushToTokens } from '../utils/push.js'; // ✅ zentrale Utility (macht ProjectId + Cleanup)
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ TZ-sicherer Helper (Europe/Vienna)
 
 /* ───────── Helpers ───────── */
@@ -38,7 +38,7 @@ const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (App-seitig existierende Channel/Category beachten)
-const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
+const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers'; // dank Weg B existiert 'offers' + 'stepsmatch-default-v2'
 const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go';
 const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
 const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
@@ -56,7 +56,7 @@ export function startOfferPoller() {
     try {
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
 
-      // 1) Neu/aktualisierte Offers (mit allen Feldern für Aktiv- & Geo-Check)
+      // 1) Neu/aktualisierte Offers
       const candidateOffers = await Offer.find({
         $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
       })
@@ -66,7 +66,6 @@ export function startOfferPoller() {
         .lean();
 
       const now = new Date();
-      // ✅ Einheitlicher Aktiv-Check (TZ-fest, erkennt Einzeltage / Nachtfenster / Wochentage)
       const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
       // 2) Tokens mit frischer Location
@@ -99,13 +98,12 @@ export function startOfferPoller() {
         return;
       }
 
-      // 3) Für jedes Offer → Tokens im Radius ermitteln
+      // 3) Für jedes Offer → Tokens im Radius
       for (const offer of activeOffers) {
         const coords = offer?.location?.coordinates;
         const [lng, lat] = Array.isArray(coords) ? coords : [];
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-        // Radius: erst radiusMeters, dann radius, sonst Default
         const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
         if (!Number.isFinite(radiusM) || radiusM <= 0) continue;
 
@@ -140,13 +138,9 @@ export function startOfferPoller() {
         if (!matched.length) continue;
 
         // 4) Spam-Schutz via OfferVisibility
-        // blockiere:
-        // - notified (bereits gepusht)
-        // - dismissed (nie wieder)
-        // - snoozed (solange remindAt > now)
         const vis = await OfferVisibility.find({
           offerId: offer._id,
-          deviceToken: { $in: matched.map((t) => t._id) }, // deviceToken referenziert PushToken._id
+          deviceToken: { $in: matched.map((t) => t._id) },
           $or: [{ status: 'notified' }, { status: 'dismissed' }, { status: 'snoozed', remindAt: { $gt: now } }],
         })
           .select('deviceToken status remindAt')
@@ -160,7 +154,7 @@ export function startOfferPoller() {
         // 5) Push senden (einheitlich) – 1 Batch pro Offer
         const tokens = toNotifyDocs
           .map((t) => t.token)
-          .filter((tok) => tok && isExpoToken(tok));
+          .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
 
         if (!tokens.length) continue;
 
@@ -171,13 +165,13 @@ export function startOfferPoller() {
           channelId: PUSH_CHANNEL_ID,
           priority: PUSH_PRIORITY,
           sound: PUSH_SOUND,
-          // categoryId: PUSH_CATEGORY_ID, // optional — wenn du im Client Actions nutzt
+          // categoryId: PUSH_CATEGORY_ID, // optional; falls du im Client Actions nutzt
         };
 
         const result = await pushToTokens(tokens, payload);
         // result: { tickets, receipts, disabledTokens, invalid }
 
-        // Erfolgreich gesendete Tokens ermitteln (via Ticket-Order)
+        // Erfolgreich gesendete Tokens (per Ticket-Reihenfolge)
         const sentTokens = [];
         const tickets = Array.isArray(result?.tickets) ? result.tickets : [];
         for (let i = 0; i < tickets.length; i++) {
@@ -189,7 +183,6 @@ export function startOfferPoller() {
 
         // 6) OfferVisibility für erfolgreich gesendete Tokens auf notified setzen
         if (sentTokens.length) {
-          // Map Token → PushToken._id
           const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
           const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
 
