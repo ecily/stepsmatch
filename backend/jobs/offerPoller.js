@@ -2,8 +2,8 @@
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
-import { sendOffersPushSafe } from '../utils/push.js';
-import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ zentraler TZ-sicherer Helper
+import { pushToTokens, isExpoToken } from '../utils/push.js'; // ✅ zentral (sendet mit projectId & macht Cleanup)
+import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ TZ-sicherer Helper (Europe/Vienna)
 
 /* ───────── Helpers ───────── */
 function envMs(name, def) {
@@ -37,6 +37,12 @@ const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 30 * 60_
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 const TZ = 'Europe/Vienna';
 
+// Push-Defaults (App-seitig existierende Channel/Category beachten)
+const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
+const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go';
+const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
+const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
+
 let timer = null;
 
 /* ───────── Start/Stop ───────── */
@@ -50,7 +56,7 @@ export function startOfferPoller() {
     try {
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
 
-      // 1) Neu/aktualisierte Offers (wir holen genug Felder für Aktiv- & Geo-Check)
+      // 1) Neu/aktualisierte Offers (mit allen Feldern für Aktiv- & Geo-Check)
       const candidateOffers = await Offer.find({
         $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
       })
@@ -60,7 +66,7 @@ export function startOfferPoller() {
         .lean();
 
       const now = new Date();
-      // ✅ EINHEITLICHER Aktiv-Check (TZ-fest, erkennt Einzeltage / Nachtfenster / Wochentage)
+      // ✅ Einheitlicher Aktiv-Check (TZ-fest, erkennt Einzeltage / Nachtfenster / Wochentage)
       const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
       // 2) Tokens mit frischer Location
@@ -93,7 +99,7 @@ export function startOfferPoller() {
         return;
       }
 
-      // 3) Für jedes Offer → Tokens im Radius
+      // 3) Für jedes Offer → Tokens im Radius ermitteln
       for (const offer of activeOffers) {
         const coords = offer?.location?.coordinates;
         const [lng, lat] = Array.isArray(coords) ? coords : [];
@@ -147,33 +153,71 @@ export function startOfferPoller() {
           .lean();
 
         const already = new Set(vis.map((v) => String(v.deviceToken)));
-        const toNotify = matched.filter((t) => !already.has(String(t._id)));
-        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotify.length}`);
-        if (!toNotify.length) continue;
+        const toNotifyDocs = matched.filter((t) => !already.has(String(t._id)));
+        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
+        if (!toNotifyDocs.length) continue;
 
-        // 5) Push senden + Visibility setzen
-        await sendOffersPushSafe(
-          toNotify.map((t) => ({ token: t.token, platform: t.platform })),
-          {
-            title: offer.name ?? 'Neues Angebot in deiner Nähe',
-            body: 'Tippe, um Details zu sehen.',
-            data: { type: 'offer', offerId: String(offer._id) },
+        // 5) Push senden (einheitlich) – 1 Batch pro Offer
+        const tokens = toNotifyDocs
+          .map((t) => t.token)
+          .filter((tok) => tok && isExpoToken(tok));
+
+        if (!tokens.length) continue;
+
+        const payload = {
+          title: offer.name ?? 'Neues Angebot in deiner Nähe',
+          body: 'Tippe, um Details zu sehen.',
+          data: { type: 'offer', offerId: String(offer._id) },
+          channelId: PUSH_CHANNEL_ID,
+          priority: PUSH_PRIORITY,
+          sound: PUSH_SOUND,
+          // categoryId: PUSH_CATEGORY_ID, // optional — wenn du im Client Actions nutzt
+        };
+
+        const result = await pushToTokens(tokens, payload);
+        // result: { tickets, receipts, disabledTokens, invalid }
+
+        // Erfolgreich gesendete Tokens ermitteln (via Ticket-Order)
+        const sentTokens = [];
+        const tickets = Array.isArray(result?.tickets) ? result.tickets : [];
+        for (let i = 0; i < tickets.length; i++) {
+          const t = tickets[i];
+          if (t?.status === 'ok' && tokens[i]) {
+            sentTokens.push(tokens[i]);
           }
-        );
+        }
 
-        // Upsert Visibility (idempotent)
-        const nowIso = new Date();
-        const bulk = toNotify.map((t) => ({
-          updateOne: {
-            filter: { offerId: offer._id, deviceToken: t._id },
-            update: {
-              $setOnInsert: { offerId: offer._id, deviceToken: t._id, firstSeenAt: nowIso },
-              $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
-            },
-            upsert: true,
-          },
-        }));
-        if (bulk.length) await OfferVisibility.bulkWrite(bulk);
+        // 6) OfferVisibility für erfolgreich gesendete Tokens auf notified setzen
+        if (sentTokens.length) {
+          // Map Token → PushToken._id
+          const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
+          const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
+
+          const nowIso = new Date();
+          const bulk = [];
+          for (const tok of sentTokens) {
+            const deviceTokenId = byToken.get(tok);
+            if (!deviceTokenId) continue;
+            bulk.push({
+              updateOne: {
+                filter: { offerId: offer._id, deviceToken: deviceTokenId },
+                update: {
+                  $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
+                  $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
+                },
+                upsert: true,
+              },
+            });
+          }
+          if (bulk.length) await OfferVisibility.bulkWrite(bulk);
+        }
+
+        // Logging zu diesem Offer-Batch
+        if (DEBUG) {
+          console.log(
+            `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} disabled=${(result?.disabledTokens || []).length} invalid=${(result?.invalid || []).length}`
+          );
+        }
       }
 
       if (!DEBUG && process.env.NODE_ENV !== 'production') {
