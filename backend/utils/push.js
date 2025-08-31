@@ -1,19 +1,21 @@
 // backend/utils/push.js
 // ESM, Node 22.x
 import { Expo } from 'expo-server-sdk';
+import PushToken from '../models/PushToken.js';
 
 const accessToken = process.env.EXPO_ACCESS_TOKEN || null;
+// Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests definitiv deinem Expo-Projekt zugeordnet sind.
 const expo = accessToken ? new Expo({ accessToken }) : new Expo();
 
 /**
  * Sendet Push an das Expo-Gateway (mit Chunking).
- * Erzwingt channelId="offers", sound="default", priority="high".
- * Liefert okCount und ticketIds zurück.
+ * channelId="offers", sound="default", priority="high".
+ * Gibt Tickets + Mapping id->token zurück.
  */
 export async function sendPush({ tokens, title, body, data = {} }) {
   const valid = (tokens || []).filter((t) => Expo.isExpoPushToken(t));
   if (!valid.length) {
-    return { sent: 0, tickets: [], errors: ['no-valid-tokens'], okCount: 0, ticketIds: [] };
+    return { sent: 0, tickets: [], errors: ['no-valid-tokens'], okCount: 0, ticketIds: [], idToToken: {} };
   }
 
   const messages = valid.map((to) => ({
@@ -29,10 +31,16 @@ export async function sendPush({ tokens, title, body, data = {} }) {
   const chunks = expo.chunkPushNotifications(messages);
   const tickets = [];
   const errors = [];
+  const idToToken = {}; // wird nach dem Senden gefüllt
 
   for (const chunk of chunks) {
     try {
       const res = await expo.sendPushNotificationsAsync(chunk);
+      // Mappe Ticket IDs auf Tokens aus dem jeweiligen Chunk (gleiche Reihenfolge)
+      res.forEach((t, i) => {
+        const token = chunk[i]?.to;
+        if (t?.id && token) idToToken[t.id] = token;
+      });
       tickets.push(...res);
     } catch (e) {
       errors.push(String(e));
@@ -41,13 +49,10 @@ export async function sendPush({ tokens, title, body, data = {} }) {
 
   const okCount = tickets.filter((t) => t?.status === 'ok').length;
   const ticketIds = tickets.map((t) => t?.id).filter(Boolean);
-  return { sent: messages.length, tickets, errors, okCount, ticketIds };
+  return { sent: messages.length, tickets, errors, okCount, ticketIds, idToToken };
 }
 
-/**
- * Holt nach kurzer Wartezeit die Receipts zu den Ticket-IDs ab
- * und aggregiert Fehlerursachen (z. B. DeviceNotRegistered).
- */
+/** Receipts abholen */
 export async function checkReceipts(ticketIds = []) {
   const chunks = expo.chunkPushNotificationReceiptIds(ticketIds);
   const receipts = [];
@@ -56,13 +61,13 @@ export async function checkReceipts(ticketIds = []) {
   for (const chunk of chunks) {
     try {
       const res = await expo.getPushNotificationReceiptsAsync(chunk);
-      receipts.push(res);
+      receipts.push(res); // { [id]: { status, message, details } }
     } catch (e) {
       errors.push(String(e));
     }
   }
 
-  // Flach zusammenführen
+  // flatten
   const flat = receipts.reduce((acc, obj) => Object.assign(acc, obj), {});
   const summary = { ok: 0, errors: {} };
   for (const id of Object.keys(flat)) {
@@ -79,17 +84,29 @@ export async function checkReceipts(ticketIds = []) {
 }
 
 /**
- * Bequemer Diagnose-Wrapper: sendet + prüft Receipts nach delayMs.
+ * Komfort: sendet und deaktiviert Tokens mit DeviceNotRegistered.
  */
 export async function sendPushAndCheckReceipts({ tokens, title, body, data = {}, delayMs = 3500 }) {
   const sent = await sendPush({ tokens, title, body, data });
-  let receipts = { receipts: {}, errors: [], summary: { ok: 0, errors: {} } };
 
+  let receipts = { receipts: {}, errors: [], summary: { ok: 0, errors: {} } };
   if (sent.ticketIds?.length) {
-    // Kurze Wartezeit, bis Expo die Receipts bereitstellt
     await new Promise((r) => setTimeout(r, delayMs));
     receipts = await checkReceipts(sent.ticketIds);
+
+    // 👉 Token-Hygiene: DeviceNotRegistered → disabled=true
+    for (const ticketId of Object.keys(receipts.receipts || {})) {
+      const r = receipts.receipts[ticketId];
+      if (r?.status === 'error' && (r.details?.error === 'DeviceNotRegistered' || r.message === 'DeviceNotRegistered')) {
+        const token = sent.idToToken[ticketId];
+        if (token) {
+          await PushToken.updateOne({ token }, { $set: { disabled: true } });
+          console.log('[push] disabled token due to DeviceNotRegistered:', token);
+        }
+      }
+    }
   }
+
   return { sent, receipts };
 }
 
@@ -99,7 +116,7 @@ export async function sendOffersPushSafe(args) {
     return await sendPush(args);
   } catch (e) {
     console.error('[push] sendOffersPushSafe error', e);
-    return { sent: 0, tickets: [], errors: [String(e)], okCount: 0, ticketIds: [] };
+    return { sent: 0, tickets: [], errors: [String(e)], okCount: 0, ticketIds: [], idToToken: {} };
   }
 }
 export async function pushToTokens(args) {

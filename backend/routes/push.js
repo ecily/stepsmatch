@@ -6,7 +6,9 @@ import { sendPush, sendPushAndCheckReceipts } from '../utils/push.js';
 
 const router = express.Router();
 
+// ────────── Konstants & Helpers ──────────
 const PLATFORMS = new Set(['android', 'ios', 'web']);
+const DEFAULT_CHANNEL = 'offers'; // 🔔 Für Android-Channel-Zuordnung
 const normPlatform = (p) => {
   const s = String(p || '').toLowerCase().trim();
   return PLATFORMS.has(s) ? s : 'android';
@@ -14,6 +16,11 @@ const normPlatform = (p) => {
 const isValidObjectId = (v) => {
   try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
 };
+
+// (Nur Info/Health) – nicht den Token selbst loggen
+console.log('[push] EXPO_ACCESS_TOKEN present =', Boolean(process.env.EXPO_ACCESS_TOKEN));
+
+// ────────── Routes ──────────
 
 // POST /api/push/register
 router.post('/register', async (req, res) => {
@@ -36,7 +43,16 @@ router.post('/register', async (req, res) => {
       },
       { new: true, upsert: true }
     );
-    console.log('[push] register', token.slice(0, 22) + '…', 'platform=', doc.platform, 'deviceId=', doc.deviceId, 'projectId=', projectId);
+    console.log(
+      '[push] register',
+      token.slice(0, 22) + '…',
+      'platform=',
+      doc.platform,
+      'deviceId=',
+      doc.deviceId,
+      'projectId=',
+      projectId
+    );
     res.json({
       success: true,
       id: doc._id,
@@ -65,8 +81,22 @@ router.post('/roundtrip', async (req, res) => {
     const title = rawTitle || 'StepsMatch';
     const body = (rawBody || 'Test-Push (Roundtrip)') + ` [offerId:${offerId}]`;
 
-    console.log('[push] roundtrip build', JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload }));
-    const resp = await sendPush({ tokens: [last.token], title, body, data: payload });
+    console.log(
+      '[push] roundtrip build',
+      JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload, channelId: DEFAULT_CHANNEL })
+    );
+
+    // ➕ channelId mitschicken
+    const resp = await sendPush({
+      tokens: [last.token],
+      title,
+      body,
+      data: payload,
+      channelId: DEFAULT_CHANNEL,
+      sound: 'default',
+      priority: 'high',
+    });
+
     console.log('[push] roundtrip sent', JSON.stringify(resp));
     res.json({ success: true, projectId: last.projectId || null, meta: resp });
   } catch (e) {
@@ -87,8 +117,23 @@ router.post('/roundtrip-diagnose', async (req, res) => {
     const title = rawTitle || 'StepsMatch';
     const body = (rawBody || 'Diagnose-Push (Roundtrip)') + ` [offerId:${offerId}]`;
 
-    console.log('[push] diagnose build', JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload }));
-    const diag = await sendPushAndCheckReceipts({ tokens: [last.token], title, body, data: payload, delayMs: 3500 });
+    console.log(
+      '[push] diagnose build',
+      JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload, channelId: DEFAULT_CHANNEL })
+    );
+
+    // ➕ channelId mitschicken
+    const diag = await sendPushAndCheckReceipts({
+      tokens: [last.token],
+      title,
+      body,
+      data: payload,
+      channelId: DEFAULT_CHANNEL,
+      sound: 'default',
+      priority: 'high',
+      delayMs: 3500,
+    });
+
     console.log('[push] diagnose sent', JSON.stringify(diag.sent));
     console.log('[push] diagnose receipts summary', JSON.stringify(diag.receipts.summary));
     res.json({ success: true, projectId: last.projectId || null, diag });
