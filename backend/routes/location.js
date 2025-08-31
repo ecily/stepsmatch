@@ -8,7 +8,7 @@ import OfferVisibility, { OFFER_VISIBILITY_STATUS as VIS } from '../models/Offer
 
 const router = express.Router();
 
-/* Helpers */
+/* ===== Helpers & Defaults ===== */
 function envMs(name, def) {
   const v = process.env[name];
   if (v === undefined) return def;
@@ -84,6 +84,11 @@ const stats = {
   validationErrors: 0, errors: 0, inactive: 0,
 };
 
+/* Radius Defaults/Clamps (zu Client passend) */
+const RADIUS_DEFAULT = Number(process.env.GEOFENCE_RADIUS_DEFAULT || 150);
+const RADIUS_MIN = 50;
+const RADIUS_MAX = 2000;
+
 /* Debug: windows */
 router.get('/debug-stats', (_req, res) => {
   res.json({
@@ -137,7 +142,7 @@ router.post('/debug-upsert-token', async (req, res) => {
   }
 });
 
-/* ✅ Heartbeat – Position & Präsenz eines Geräts speichern */
+/* ✅ Heartbeat – Position & Präsenz eines Geräts speichern (+ Proximity-Push) */
 router.get('/heartbeat/ping', (_req, res) => {
   res.json({ ok: true, now: new Date().toISOString() });
 });
@@ -166,16 +171,113 @@ router.post('/heartbeat', async (req, res) => {
       { new: true, upsert: true }
     ).lean();
 
-    return res.json({
+    // Sofort antworten – Proximity läuft danach weiter
+    res.json({
       ok: true,
       id: String(doc._id),
       platform: doc.platform,
       lastSeenAt: doc.lastSeenAt ?? now,
       lastLocation: doc.lastLocation || { type: 'Point', coordinates: [lng, lat] },
     });
+
+    // ---- Proximity-Fallback: 1 Push pro Heartbeat maximal ----
+    try {
+      // Mit $geoNear (erfordert 2dsphere-Index auf Offer.location – siehe Model)
+      const nearOffers = await Offer.aggregate([
+        {
+          $geoNear: {
+            near: { type: 'Point', coordinates: [lng, lat] },
+            distanceField: 'dist',
+            spherical: true,
+            maxDistance: 2000, // 2 km Suchradius
+          },
+        },
+        { $limit: 25 },
+      ]);
+
+      for (const o of nearOffers) {
+        if (!isOfferActiveNowServer(o)) continue;
+
+        const coords =
+          (Array.isArray(o?.location?.coordinates) && o.location.coordinates.length >= 2 && o.location.coordinates) ||
+          (Array.isArray(o?.provider?.location?.coordinates) && o.provider.location.coordinates.length >= 2 && o.provider.location.coordinates) ||
+          null; // [lng, lat]
+        if (!coords) continue;
+
+        const rawR =
+          Number(o?.radius) ||
+          Number(o?.provider?.radius) ||
+          Number(o?.provider?.radiusMeters) ||
+          RADIUS_DEFAULT;
+
+        const radius = Math.min(Math.max(Number(rawR) || RADIUS_DEFAULT, RADIUS_MIN), RADIUS_MAX);
+        const d = haversineMeters(lat, lng, coords[1], coords[0]);
+        if (d > radius) continue;
+
+        // OfferVisibility prüfen
+        const deviceTokenId = doc._id;
+        await OfferVisibility.upsertSeen(deviceTokenId, o._id);
+        const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, o._id, new Date());
+        if (!mayNotify) {
+          stats.seenOrMuted += 1;
+          continue;
+        }
+
+        // Cooldowns
+        const recipientKey = token.trim();
+        const pairKey = `${recipientKey}::${String(o._id)}`;
+        if (!isAnyAllowed(recipientKey)) { stats.perReload += 1; break; }
+        if (!isPairAllowed(pairKey)) { stats.cooldown += 1; continue; }
+
+        // Push
+        const prettyDistance = ` – ${Math.max(1, Math.round(d))} m entfernt`;
+        const title = 'Angebot in deiner Nähe';
+        const body  = `${o.name ?? 'Angebot'}${prettyDistance}. Tippen für Details.`;
+
+        const metaFull = await sendOffersPushSafe(
+          [{ token: recipientKey, platform: doc.platform, disabled: false }],
+          {
+            title,
+            body,
+            url: `/offers/${o._id}`,
+            channelId: 'offers',
+            categoryId: 'offer-go',
+            sound: 'default',
+            priority: 'high',
+            ttl: 300,
+            data: { offerId: String(o._id), source: 'heartbeat' },
+          }
+        );
+
+        const notified = (metaFull?.sent || 0) > 0;
+        if (notified) {
+          await OfferVisibility.markNotified(deviceTokenId, o._id, new Date());
+          markAnyPushed(recipientKey);
+          markPairPushed(pairKey);
+          stats.sent += 1;
+        } else {
+          const disabledCount = (metaFull?.disabledTokens?.length || 0);
+          if (disabledCount > 0) stats.tokenDisabled += 1;
+          console.warn('[heartbeat proximity] send failed', {
+            offerId: String(o._id),
+            recipient: recipientKey,
+            sent: metaFull?.sent,
+            tickets: Array.isArray(metaFull?.tickets) ? metaFull.tickets.slice(0, 2) : undefined,
+            errors: Array.isArray(metaFull?.errors) ? metaFull.errors.slice(0, 2) : undefined,
+          });
+        }
+
+        break; // pro Heartbeat maximal EIN Push
+      }
+    } catch (e) {
+      console.warn('[heartbeat proximity] error', e?.message || e);
+    }
+    // -----------------------------------------------------------
   } catch (e) {
     console.error('Fehler bei /location/heartbeat:', e);
-    return res.status(500).json({ ok: false, error: 'Serverfehler bei heartbeat' });
+    try {
+      return res.status(500).json({ ok: false, error: 'Serverfehler bei heartbeat' });
+    } catch {}
   }
 });
 
@@ -191,7 +293,10 @@ router.post('/geofence-enter', async (req, res) => {
     }
 
     // 1) Offer laden & prüfen
-    const offer = await Offer.findById(offerId, 'location provider radius name validDates category subcategory activeUntil activeEnd startAt startTime endAt endTime validFrom validTo dateFrom dateTo').lean();
+    const offer = await Offer.findById(
+      offerId,
+      'location provider radius name validDates category subcategory activeUntil activeEnd startAt startTime endAt endTime validFrom validTo dateFrom dateTo'
+    ).lean();
     if (!offer) {
       stats.validationErrors += 1;
       return res.status(404).json({ success: false, error: 'Angebot nicht gefunden' });
@@ -207,15 +312,17 @@ router.post('/geofence-enter', async (req, res) => {
       (Array.isArray(offer?.provider?.location?.coordinates) && offer.provider.location.coordinates.length >= 2 && offer.provider.location.coordinates) ||
       null; // [lng, lat]
 
-    const radius =
+    let radiusRaw =
       Number(offer?.radius) ||
       Number(offer?.provider?.radius) ||
       Number(offer?.provider?.radiusMeters) ||
-      0;
+      RADIUS_DEFAULT;
 
-    if (!offerCoords || !(radius > 0)) {
+    const radius = Math.min(Math.max(Number(radiusRaw) || RADIUS_DEFAULT, RADIUS_MIN), RADIUS_MAX);
+
+    if (!offerCoords) {
       stats.validationErrors += 1;
-      return res.status(422).json({ success: false, error: 'Angebot hat keine gültige Geoposition/Radius' });
+      return res.status(422).json({ success: false, error: 'Angebot hat keine gültige Geoposition' });
     }
 
     // 3) Device Token auflösen (inlineToken bevorzugt). Upsert + lastSeen refresh.
@@ -259,18 +366,18 @@ router.post('/geofence-enter', async (req, res) => {
       }
     }
 
-    let distanceMeters = null;
+    let distanceMetersVal = null;
     let inside = true; // wenn OS Enter feuert, tendieren wir zu true; wenn wir Koordinaten haben, verifizieren wir
     if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
-      distanceMeters = haversineMeters(latNum, lngNum, offerCoords[1], offerCoords[0]);
-      inside = distanceMeters <= radius;
+      distanceMetersVal = haversineMeters(latNum, lngNum, offerCoords[1], offerCoords[0]);
+      inside = distanceMetersVal <= radius;
     }
 
     if (!inside) {
       stats.outside += 1;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
+        distanceMeters: distanceMetersVal != null ? Math.round(distanceMetersVal) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'outside-radius'
       });
@@ -298,7 +405,7 @@ router.post('/geofence-enter', async (req, res) => {
       }
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
+        distanceMeters: distanceMetersVal != null ? Math.round(distanceMetersVal) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason
       });
@@ -311,7 +418,7 @@ router.post('/geofence-enter', async (req, res) => {
       const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
+        distanceMeters: distanceMetersVal != null ? Math.round(distanceMetersVal) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'per-reload-limit',
         meta: { windowMs: MIN_PUSH_INTERVAL_MS, sinceMs: since }
@@ -324,17 +431,17 @@ router.post('/geofence-enter', async (req, res) => {
       const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
+        distanceMeters: distanceMetersVal != null ? Math.round(distanceMetersVal) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'cooldown-active',
         meta: { windowMs: PAIR_COOLDOWN_MS, sinceMs: since }
       });
     }
 
-    // 7) Push zusammenstellen
+    // 7) Push zusammenstellen (mit channelId/categoryId/priority/ttl)
     const url = `/offers/${offerId}`;
     const prettyDistance =
-      distanceMeters == null ? '' : ` – ${Math.max(1, Math.round(distanceMeters))} m entfernt`;
+      distanceMetersVal == null ? '' : ` – ${Math.max(1, Math.round(distanceMetersVal))} m entfernt`;
     const title = 'Angebot in deiner Nähe';
     const body  = `${offer.name ?? 'Angebot'}${prettyDistance}. Tippen für Details.`;
 
@@ -343,8 +450,11 @@ router.post('/geofence-enter', async (req, res) => {
       body,
       url,
       channelId: 'offers',
+      categoryId: 'offer-go',
       sound: 'default',
-      data: { offerId: String(offerId) }
+      priority: 'high',
+      ttl: 60 * 5,
+      data: { offerId: String(offerId), source: 'geofence-enter' }
     });
 
     const notified = (metaFull?.sent || 0) > 0;
@@ -379,6 +489,8 @@ router.post('/geofence-enter', async (req, res) => {
           tickets: Array.isArray(metaFull?.tickets) ? metaFull.tickets.slice(0, 2) : undefined,
           errors: Array.isArray(metaFull?.errors) ? metaFull.errors.slice(0, 2) : undefined,
           disabled: metaFull?.disabledTokens || undefined,
+          channelId: 'offers',
+          categoryId: 'offer-go',
         }
       });
     }
@@ -394,7 +506,7 @@ router.post('/geofence-enter', async (req, res) => {
       success: true,
       offerId,
       inside,
-      distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
+      distanceMeters: distanceMetersVal != null ? Math.round(distanceMetersVal) : null,
       radiusMeters: radius,
       eventType,
       pushSent: notified,

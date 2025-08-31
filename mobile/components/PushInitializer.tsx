@@ -6,7 +6,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { isOfferActiveNow } from '../utils/isOfferActiveNow'; // ✅ robustes Aktiv-Filtering wie im UI
+import { isOfferActiveNow } from '../utils/isOfferActiveNow'; // robustes Aktiv-Filtering wie im UI
 
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK    = 'stepsmatch-geofence-task';
@@ -16,27 +16,36 @@ const HEARTBEAT_MIN_SECONDS = 45;         // Debounce zwischen Heartbeats in der
 const TIME_INTERVAL_MS = 60 * 1000;       // Ziel: ~60s Updates durch Foreground Service
 const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-let lastHeartbeatAt = 0;
-
-// 🔒 Push-Token: Modulweiter Cache + Storage-Key
-let PUSH_TOKEN = null;
-const PUSH_TOKEN_KEY = 'expoPushToken';
-
 // Geofencing-Config
 const GEOFENCE_RADIUS_DEFAULT = 150; // Meter
 const GEOFENCE_MAX = 15;             // max. registrierte Regionen
 const OFFERS_ENDPOINT = `${API_BASE}/offers?withProvider=1&page=1&limit=200`; // liefert provider.location ggf. in data/rows
 
-// 🆕 Geofence-Notif-Config (lokaler Fallback + Metadaten)
+// Geofence-Notif-Config (lokaler Fallback + Metadaten)
 const GEOFENCE_META_KEY = 'geofenceMeta_v1';         // id -> {title, body}
 const NOTIFIED_RECENT_KEY = 'geofenceNotified_v1';   // id -> timestamp
 const NOTIFY_DEDUP_WINDOW_MS = 5 * 60 * 1000;        // 5 Minuten
 
-// 🆕 Anti-Flood
+// Anti-Flood
 const ENTER_LOCK_KEY = 'geofenceEnterLock_v1';       // id -> timestamp (ms)
 const ENTER_LOCK_MS  = 90 * 1000;                    // 90s
 
-/* ---------- Helpers ---------- */
+let lastHeartbeatAt = 0;
+
+// Push-Token Cache + Storage-Key
+let PUSH_TOKEN = null;
+const PUSH_TOKEN_KEY = 'expoPushToken';
+
+/* ---------- Notifications: Handler + Channels + Categories ---------- */
+
+// Ohne Handler zeigt Android im Vordergrund oft NICHTS an.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 async function ensureAndroidChannel() {
   if (Platform.OS !== 'android') return;
@@ -52,7 +61,7 @@ async function ensureAndroidChannel() {
     await Notifications.setNotificationChannelAsync('offers', {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [200, 120, 200],
+      vibrationPattern: [0, 250, 250, 250],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       sound: 'default',
     });
@@ -70,6 +79,27 @@ async function ensureAndroidChannel() {
     console.log('[push] channel error', e?.message || e);
   }
 }
+
+async function ensureCategories() {
+  try {
+    await Notifications.setNotificationCategoryAsync('offer-go', [
+      { identifier: 'GO', buttonTitle: 'Öffnen', options: { isDestructive: false, isAuthenticationRequired: false } },
+      { identifier: 'DISMISS', buttonTitle: 'Schließen', options: { isDestructive: true } },
+    ]);
+
+    // kompatibel falls an anderer Stelle referenziert
+    await Notifications.setNotificationCategoryAsync('offers-actions', [
+      { identifier: 'GO', buttonTitle: 'GO' },
+      { identifier: 'DISMISS', buttonTitle: 'Schließen', options: { isDestructive: true } },
+    ]);
+
+    console.log('[push] categories ready: offer-go, offers-actions');
+  } catch (e) {
+    console.log('[push] categories error', e?.message || e);
+  }
+}
+
+/* ---------- Push Token ---------- */
 
 function resolveProjectId() {
   const viaExtra = Constants?.expoConfig?.extra?.eas?.projectId || null;
@@ -117,7 +147,8 @@ async function getStoredOrFetchExpoToken() {
   return null;
 }
 
-/** Low-level Poster: Token + Koordinaten -> POST /location/heartbeat */
+/* ---------- Heartbeat ---------- */
+
 async function postHeartbeat(token, coords, label = 'Heartbeat') {
   try {
     if (!token) {
@@ -160,9 +191,7 @@ async function postHeartbeat(token, coords, label = 'Heartbeat') {
   }
 }
 
-/**
- * 👉 Zentraler, wiederverwendbarer Heartbeat
- */
+/** 👉 Zentraler, wiederverwendbarer Heartbeat */
 export async function sendHeartbeat(token, label = 'Manual') {
   try {
     const ensuredToken = token || (await getStoredOrFetchExpoToken());
@@ -187,6 +216,34 @@ export async function sendHeartbeat(token, label = 'Manual') {
   } catch (e) {
     console.log('[BGLOC] sendHeartbeat exception', e?.message || e);
     return false;
+  }
+}
+
+/** 🔔 Soforttest ohne Backend: sollte IMMER eine Notification zeigen */
+export async function debugLocalPush() {
+  console.log('[push] debugLocalPush()');
+  try {
+    await Notifications.presentNotificationAsync({
+      title: 'StepsMatch • Test',
+      body: 'Lokale Notification (Handler+Channel ok?)',
+      data: { kind: 'debug-local' },
+      categoryIdentifier: 'offer-go',
+      android: { channelId: 'offers' },
+      sound: 'default',
+    });
+    console.log('[push] presentNotificationAsync -> OK');
+  } catch (e) {
+    console.log('[push] presentNotificationAsync -> ERROR', e);
+  }
+}
+
+/** optionaler Geofence-Refresh-Export (z.B. nach Offer-Erstellung) */
+export async function forceRefreshGeofencesNow() {
+  try {
+    console.log('[GEOFENCE] force refresh…');
+    await refreshGeofences();
+  } catch (e) {
+    console.log('[GEOFENCE] force refresh error', e?.message || e);
   }
 }
 
@@ -254,26 +311,26 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
             });
           } catch {}
 
-          // === Anti-Flood: Hard-Lock 90s VOR allen Aktionen ===
+          // Anti-Flood: Hard-Lock 90s vor allen Aktionen
           let locks = {};
           try { locks = JSON.parse(await AsyncStorage.getItem(ENTER_LOCK_KEY)) || {}; } catch {}
-          const now = Date.now();
+          const nowMs = Date.now();
           const last = Number(locks[id] || 0);
-          if (last && now - last < ENTER_LOCK_MS) {
-            console.log('[GEOFENCE] enter skipped (lock active)', id, `${Math.round((ENTER_LOCK_MS - (now - last))/1000)}s left`);
-            return; // keinerlei Aktionen
+          if (last && nowMs - last < ENTER_LOCK_MS) {
+            console.log('[GEOFENCE] enter skipped (lock active)', id, `${Math.round((ENTER_LOCK_MS - (nowMs - last))/1000)}s left`);
+            return;
           }
-          locks[id] = now;
+          locks[id] = nowMs;
           for (const k of Object.keys(locks)) {
-            if (now - Number(locks[k]) > 6 * 60 * 60 * 1000) delete locks[k];
+            if (nowMs - Number(locks[k]) > 6 * 60 * 60 * 1000) delete locks[k];
           }
           try { await AsyncStorage.setItem(ENTER_LOCK_KEY, JSON.stringify(locks)); } catch {}
 
-          // 1) Lokale Notification (dedupe) — JETZT mit presentNotificationAsync
+          // 1) Lokale Notification (dedupe) — presentNotificationAsync
           try {
             let notified = {};
             try { notified = JSON.parse(await AsyncStorage.getItem(NOTIFIED_RECENT_KEY)) || {}; } catch {}
-            if (notified[id] && now - Number(notified[id]) < NOTIFY_DEDUP_WINDOW_MS) {
+            if (notified[id] && nowMs - Number(notified[id]) < NOTIFY_DEDUP_WINDOW_MS) {
               console.log('[GEOFENCE] local notif skipped (dedupe) for', id);
             } else {
               let metaMap = {};
@@ -282,13 +339,6 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
               const title = meta.title || 'Angebot in deiner Nähe';
               const body  = meta.body  || 'Tippe, um Details zu sehen';
 
-              try {
-                await Notifications.setNotificationCategoryAsync('offer-go', [
-                  { identifier: 'GO', buttonTitle: 'Öffnen', options: { isDestructive: false, isAuthenticationRequired: false } },
-                ]);
-              } catch {}
-
-              // 👉 presentNotificationAsync: sofort anzeigen; channel über android.channelId
               await Notifications.presentNotificationAsync({
                 title,
                 body,
@@ -299,9 +349,9 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
               });
               console.log('[GEOFENCE] local fallback notification shown for', id);
 
-              notified[id] = now;
+              notified[id] = nowMs;
               for (const k of Object.keys(notified)) {
-                if (now - Number(notified[k]) > 6 * 60 * 60 * 1000) delete notified[k];
+                if (nowMs - Number(notified[k]) > 6 * 60 * 60 * 1000) delete notified[k];
               }
               await AsyncStorage.setItem(NOTIFIED_RECENT_KEY, JSON.stringify(notified));
             }
@@ -309,7 +359,7 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
             console.log('[GEOFENCE] local fallback error', e?.message || e);
           }
 
-          // 2) Backend informieren – FIRE-AND-FORGET
+          // 2) Backend informieren – fire-and-forget
           try {
             fetch(`${API_BASE}/location/geofence-enter`, {
               method: 'POST',
@@ -376,7 +426,7 @@ async function refreshGeofences() {
       me = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false });
     }
 
-    // 2) Offers laden (ROBUST PARSING)
+    // 2) Offers laden (robustes Parsing)
     const res = await fetch(OFFERS_ENDPOINT, { method: 'GET' });
     const text = await res.text();
     let json = null;
@@ -503,12 +553,7 @@ export default function PushInitializer() {
         console.log('[push] notification permission =', notiStatus);
 
         await ensureAndroidChannel();
-
-        try {
-          await Notifications.setNotificationCategoryAsync('offer-go', [
-            { identifier: 'GO', buttonTitle: 'Öffnen', options: { isDestructive: false, isAuthenticationRequired: false } },
-          ]);
-        } catch {}
+        await ensureCategories();
 
         // Token VOR allem anderen sicherstellen
         const token = await getStoredOrFetchExpoToken();
@@ -572,7 +617,6 @@ export default function PushInitializer() {
           const prev = appStateRef.current;
           appStateRef.current = next;
           if ((prev === 'background' || prev === 'inactive') && next === 'active') {
-            // kleines Delay, damit network/permissions „wach“ sind
             setTimeout(() => { refreshGeofences(); }, 1500);
           }
         };
