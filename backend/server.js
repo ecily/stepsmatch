@@ -1,6 +1,6 @@
 // backend/server.js
+import 'dotenv/config';               // ✅ ENV sofort laden (vor allen anderen Imports)
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 import compression from "compression";
 import helmet from "helmet";
@@ -18,11 +18,6 @@ import locationRoutes from "./routes/location.js";
 import testerRoutes from "./routes/testers.js";
 import { startOfferPoller } from "./jobs/offerPoller.js";
 
-// ⬇️ NEU: Push-Test-Route
-//import pushTestRouter from "./routes/pushTest.js";
-
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -32,7 +27,6 @@ const PORT = process.env.PORT || 5000;
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    // Wenn du Assets/Bilder cross-origin laden musst:
     // crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
@@ -47,7 +41,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 /* ─────────────────────────────────────────────────────────────
-   CORS (saubere Whitelist + ENV-Merge + Validierung)
+   CORS (Whitelist + ENV-Merge)
    ───────────────────────────────────────────────────────────── */
 const DEFAULT_ORIGINS = [
   // Prod Frontend (DO Static Site)
@@ -67,14 +61,12 @@ const DEFAULT_ORIGINS = [
   "exp://10.0.0.34:19000",
 ];
 
-// Hilfsfunktion: ENV-Liste stabil parsen (Kommas/Spaces/Zeilenumbrüche)
 function parseEnvOrigins(val) {
   if (!val) return [];
   return val
-    .split(/[,\s]+/)               // trennt an Komma, Leerzeichen, Zeilenumbruch
+    .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean)
-    // nur valide Prefixe erlauben
     .filter((s) => /^https?:\/\/|^exp:\/\//i.test(s));
 }
 
@@ -84,8 +76,7 @@ const ALLOWED_ORIGINS = Array.from(
 
 const corsOptions = {
   origin(origin, callback) {
-    // Server-zu-Server / curl ohne Origin → erlauben
-    if (!origin) return callback(null, true);
+    if (!origin) return callback(null, true); // Server-zu-Server / curl
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     return callback(new Error(`CORS: Origin not allowed: ${origin}`), false);
   },
@@ -100,7 +91,7 @@ app.options("*", cors(corsOptions));
 app.use(cors(corsOptions));
 
 /* ─────────────────────────────────────────────────────────────
-   API-Routen (WICHTIG: vor jedem NDA-/Frontend-Gate!)
+   API-Routen
    ───────────────────────────────────────────────────────────── */
 app.use("/api/users", userAuthRoutes);
 app.use("/api/providers", providerRoutes);
@@ -111,11 +102,8 @@ app.use("/api/push", pushRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/uploads", uploadRoutes);
 
-// Tester-Gate Endpunkte (rein API, kein Blocker für /api/**)
+// Tester-Gate Endpunkte (rein API)
 app.use("/api/testers", testerRoutes);
-
-// ⬇️ NEU: Push-Test-Endpoint zum schnellen Prüfen der Expo-Notifications
-//app.use("/api/push-test", pushTestRouter);
 
 // Healthcheck
 app.get("/api/ping", (_req, res) => {
@@ -128,7 +116,6 @@ app.get("/api/ping", (_req, res) => {
 app.use((err, _req, res, _next) => {
   const status = err.status || 400;
   const message = err.message || "Request failed";
-  // CORS-Fehler sauber im Log sichtbar machen
   if (message?.startsWith?.("CORS:")) {
     console.error("[CORS]", message);
   } else {
@@ -142,7 +129,6 @@ app.use((err, _req, res, _next) => {
    ───────────────────────────────────────────────────────────── */
 connectDB()
   .then(() => {
-    // Offer-Poller (serverseitiger 1-Minuten-Check für neue/aktualisierte Offers)
     if (process.env.OFFER_POLLER_ENABLED !== "0") {
       startOfferPoller();
     }
