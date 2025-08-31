@@ -1,11 +1,12 @@
 // stepsmatch/mobile/components/PushInitializer.js
 import React, { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { isOfferActiveNow } from '../utils/isOfferActiveNow'; // ✅ robustes Aktiv-Filtering wie im UI
 
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK    = 'stepsmatch-geofence-task';
@@ -24,14 +25,14 @@ const PUSH_TOKEN_KEY = 'expoPushToken';
 // Geofencing-Config
 const GEOFENCE_RADIUS_DEFAULT = 150; // Meter
 const GEOFENCE_MAX = 15;             // max. registrierte Regionen
-const OFFERS_ENDPOINT = `${API_BASE}/offers?withProvider=1`; // liefert provider.location
+const OFFERS_ENDPOINT = `${API_BASE}/offers?withProvider=1&page=1&limit=200`; // liefert provider.location ggf. in data/rows
 
 // 🆕 Geofence-Notif-Config (lokaler Fallback + Metadaten)
 const GEOFENCE_META_KEY = 'geofenceMeta_v1';         // id -> {title, body}
 const NOTIFIED_RECENT_KEY = 'geofenceNotified_v1';   // id -> timestamp
 const NOTIFY_DEDUP_WINDOW_MS = 5 * 60 * 1000;        // 5 Minuten
 
-// 🆕 Anti-Flood (Schritt 3)
+// 🆕 Anti-Flood
 const ENTER_LOCK_KEY = 'geofenceEnterLock_v1';       // id -> timestamp (ms)
 const ENTER_LOCK_MS  = 90 * 1000;                    // 90s
 
@@ -40,7 +41,6 @@ const ENTER_LOCK_MS  = 90 * 1000;                    // 90s
 async function ensureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   try {
-    // Default/App-Channel
     await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
       name: 'StepsMatch',
       importance: Notifications.AndroidImportance.MAX,
@@ -49,7 +49,6 @@ async function ensureAndroidChannel() {
       sound: 'default',
     });
 
-    // Push-Channel für Offers
     await Notifications.setNotificationChannelAsync('offers', {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
@@ -58,7 +57,7 @@ async function ensureAndroidChannel() {
       sound: 'default',
     });
 
-    // Dedizierter Foreground-Service-Channel für BG-Location (höhere Priorität)
+    // Muss mit foregroundService.notificationChannelId übereinstimmen
     await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
       name: 'StepsMatch – Standortdienst',
       description: 'Background location notification channel',
@@ -264,52 +263,42 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
             console.log('[GEOFENCE] enter skipped (lock active)', id, `${Math.round((ENTER_LOCK_MS - (now - last))/1000)}s left`);
             return; // keinerlei Aktionen
           }
-          // Lock setzen (sofort, damit parallele Enter nicht durchrutschen)
           locks[id] = now;
-
-          // Optional: alte Locks ausmisten (>6h)
           for (const k of Object.keys(locks)) {
             if (now - Number(locks[k]) > 6 * 60 * 60 * 1000) delete locks[k];
           }
           try { await AsyncStorage.setItem(ENTER_LOCK_KEY, JSON.stringify(locks)); } catch {}
 
-          // 1) Lokaler Fallback (Heads-Up), dedupliziert – SOFORT sichtbar
+          // 1) Lokale Notification (dedupe) — JETZT mit presentNotificationAsync
           try {
-            // Dedupe-Tabelle laden
             let notified = {};
             try { notified = JSON.parse(await AsyncStorage.getItem(NOTIFIED_RECENT_KEY)) || {}; } catch {}
             if (notified[id] && now - Number(notified[id]) < NOTIFY_DEDUP_WINDOW_MS) {
               console.log('[GEOFENCE] local notif skipped (dedupe) for', id);
             } else {
-              // Metadaten laden
               let metaMap = {};
               try { metaMap = JSON.parse(await AsyncStorage.getItem(GEOFENCE_META_KEY)) || {}; } catch {}
               const meta = metaMap[id] || {};
               const title = meta.title || 'Angebot in deiner Nähe';
               const body  = meta.body  || 'Tippe, um Details zu sehen';
 
-              // Nur eine Kategorie mit EINER Aktion "GO"
               try {
                 await Notifications.setNotificationCategoryAsync('offer-go', [
                   { identifier: 'GO', buttonTitle: 'Öffnen', options: { isDestructive: false, isAuthenticationRequired: false } },
                 ]);
               } catch {}
 
-              // Sofort anzeigen (lokal)
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title,
-                  body,
-                  sound: 'default',
-                  categoryIdentifier: 'offer-go', // ← nur GO
-                  data: { offerId: id, localFallback: true },
-                  channelId: 'offers',
-                },
-                trigger: null,
+              // 👉 presentNotificationAsync: sofort anzeigen; channel über android.channelId
+              await Notifications.presentNotificationAsync({
+                title,
+                body,
+                sound: 'default',
+                categoryIdentifier: 'offer-go',
+                data: { offerId: id, localFallback: true },
+                android: { channelId: 'offers' },
               });
               console.log('[GEOFENCE] local fallback notification shown for', id);
 
-              // Dedupe aktualisieren
               notified[id] = now;
               for (const k of Object.keys(notified)) {
                 if (now - Number(notified[k]) > 6 * 60 * 60 * 1000) delete notified[k];
@@ -320,7 +309,7 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
             console.log('[GEOFENCE] local fallback error', e?.message || e);
           }
 
-          // 2) Backend informieren – FIRE-AND-FORGET (kein await)
+          // 2) Backend informieren – FIRE-AND-FORGET
           try {
             fetch(`${API_BASE}/location/geofence-enter`, {
               method: 'POST',
@@ -341,7 +330,7 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
             console.log('[GEOFENCE] geofence-enter notify setup error', e?.message || e);
           }
 
-          // 3) Heartbeat (nice-to-have)
+          // 3) Heartbeat (optional)
           try {
             if (token && pos?.coords) await postHeartbeat(token, pos.coords, 'Geofence-Enter');
           } catch {}
@@ -349,31 +338,23 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
           console.log('[GEOFENCE] enter-getCurrentPosition error', e?.message || e);
         }
       } else if (eventType === Location.GeofencingEventType.Exit) {
-        // Beim Verlassen des Radius: Dedupe + Lock für diese offerId löschen,
-        // damit ein späterer Re-Enter wieder eine Notification auslösen kann.
         try {
           const id = String(region?.identifier || '');
           if (id) {
-            // Dedupe
             let notified = {};
             try { notified = JSON.parse(await AsyncStorage.getItem(NOTIFIED_RECENT_KEY)) || {}; } catch {}
             if (notified[id]) {
               delete notified[id];
               await AsyncStorage.setItem(NOTIFIED_RECENT_KEY, JSON.stringify(notified));
               console.log('[GEOFENCE] exit -> dedupe cleared for', id);
-            } else {
-              console.log('[GEOFENCE] exit -> no dedupe entry for', id);
             }
 
-            // Lock
             let locks = {};
             try { locks = JSON.parse(await AsyncStorage.getItem(ENTER_LOCK_KEY)) || {}; } catch {}
             if (locks[id]) {
               delete locks[id];
               await AsyncStorage.setItem(ENTER_LOCK_KEY, JSON.stringify(locks));
               console.log('[GEOFENCE] exit -> lock cleared for', id);
-            } else {
-              console.log('[GEOFENCE] exit -> no lock entry for', id);
             }
           }
         } catch (e) {
@@ -389,72 +370,112 @@ if (!TaskManager.isTaskDefined?.(GEOFENCE_TASK)) {
 /* ---------- Geofences registrieren ---------- */
 async function refreshGeofences() {
   try {
-    // 1) Aktuelle Position
+    // 1) Aktuelle Position (für Ranking & Filter)
     let me = await Location.getLastKnownPositionAsync();
     if (!me) {
       me = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false });
     }
 
-    // 2) Offers mit Provider laden
+    // 2) Offers laden (ROBUST PARSING)
     const res = await fetch(OFFERS_ENDPOINT, { method: 'GET' });
-    const list = await res.json().catch(() => []);
-    if (!Array.isArray(list) || list.length === 0) {
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch {}
+    const offers =
+      (json?.offers && Array.isArray(json.offers) && json.offers) ||
+      (json?.data?.offers && Array.isArray(json.data.offers) && json.data.offers) ||
+      (Array.isArray(json?.data) && json.data) ||
+      (Array.isArray(json?.rows) && json.rows) ||
+      (Array.isArray(json) && json) ||
+      [];
+
+    if (!Array.isArray(offers) || offers.length === 0) {
       console.log('[GEOFENCE] no offers received');
       return;
     }
 
-    // 3) Regionen + Metadaten bauen
+    // 3) Position + Radius robust bestimmen (Offer -> Provider Fallback)
+    const pickLoc = (o) => {
+      const c = o?.location?.coordinates || o?.provider?.location?.coordinates || null;
+      if (Array.isArray(c) && c.length >= 2) {
+        const [lng, lat] = c;
+        const latN = Number(lat), lngN = Number(lng);
+        if (Number.isFinite(latN) && Number.isFinite(lngN)) return { latitude: latN, longitude: lngN };
+      }
+      return null;
+    };
+    const pickRadius = (o) => {
+      const r1 = Number(o?.radius);
+      if (Number.isFinite(r1) && r1 >= 0) return r1;
+      const r2 = Number(o?.provider?.radius);
+      if (Number.isFinite(r2) && r2 >= 0) return r2;
+      const r3 = Number(o?.provider?.radiusMeters);
+      if (Number.isFinite(r3) && r3 >= 0) return r3;
+      return GEOFENCE_RADIUS_DEFAULT;
+    };
+
+    // 4) Auf aktive Offers beschränken (wie UI)
+    const rows = offers
+      .map((o) => {
+        const loc = pickLoc(o);
+        const radius = pickRadius(o);
+        const active = isOfferActiveNow(o, 'Europe/Vienna');
+        return { o, loc, radius, active };
+      })
+      .filter((r) => r.active && r.loc);
+
+    if (!rows.length) {
+      console.log('[GEOFENCE] no active offers with location');
+      return;
+    }
+
+    // 5) Ranking nach Distanz (wenn eigene Position bekannt)
+    let ranked = rows;
+    if (me?.coords) {
+      const my = { lat: me.coords.latitude, lng: me.coords.longitude };
+      const dist = (a, b) => {
+        const toR = (d)=> d*Math.PI/180, R=6371000;
+        const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+        const A = Math.sin(dLat/2)**2 + Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
+        return 2*R*Math.asin(Math.sqrt(A));
+      };
+      ranked = rows
+        .map((r) => ({ ...r, d: dist(my, { lat: r.loc.latitude, lng: r.loc.longitude }) }))
+        .filter((r) => r.d <= 25_000)
+        .sort((a, b) => a.d - b.d);
+    }
+
+    // 6) Regionen bauen & begrenzen
     const regions = [];
-    const metas = {}; // id -> {title, body}
+    const metasTop = {};
 
-    for (const o of list) {
-      const p = o?.provider;
-      const coords = p?.location?.coordinates;
-      if (!coords || coords.length !== 2) continue;
-      const [lng, lat] = coords;
-      const radius = Number(p?.radiusMeters || GEOFENCE_RADIUS_DEFAULT);
-      const id = String(o._id || `${lat},${lng},${radius}`);
-
+    for (const r of ranked.slice(0, GEOFENCE_MAX)) {
+      const id = String(r.o._id || `${r.loc.latitude},${r.loc.longitude},${r.radius}`);
       regions.push({
         identifier: id,
-        latitude: lat,
-        longitude: lng,
-        radius: Math.min(Math.max(radius, 50), 1000), // clamp 50..1000m
+        latitude: r.loc.latitude,
+        longitude: r.loc.longitude,
+        radius: Math.min(Math.max(r.radius, 50), 1000), // clamp 50..1000m
         notifyOnEnter: true,
         notifyOnExit: false,
       });
 
-      const title = o?.name || p?.name || 'Angebot in deiner Nähe';
-      const cat = o?.subcategory ? `${o.category} · ${o.subcategory}` : (o?.category || '');
-      const body = cat || (p?.name ? `Bei ${p.name}` : 'Jetzt ansehen');
-      metas[id] = { title, body };
+      const title = r.o?.name || r.o?.provider?.name || 'Angebot in deiner Nähe';
+      const cat = r.o?.subcategory ? `${r.o.category} · ${r.o.subcategory}` : (r.o?.category || '');
+      const body = cat || (r.o?.provider?.name ? `Bei ${r.o.provider.name}` : 'Jetzt ansehen');
+      metasTop[id] = { title, body };
     }
 
-    // 4) Sortieren nach Distanz & begrenzen
-    if (me?.coords) {
-      const { latitude: myLat, longitude: myLng } = me.coords;
-      const dist = (lat1, lng1, lat2, lng2) => {
-        const R = 6371000, toR = (d)=> d*Math.PI/180;
-        const dLat = toR(lat2 - lat1), dLng = toR(lng2 - lng1);
-        const A = Math.sin(dLat/2)**2 + Math.cos(toR(lat1))*Math.cos(toR(lat2))*Math.sin(dLng/2)**2;
-        return 2*R*Math.asin(Math.sqrt(A));
-      };
-      regions.sort((a, b) => dist(myLat, myLng, a.latitude, a.longitude) - dist(myLat, myLng, b.latitude, b.longitude));
-    }
-    const top = regions.slice(0, GEOFENCE_MAX);
-
-    // 4b) Metadaten auf „top“ zuschneiden & speichern
-    const metasTop = {};
-    for (const r of top) metasTop[r.identifier] = metas[r.identifier];
+    // 7) Metadaten speichern
     try { await AsyncStorage.setItem(GEOFENCE_META_KEY, JSON.stringify(metasTop)); } catch {}
 
-    // 5) Starten/neu setzen
+    // 8) Starten/neu setzen
     const isRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
     if (isRunning) {
       await Location.stopGeofencingAsync(GEOFENCE_TASK).catch(() => {});
     }
-    await Location.startGeofencingAsync(GEOFENCE_TASK, top);
-    console.log('[GEOFENCE] registered regions =', top.length);
+    await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
+    console.log('[GEOFENCE] registered regions =', regions.length);
   } catch (e) {
     console.log('[GEOFENCE] refresh error', e?.message || e);
   }
@@ -463,6 +484,8 @@ async function refreshGeofences() {
 /* ---------- Component Bootstrapping ---------- */
 export default function PushInitializer() {
   const initDone = useRef(false);
+  const appStateRef = useRef(AppState.currentState);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
     if (initDone.current) return;
@@ -481,7 +504,6 @@ export default function PushInitializer() {
 
         await ensureAndroidChannel();
 
-        // Nur eine Kategorie mit EINER Aktion "GO" (idempotent)
         try {
           await Notifications.setNotificationCategoryAsync('offer-go', [
             { identifier: 'GO', buttonTitle: 'Öffnen', options: { isDestructive: false, isAuthenticationRequired: false } },
@@ -500,7 +522,7 @@ export default function PushInitializer() {
           return;
         }
 
-        // Kickstart (letzte/aktuelle Position)
+        // Kickstart
         try {
           let pos = await Location.getLastKnownPositionAsync();
           if (!pos) {
@@ -541,12 +563,40 @@ export default function PushInitializer() {
           console.log('[BGLOC] Background updates already started.');
         }
 
-        // Geofences
+        // Geofences initial setzen
         await refreshGeofences();
+
+        // 🔁 Zusätzliche Robustheit:
+        // a) Bei App-Rückkehr in den Vordergrund neu registrieren
+        const onStateChange = (next) => {
+          const prev = appStateRef.current;
+          appStateRef.current = next;
+          if ((prev === 'background' || prev === 'inactive') && next === 'active') {
+            // kleines Delay, damit network/permissions „wach“ sind
+            setTimeout(() => { refreshGeofences(); }, 1500);
+          }
+        };
+        AppState.addEventListener('change', onStateChange);
+
+        // b) Alle 30 Minuten während App läuft refreshen
+        intervalRef.current = setInterval(() => {
+          refreshGeofences();
+        }, 30 * 60 * 1000);
+
+        // Cleanup registrieren
+        return () => {
+          try { AppState.removeEventListener?.('change', onStateChange); } catch {}
+          if (intervalRef.current) clearInterval(intervalRef.current);
+        };
       } catch (e) {
         console.log('[BGLOC] init error', e?.message || e);
       }
     })();
+
+    // Cleanup, falls Komponente ent-mountet
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
   return null;

@@ -29,7 +29,34 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-/* In‑Memory Guards */
+/** Server-seitig: ist das Offer *jetzt* aktiv? (robust wie im Client) */
+function isOfferActiveNowServer(o, tz = 'Europe/Vienna') {
+  // Minimal robust ohne externe Lib: prüfe Felder, die bei euch vorkommen
+  const now = new Date();
+  const keysStart = ['activeStart','validFrom','startAt','startTime','dateFrom','activeWindowStart'];
+  const keysEnd   = ['activeUntil','activeEnd','validUntil','endAt','endTime','dateTo','activeWindowEnd','validTo'];
+  const vd = o?.validDates && typeof o.validDates === 'object' ? o.validDates : null;
+
+  const parseDate = (v) => {
+    if (!v) return null;
+    const d = new Date(v);
+    return isNaN(d) ? null : d;
+  };
+
+  let start = null, end = null;
+  if (vd) {
+    start = parseDate(vd.from ?? vd.start ?? vd.fromDate ?? vd.startDate);
+    end   = parseDate(vd.to   ?? vd.end   ?? vd.toDate   ?? vd.endDate);
+  }
+  if (!start) for (const k of keysStart) { const d = parseDate(o?.[k]); if (d) { start = d; break; } }
+  if (!end)   for (const k of keysEnd)   { const d = parseDate(o?.[k]); if (d) { end   = d; break; } }
+
+  if (start && now < start) return false;
+  if (end   && now > end)   return false;
+  return true; // wenn keine Grenzen gesetzt, als aktiv werten
+}
+
+/* In-Memory Guards */
 const PAIR_COOLDOWN_MS = envMs('PAIR_COOLDOWN_MS', 10 * 60 * 1000);
 const MIN_PUSH_INTERVAL_MS = envMs('MIN_PUSH_INTERVAL_MS', 10_000);
 
@@ -54,7 +81,7 @@ const bootAt = Date.now();
 const stats = {
   received: 0, sent: 0, cooldown: 0, perReload: 0,
   seenOrMuted: 0, outside: 0, noRecipients: 0, tokenDisabled: 0,
-  validationErrors: 0, errors: 0,
+  validationErrors: 0, errors: 0, inactive: 0,
 };
 
 /* Debug: windows */
@@ -74,7 +101,7 @@ router.get('/debug-stats', (_req, res) => {
   });
 });
 
-/* 🔎 Model/DB‑Check */
+/* 🔎 Model/DB-Check */
 router.get('/debug-model', async (_req, res) => {
   try {
     const db = mongoose.connection?.db;
@@ -87,7 +114,7 @@ router.get('/debug-model', async (_req, res) => {
   }
 });
 
-/* 🔎 Direkter Upsert‑Test (kein Offer nötig) */
+/* 🔎 Direkter Upsert-Test (kein Offer nötig) */
 router.post('/debug-upsert-token', async (req, res) => {
   try {
     const { token, platform = 'android' } = req.body || {};
@@ -133,7 +160,6 @@ router.post('/heartbeat', async (req, res) => {
           disabled: false,
           lastSeenAt: now,
           ...(typeof accuracy === 'number' ? { accuracy } : {}),
-          // Wichtig: in deinem Schema heißt es 'lastLocation'
           lastLocation: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
         },
       },
@@ -153,127 +179,115 @@ router.post('/heartbeat', async (req, res) => {
   }
 });
 
-/* Route: Geofence Enter */
+/* ▶️ Geofence Enter – robust & idempotent */
 router.post('/geofence-enter', async (req, res) => {
   stats.received += 1;
 
   try {
-    const { offerId, lat, lng, eventType = 'enter', token: inlineToken } = req.body || {};
-    if (!offerId || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const { offerId, lat, lng, eventType = 'enter', token: inlineToken, platform } = req.body || {};
+    if (!offerId || !mongoose.Types.ObjectId.isValid(String(offerId))) {
       stats.validationErrors += 1;
-      return res.status(400).json({ success: false, error: 'offerId, lat, lng erforderlich' });
-    }
-    if (!mongoose.Types.ObjectId.isValid(offerId)) {
-      stats.validationErrors += 1;
-      return res.status(400).json({ success: false, error: 'Ungültige offerId' });
+      return res.status(400).json({ success: false, error: 'Ungültige oder fehlende offerId' });
     }
 
-    const offer = await Offer.findById(offerId, 'location radius name').lean();
+    // 1) Offer laden & prüfen
+    const offer = await Offer.findById(offerId, 'location provider radius name validDates category subcategory activeUntil activeEnd startAt startTime endAt endTime validFrom validTo dateFrom dateTo').lean();
     if (!offer) {
       stats.validationErrors += 1;
       return res.status(404).json({ success: false, error: 'Angebot nicht gefunden' });
     }
+    if (!isOfferActiveNowServer(offer)) {
+      stats.inactive += 1;
+      return res.json({ success: true, offerId, pushSent: false, reason: 'offer-inactive' });
+    }
 
-    const coords = offer?.location?.coordinates; // [lng, lat]
-    const radius = Number(offer?.radius || 0);
-    if (!Array.isArray(coords) || coords.length !== 2 || !(radius > 0)) {
+    // 2) Offer Geodaten + Radius robust
+    const offerCoords =
+      (Array.isArray(offer?.location?.coordinates) && offer.location.coordinates.length >= 2 && offer.location.coordinates) ||
+      (Array.isArray(offer?.provider?.location?.coordinates) && offer.provider.location.coordinates.length >= 2 && offer.provider.location.coordinates) ||
+      null; // [lng, lat]
+
+    const radius =
+      Number(offer?.radius) ||
+      Number(offer?.provider?.radius) ||
+      Number(offer?.provider?.radiusMeters) ||
+      0;
+
+    if (!offerCoords || !(radius > 0)) {
       stats.validationErrors += 1;
       return res.status(422).json({ success: false, error: 'Angebot hat keine gültige Geoposition/Radius' });
     }
 
-    const distanceMeters = haversineMeters(lat, lng, coords[1], coords[0]);
-    const inside = distanceMeters <= radius;
-
-    // Empfänger ermitteln
-    let tokens = [];
-    let recipientKey = null;
+    // 3) Device Token auflösen (inlineToken bevorzugt). Upsert + lastSeen refresh.
     let deviceTokenDoc = null;
-
     if (typeof inlineToken === 'string' && inlineToken.trim()) {
       deviceTokenDoc = await PushToken.findOneAndUpdate(
         { token: inlineToken.trim() },
-        { $setOnInsert: { platform: 'android' }, $set: { disabled: false, lastSeenAt: new Date() } },
+        { $setOnInsert: { platform: platform || 'android' }, $set: { disabled: false, lastSeenAt: new Date() } },
         { new: true, upsert: true }
-      ).exec();
-
-      if (deviceTokenDoc?.disabled) {
-        stats.tokenDisabled += 1;
-        return res.json({
-          success: true, offerId, inside,
-          distanceMeters: Math.round(distanceMeters),
-          radiusMeters: radius, eventType,
-          pushSent: false, reason: 'device-token-disabled'
-        });
-      }
-
-      // Pass full token object to push util
-      tokens = [{
-        token: deviceTokenDoc.token,
-        platform: deviceTokenDoc.platform,
-        disabled: deviceTokenDoc.disabled,
-      }];
-      recipientKey = deviceTokenDoc.token;
+      ).lean();
     } else if (req.user?._id) {
-      const devices = await PushToken.find(
+      deviceTokenDoc = await PushToken.findOne(
         { userId: req.user._id, disabled: false },
-        { token: 1, platform: 1, disabled: 1 }
+        { token: 1, platform: 1, disabled: 1, lastLocation: 1 }
       ).sort({ updatedAt: -1 }).lean();
+    }
 
-      tokens = devices.map(d => ({
-        token: d.token, platform: d.platform, disabled: d.disabled
-      })).filter(d => d.token);
-
-      if (!tokens.length) {
-        stats.noRecipients += 1;
-        return res.json({
-          success: true, offerId, inside,
-          distanceMeters: Math.round(distanceMeters),
-          radiusMeters: radius, eventType,
-          pushSent: false, reason: 'no-active-device-tokens'
-        });
-      }
-      recipientKey = `user:${req.user._id}`;
-
-      const latest = devices[0];
-      if (latest) deviceTokenDoc = latest;
-    } else {
+    if (!deviceTokenDoc) {
       stats.noRecipients += 1;
-      return res.json({
-        success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
-        radiusMeters: radius, eventType,
-        pushSent: false, reason: 'no-inline-token'
-      });
+      return res.json({ success: true, offerId, pushSent: false, reason: 'no-device-token' });
+    }
+    if (deviceTokenDoc.disabled) {
+      stats.tokenDisabled += 1;
+      return res.json({ success: true, offerId, pushSent: false, reason: 'device-token-disabled' });
+    }
+
+    const recipientKey = req.user?._id ? `user:${req.user._id}` : deviceTokenDoc.token;
+    const tokens = [{ token: deviceTokenDoc.token, platform: deviceTokenDoc.platform, disabled: false }];
+
+    // 4) Positionsquelle priorisieren: body.lat/lng -> token.lastLocation -> kein Distance-Check
+    let latNum = Number(lat);
+    let lngNum = Number(lng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      const lastLoc = deviceTokenDoc?.lastLocation?.coordinates; // [lng, lat]
+      if (Array.isArray(lastLoc) && lastLoc.length >= 2) {
+        lngNum = Number(lastLoc[0]);
+        latNum = Number(lastLoc[1]);
+      } else {
+        latNum = null;
+        lngNum = null;
+      }
+    }
+
+    let distanceMeters = null;
+    let inside = true; // wenn OS Enter feuert, tendieren wir zu true; wenn wir Koordinaten haben, verifizieren wir
+    if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+      distanceMeters = haversineMeters(latNum, lngNum, offerCoords[1], offerCoords[0]);
+      inside = distanceMeters <= radius;
     }
 
     if (!inside) {
       stats.outside += 1;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
+        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'outside-radius'
       });
     }
 
+    // 5) OfferVisibility (Seen/Muted/Notified) – *vor* den Cooldowns
     const deviceTokenId = deviceTokenDoc?._id;
     if (!deviceTokenId) {
       stats.noRecipients += 1;
-      return res.json({
-        success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
-        radiusMeters: radius, eventType,
-        pushSent: false, reason: 'no-device-token-id'
-      });
+      return res.json({ success: true, offerId, pushSent: false, reason: 'no-device-token-id' });
     }
 
     await OfferVisibility.upsertSeen(deviceTokenId, offerId);
-
     const now = new Date();
     const mayNotify = await OfferVisibility.shouldNotify(deviceTokenId, offerId, now);
     if (!mayNotify) {
       stats.seenOrMuted += 1;
-      // Feld im Schema: deviceToken
       const doc = await OfferVisibility.findOne({ deviceToken: deviceTokenId, offerId }).lean();
       let reason = 'blocked';
       if (doc) {
@@ -284,43 +298,45 @@ router.post('/geofence-enter', async (req, res) => {
       }
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
+        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason
       });
     }
 
-    const pairKey = `${recipientKey ?? (tokens[0]?.token || 'unknown')}::${offerId}`;
-
+    // 6) In-Memory Cooldowns
     if (!isAnyAllowed(recipientKey)) {
       stats.perReload += 1;
       const last = anyLastPushAt.get(recipientKey) || 0;
       const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
+        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'per-reload-limit',
         meta: { windowMs: MIN_PUSH_INTERVAL_MS, sinceMs: since }
       });
     }
-
+    const pairKey = `${recipientKey}::${offerId}`;
     if (!isPairAllowed(pairKey)) {
       stats.cooldown += 1;
       const last = pairLastPushAt.get(pairKey) || 0;
       const since = Date.now() - last;
       return res.json({
         success: true, offerId, inside,
-        distanceMeters: Math.round(distanceMeters),
+        distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
         radiusMeters: radius, eventType,
         pushSent: false, reason: 'cooldown-active',
         meta: { windowMs: PAIR_COOLDOWN_MS, sinceMs: since }
       });
     }
 
+    // 7) Push zusammenstellen
     const url = `/offers/${offerId}`;
+    const prettyDistance =
+      distanceMeters == null ? '' : ` – ${Math.max(1, Math.round(distanceMeters))} m entfernt`;
     const title = 'Angebot in deiner Nähe';
-    const body  = `${offer.name ?? 'Angebot'} – ${Math.round(distanceMeters)} m entfernt. Tippen für Details.`;
+    const body  = `${offer.name ?? 'Angebot'}${prettyDistance}. Tippen für Details.`;
 
     const metaFull = await sendOffersPushSafe(tokens, {
       title,
@@ -378,7 +394,7 @@ router.post('/geofence-enter', async (req, res) => {
       success: true,
       offerId,
       inside,
-      distanceMeters: Math.round(distanceMeters),
+      distanceMeters: distanceMeters != null ? Math.round(distanceMeters) : null,
       radiusMeters: radius,
       eventType,
       pushSent: notified,
@@ -415,12 +431,10 @@ router.post('/notify-action', async (req, res) => {
       await OfferVisibility.dismiss(deviceTokenId, offerId);
       status = 'dismissed';
     } else if (action === 'snooze') {
-      // Schema-Bedeutung: OfferVisibility.snooze(deviceTokenId, offerId, minutes)
       const minutes = Number.isFinite(Number(snoozeMinutes)) ? Number(snoozeMinutes) : 180; // Default 3h
       await OfferVisibility.snooze(deviceTokenId, offerId, minutes);
       status = `snoozed-${minutes}m`;
     } else if (action === 'go') {
-      // idempotent – falls bereits notified, harmless
       await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
       status = 'opened';
     } else {
@@ -447,7 +461,6 @@ router.get('/debug-visibility', async (req, res) => {
     if (token) {
       const dev = await PushToken.findOne({ token: String(token).trim() }, { _id: 1 }).lean();
       if (!dev) return res.json({ ok: true, items: [] });
-      // Feld im Schema: deviceToken (ObjectId)
       q.deviceToken = dev._id;
     }
 
@@ -463,7 +476,7 @@ router.get('/debug-visibility', async (req, res) => {
       remindAt: i.remindAt ?? null,
       lastNotifiedAt: i.lastNotifiedAt ?? null,
       firstSeenAt: i.firstSeenAt ?? null,
-      ...(includeHistory ? { /* kein actionHistory im Schema – daher weggelassen */ } : {})
+      ...(includeHistory ? { } : {})
     }));
 
     res.json({ ok: true, items: mapped });
