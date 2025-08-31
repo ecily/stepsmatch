@@ -8,44 +8,75 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { isOfferActiveNow } from '../utils/isOfferActiveNow';
 
-// ────────────────────────────────────────────────────────────
-// Konstanten
-// ────────────────────────────────────────────────────────────
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK = 'stepsmatch-geofence-task';
 
 const HEARTBEAT_MIN_SECONDS = 45;
 const TIME_INTERVAL_MS = 60 * 1000;
-
 const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-// einfache ProjectId-Ermittlung für Logs/Meta
 const RESOLVED_PROJECT_ID =
   (Constants?.expoConfig?.extra && Constants.expoConfig.extra.eas?.projectId) ||
   (Constants?.easConfig && Constants.easConfig.projectId) ||
   'unknown';
 
-// Guard, damit Handler/Listener nicht doppelt initialisiert werden
+// ────────────────────────────────────────────────────────────
+// Globaler Foreground-Handler (Fallback, falls _layout früher lädt)
+// iOS 16+: shouldShowBanner/shouldShowList; Android ignoriert das einfach
+// ────────────────────────────────────────────────────────────
 if (!globalThis.__stepsmatchPushHandlerSet) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,     // ← macht Foreground-Notifs sichtbar
+      shouldShowAlert: true,        // Android
       shouldPlaySound: true,
       shouldSetBadge: false,
+      // iOS neuere Felder (unterstützt von expo-notifications ohne Crash)
+      shouldShowBanner: true,
+      shouldShowList: true,
     }),
   });
   globalThis.__stepsmatchPushHandlerSet = true;
 }
 
 // ────────────────────────────────────────────────────────────
-// Channel & Category
+// Roundtrip-Fallback-Steuerung: verzögere Local-Fallback um 4s
+// nur wenn KEINE Remote-Notif mit source:"roundtrip" einging
+// ────────────────────────────────────────────────────────────
+let pendingFallbackRid = null;
+let remoteArrivedForRid = new Set();
+
+function scheduleRoundtripFallback(rid, { title, body, offerId }) {
+  // Nur in DEV, um „Doppel“ in Release sicher zu vermeiden
+  if (!__DEV__) return;
+  pendingFallbackRid = rid;
+  setTimeout(async () => {
+    if (remoteArrivedForRid.has(rid)) return; // Remote ist angekommen → kein Fallback
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: title || 'StepsMatch (DEV Fallback)',
+          body: (body || 'Falls Remote im FG nicht sichtbar ist.') + (offerId ? ` [offerId:${offerId}]` : ''),
+          data: offerId ? { offerId } : {},
+          channelId: 'offers',
+          categoryIdentifier: 'offer-go',
+        },
+        trigger: null,
+      });
+      console.log('[push] dev fallback fired (scheduleNotificationAsync) rid=', rid);
+    } catch (e) {
+      console.log('[push] dev fallback error', String(e), 'rid=', rid);
+    }
+  }, 4000);
+}
+
+// ────────────────────────────────────────────────────────────
+// Channels & Category
 // ────────────────────────────────────────────────────────────
 async function ensureChannels() {
   if (Platform.OS !== 'android') return;
 
   console.log('[push] channels: creating…');
 
-  // Default
   await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
     name: 'StepsMatch',
     importance: Notifications.AndroidImportance.HIGH,
@@ -55,7 +86,6 @@ async function ensureChannels() {
     bypassDnd: false,
   });
 
-  // Offers (sichtbar / Heads-Up)
   await Notifications.setNotificationChannelAsync('offers', {
     name: 'Angebote',
     importance: Notifications.AndroidImportance.MAX,
@@ -65,7 +95,6 @@ async function ensureChannels() {
     bypassDnd: true,
   });
 
-  // Hintergrundtask (stille Service-Notifs, falls verwendet)
   await Notifications.setNotificationChannelAsync(
     'com.ecily.mobile:stepsmatch-bg-location-task',
     {
@@ -78,23 +107,16 @@ async function ensureChannels() {
     }
   );
 
-  console.log(
-    '[push] channels ready: stepsmatch-default-v2, offers, com.ecily.mobile:stepsmatch-bg-location-task'
-  );
-
-  // Kategorie mit „GO“-Action (für Offer-Details)
   await Notifications.setNotificationCategoryAsync('offer-go', [
-    {
-      identifier: 'GO',
-      buttonTitle: 'GO',
-      options: { opensAppToForeground: true },
-    },
+    { identifier: 'GO', buttonTitle: 'GO', options: { opensAppToForeground: true } },
   ]);
+
+  console.log('[push] channels ready: stepsmatch-default-v2, offers, com.ecily.mobile:stepsmatch-bg-location-task');
   console.log('[push] category ready: offer-go');
 }
 
 // ────────────────────────────────────────────────────────────
-// Token & Registrierung
+// Permissions, Token, Registrierung
 // ────────────────────────────────────────────────────────────
 async function askNotificationPermission() {
   const pre = await Notifications.getPermissionsAsync();
@@ -108,7 +130,6 @@ async function askNotificationPermission() {
 }
 
 async function getExpoToken() {
-  // Hinweis-Log: zeigt, welche Meta wir im Build sehen
   console.log(
     '[push] meta projectId extra=',
     Constants?.expoConfig?.extra?.eas?.projectId,
@@ -117,8 +138,6 @@ async function getExpoToken() {
     'releaseChannel=',
     Constants?.expoConfig?.releaseChannel
   );
-
-  // Managed/Dev-Build: direkt abrufbar
   const token = (await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID })).data;
   console.log('[push] resolveProjectId =', RESOLVED_PROJECT_ID);
   console.log('[push] expoToken =', token);
@@ -145,76 +164,59 @@ async function registerTokenWithBackend({ expoToken, deviceId }) {
 }
 
 // ────────────────────────────────────────────────────────────
-/** DEV-Fallback: ersetzt presentNotificationAsync (entfernt in SDK 50) */
-// ────────────────────────────────────────────────────────────
-async function devFallbackLocalNotification({ title, body, data }) {
-  try {
-    if (!__DEV__) return; // nur in DEV, um Doppelungen zu vermeiden
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: data || {},
-        channelId: 'offers',
-        categoryIdentifier: 'offer-go',
-      },
-      trigger: null, // sofort
-    });
-    console.log('[push] dev-fallback scheduled (scheduleNotificationAsync)');
-  } catch (e) {
-    console.log('[push] dev-fallback error', String(e));
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// Public API: Init + Roundtrip-Test
+// Public API
 // ────────────────────────────────────────────────────────────
 export async function initPush() {
   await ensureChannels();
   const granted = await askNotificationPermission();
   if (!granted) return;
 
-  // DeviceId für Backend (keine harte Abhängigkeit)
   let deviceId = null;
   try {
-    // Lazy import, um Abhängigkeit optional zu halten
     const Application = await import('expo-application');
     deviceId = Application?.default?.androidId || Application?.androidId || null;
-  } catch {
-    deviceId = null;
-  }
+  } catch {}
 
   const token = await getExpoToken();
   console.log('[Push] Expo token', token);
   await registerTokenWithBackend({ expoToken: token, deviceId });
 
-  // Listener für „received“ (auch im FG)
+  // Empfangs-Listener (FG)
   Notifications.addNotificationReceivedListener((notification) => {
     const c = notification?.request?.content || {};
+    const data = c.data || {};
     console.log(
       '[push] received',
       JSON.stringify({
         title: c.title,
         body: c.body,
         channelId: c.channelId || 'offers',
-        data: c.data || {},
+        data,
       })
     );
+
+    // Wenn Remote-Roundtrip kam, Fallback für denselben rid abbrechen
+    const src = data?.source;
+    const t = data?.t;
+    if (src === 'roundtrip' && typeof t === 'number') {
+      // rid rekonstruieren wie im Backend: wir nutzen hier t als Marker
+      remoteArrivedForRid.add(String(t));
+    }
   });
 
   console.log('[push] listeners installed');
 }
 
 export async function sendRoundtripTest({ offerId = 'TEST', title, body } = {}) {
-  // Sendet über Backend eine Remote-Push (Expo) und loggt Antwort.
-  const rid = `rt_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  // rid leiten wir aus t ab (server-seitig im Payload)
+  const rid = String(Date.now());
   try {
     const res = await fetch(`${API_BASE}/push/roundtrip`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         offerId,
-        title: title || 'StepsMatch Test',
+        title: title || 'StepsMatch',
         body: body || 'Das ist ein Test-Push aus der App.',
         channelId: 'offers',
         projectId: RESOLVED_PROJECT_ID,
@@ -223,21 +225,18 @@ export async function sendRoundtripTest({ offerId = 'TEST', title, body } = {}) 
     const json = await res.json();
     console.log('[push] roundtrip =>', res.status, JSON.stringify(json), 'rid=', rid);
 
-    // DEV-Fallback (sichtbar im FG, wenn Remote noch nicht da ist)
-    await devFallbackLocalNotification({
+    // Fallback erst NACH kurzer Wartezeit, wird storniert wenn Remote zuvor eintrifft
+    scheduleRoundtripFallback(rid, {
       title: 'StepsMatch (DEV Fallback)',
-      body: 'Falls die Remote-Notif im FG nicht sichtbar ist.',
-      data: { offerId },
+      body: 'Falls Remote im FG nicht sichtbar ist.',
+      offerId,
     });
   } catch (e) {
     console.log('[push] roundtrip error', String(e), 'rid=', rid);
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// Background-Location (bestehendes Verhalten beibehalten)
-// ────────────────────────────────────────────────────────────
-
+// ───────────── BG-Location (wie gehabt) ─────────────
 let lastHeartbeatAt = 0;
 
 async function sendHeartbeat({ latitude, longitude, accuracy }) {
@@ -249,12 +248,7 @@ async function sendHeartbeat({ latitude, longitude, accuracy }) {
     const res = await fetch(`${API_BASE}/location/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lat: latitude,
-        lng: longitude,
-        acc: accuracy,
-        platform: Platform.OS,
-      }),
+      body: JSON.stringify({ lat: latitude, lng: longitude, acc: accuracy, platform: Platform.OS }),
     });
     const json = await res.json();
     console.log('[BGLOC] Manual HTTP', res.status, JSON.stringify(json));
@@ -266,12 +260,10 @@ async function sendHeartbeat({ latitude, longitude, accuracy }) {
 
 export async function kickstartBackgroundLocation() {
   try {
-    // Permissions
     const fg = await Location.requestForegroundPermissionsAsync();
     const bg = await Location.requestBackgroundPermissionsAsync();
     console.log('[BGLOC] permissions', { fg: fg?.status, bg: bg?.status });
 
-    // Start, falls nicht aktiv
     const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     if (!started) {
       await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
@@ -291,21 +283,16 @@ export async function kickstartBackgroundLocation() {
       console.log('[BGLOC] Background updates already started.');
     }
 
-    // Initialen Kick senden (letzte Position)
     const loc = await Location.getLastKnownPositionAsync({});
     if (loc?.coords) {
       await sendHeartbeat(loc.coords);
-      // optional Kickstart-Probe
       const res = await fetch(`${API_BASE}/push/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token: (await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID })).data,
           platform: Platform.OS,
-          lastLocation: {
-            type: 'Point',
-            coordinates: [loc.coords.longitude, loc.coords.latitude],
-          },
+          lastLocation: { type: 'Point', coordinates: [loc.coords.longitude, loc.coords.latitude] },
           projectId: RESOLVED_PROJECT_ID,
         }),
       });
@@ -318,7 +305,6 @@ export async function kickstartBackgroundLocation() {
   }
 }
 
-// Task-Definitionen (keine Änderung am Namen!)
 TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   try {
     if (error) {
@@ -326,18 +312,15 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       return;
     }
     const { locations } = data || {};
-    if (!locations || !locations.length) return;
+    if (!locations?.length) return;
     console.log('[BGLOC] locations batch size =', locations.length);
-    const { latitude, longitude, accuracy } = locations[0].coords || {};
-    if (latitude && longitude) {
-      await sendHeartbeat({ latitude, longitude, accuracy });
-    }
+    const { latitude, longitude, accuracy } = locations[0]?.coords || {};
+    if (latitude && longitude) await sendHeartbeat({ latitude, longitude, accuracy });
   } catch (e) {
     console.log('[BGLOC] task handler error', String(e));
   }
 });
 
-// GEOFENCE placeholder (falls genutzt)
 TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   if (error) {
     console.log('[GEOFENCE] error', String(error));
@@ -347,7 +330,6 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   console.log('[GEOFENCE] event', eventType, region?.identifier || '');
 });
 
-// Initialisierungshook (optional)
 export default function PushInitializer() {
   const appState = useRef(AppState.currentState);
 
@@ -358,15 +340,12 @@ export default function PushInitializer() {
 
     const sub = AppState.addEventListener('change', (next) => {
       if (appState.current.match(/inactive|background/) && next === 'active') {
-        // Re-Init Channels/Permissions bei Rückkehr
         ensureChannels();
       }
       appState.current = next;
     });
 
-    return () => {
-      sub?.remove?.();
-    };
+    return () => sub?.remove?.();
   }, []);
 
   return null;
