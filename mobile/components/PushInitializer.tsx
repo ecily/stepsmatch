@@ -58,6 +58,7 @@ async function ensureAndroidChannel() {
       sound: 'default',
     });
 
+    // Alias-Channel: damit Backend auch "offers" nutzen kann
     await Notifications.setNotificationChannelAsync('offers', {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
@@ -253,7 +254,7 @@ export async function debugLocalPush() {
       body: 'Lokale Notification (Handler+Channel ok?)',
       data: { kind: 'debug-local' },
       categoryIdentifier: 'offer-go',
-      android: { channelId: 'offers' },
+      android: { channelId: 'offers' }, // <— Alias-Channel, den wir anlegen
       sound: 'default',
     });
     console.log('[push] presentNotificationAsync -> OK');
@@ -561,6 +562,7 @@ export default function PushInitializer() {
   const initDone = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const intervalRef = useRef(null);
+  const appStateSubRef = useRef(null);
 
   useEffect(() => {
     if (initDone.current) return;
@@ -650,18 +652,14 @@ export default function PushInitializer() {
             setTimeout(() => { refreshGeofences(); }, 1500);
           }
         };
-        AppState.addEventListener('change', onStateChange);
+        const sub = AppState.addEventListener('change', onStateChange);
+        appStateSubRef.current = sub;
 
         // b) Alle 30 Minuten während App läuft refreshen
         intervalRef.current = setInterval(() => {
           refreshGeofences();
         }, 30 * 60 * 1000);
 
-        // Cleanup registrieren
-        return () => {
-          try { AppState.removeEventListener?.('change', onStateChange); } catch {}
-          if (intervalRef.current) clearInterval(intervalRef.current);
-        };
       } catch (e) {
         console.log('[BGLOC] init error', e?.message || e);
       }
@@ -669,6 +667,7 @@ export default function PushInitializer() {
 
     // Cleanup, falls Komponente ent-mountet
     return () => {
+      try { appStateSubRef.current?.remove?.(); } catch {}
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
