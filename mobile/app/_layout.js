@@ -6,9 +6,36 @@ import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 import PushInitializer from '../components/PushInitializer';
 import BackgroundLocationManager from '../components/BackgroundLocationManager';
+
+/* ---------------- Push handler & Android channel (neu) ---------------- */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,   // ✅ zeigt Banner auch im Vordergrund
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function ensureAndroidChannel() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
+      name: 'StepsMatch',
+      importance: Notifications.AndroidImportance.HIGH, // ✅ Heads-Up
+      vibrationPattern: [200, 200, 200],
+      lightColor: '#FFFFFF',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    console.log('[push] channel ready: stepsmatch-default-v2');
+  } catch (e) {
+    console.warn('[push] channel fail', e);
+  }
+}
 
 /* ---------------- helpers (strict) ---------------- */
 const extractOfferIdStrict = (data) => {
@@ -50,6 +77,11 @@ export default function RootLayout() {
   // System-Splash sofort freigeben (Expo Splash)
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  // Android-Channel früh sicherstellen
+  useEffect(() => {
+    ensureAndroidChannel();
   }, []);
 
   const whenReady = (fn) => {
@@ -131,6 +163,17 @@ export default function RootLayout() {
   // B) Laufende App → Notification-Taps (zentral, 1 Listener)
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      // Nur Standard-Tap oder "GO" navigiert (Actions wie DISMISS ignorieren)
+      const actionId = response?.actionIdentifier;
+      if (
+        actionId &&
+        actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER &&
+        actionId !== 'GO'
+      ) {
+        console.log('[push-tap] ignore action:', actionId);
+        return;
+      }
+
       const data = response?.notification?.request?.content?.data ?? {};
       console.log('[push-tap] data=', JSON.stringify(data));
       whenReady(() => {

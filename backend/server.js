@@ -18,6 +18,9 @@ import locationRoutes from "./routes/location.js";
 import testerRoutes from "./routes/testers.js";
 import { startOfferPoller } from "./jobs/offerPoller.js";
 
+// ⬇️ NEU: Push-Test-Route
+import pushTestRouter from "./routes/pushTest.js";
+
 dotenv.config();
 
 const app = express();
@@ -111,6 +114,9 @@ app.use("/api/uploads", uploadRoutes);
 // Tester-Gate Endpunkte (rein API, kein Blocker für /api/**)
 app.use("/api/testers", testerRoutes);
 
+// ⬇️ NEU: Push-Test-Endpoint zum schnellen Prüfen der Expo-Notifications
+app.use("/api/push-test", pushTestRouter);
+
 // Healthcheck
 app.get("/api/ping", (_req, res) => {
   res.status(200).send("pong");
@@ -136,7 +142,7 @@ app.use((err, _req, res, _next) => {
    ───────────────────────────────────────────────────────────── */
 connectDB()
   .then(() => {
-    // Offer-Poller (serverseitiger 1‑Minuten‑Check für neue/aktualisierte Offers)
+    // Offer-Poller (serverseitiger 1-Minuten-Check für neue/aktualisierte Offers)
     if (process.env.OFFER_POLLER_ENABLED !== "0") {
       startOfferPoller();
     }
