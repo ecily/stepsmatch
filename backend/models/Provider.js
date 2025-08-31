@@ -1,3 +1,4 @@
+// mobile/app/(tabs)/navigation.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -35,7 +36,7 @@ function formatDistance(m) {
 /* Radius **immer zuerst am Offer** lesen; Provider nur Fallback */
 function readRadiusMeters(offer) {
   const fromOffer = [
-    offer?.radius,            // <- dein Feld (Beispiel: 500)
+    offer?.radius,
     offer?.radiusMeters,
     offer?.radius_m,
     offer?.coverageRadius,
@@ -272,17 +273,15 @@ export default function NavigationMap() {
         })}
       </MapView>
 
-      {/* Ladeindikatoren unobtrusiv */}
       {(loadingPos || loadingOffers) && (
         <View style={styles.loading}>
-          <ActivityIndicator size="small" color="#9fb7ff" />
+          <ActivityIndicator size="small" />
           <Text style={styles.loadingText}>
             {loadingPos ? 'Position… ' : ''}{loadingOffers ? 'Angebote…' : ''}
           </Text>
         </View>
       )}
 
-      {/* Bottom-Card bei Auswahl */}
       {selected && (
         <View style={styles.cardWrap} pointerEvents="box-none">
           <View style={styles.card}>
