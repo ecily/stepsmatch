@@ -7,41 +7,76 @@ import OfferVisibility, { OFFER_VISIBILITY_STATUS as VIS } from '../models/Offer
 
 const router = express.Router();
 
+/* ───────────────────────── Helpers ───────────────────────── */
+
+const PLATFORMS = new Set(['android', 'ios', 'web']);
+
+function normPlatform(p) {
+  const s = String(p || '').toLowerCase().trim();
+  return PLATFORMS.has(s) ? s : 'android';
+}
+function isValidObjectId(v) {
+  try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
+}
+
+/* ───────────────────────── Routes ───────────────────────── */
+
 /**
  * POST /api/push/register
  * Body: { token: string, platform: 'android'|'ios'|'web', userId?: string, deviceId?: string }
  * - Validiert und speichert (upsert) den Expo Push Token.
  * - Verknüpft optional mit userId/deviceId.
+ * - Reaktiviert zuvor deaktivierte Tokens.
  */
 router.post('/register', async (req, res) => {
   try {
-    const { token, platform, userId = null, deviceId = null } = req.body || {};
+    const rawToken = (req.body?.token ?? '').trim();
+    const platform = normPlatform(req.body?.platform);
+    const userId = req.body?.userId ? String(req.body.userId).trim() : null;
+    const deviceId = req.body?.deviceId ? String(req.body.deviceId).trim() : null;
 
-    if (!token || !platform) {
+    if (!rawToken || !platform) {
       return res.status(400).json({ success: false, error: 'token und platform sind erforderlich' });
     }
 
-    if (!Expo.isExpoPushToken(token)) {
+    // Expo-Token-Validierung (z.B. "ExponentPushToken[xxxx]")
+    if (!Expo.isExpoPushToken(rawToken)) {
       return res.status(400).json({ success: false, error: 'kein gültiger Expo Push Token' });
     }
 
-    // Upsert nach token; aktualisiert Zuordnung & lastSeenAt
-    await PushToken.updateOne(
-      { token },
-      {
-        $set: {
-          token,
-          platform,
-          userId: userId || null,
-          deviceId: deviceId || null,
-          lastSeenAt: new Date(),
-          disabled: false
-        }
-      },
-      { upsert: true }
-    );
+    // optionale Referenzen nur speichern, wenn plausibel
+    const $set = {
+      token: rawToken,
+      platform,
+      lastSeenAt: new Date(),
+      disabled: false,
+      disabledReason: null,
+      disabledAt: null,
+    };
+    if (userId && isValidObjectId(userId)) $set.userId = new mongoose.Types.ObjectId(userId);
+    else $set.userId = null;
 
-    return res.json({ success: true });
+    // deviceId darf String bleiben (z.B. Install-ID)
+    $set.deviceId = deviceId || null;
+
+    const doc = await PushToken.findOneAndUpdate(
+      { token: rawToken },
+      {
+        $setOnInsert: { createdAt: new Date() },
+        $set,
+      },
+      { new: true, upsert: true }
+    ).lean();
+
+    return res.json({
+      success: true,
+      id: String(doc?._id),
+      platform: doc?.platform,
+      userId: doc?.userId ? String(doc.userId) : null,
+      deviceId: doc?.deviceId ?? null,
+      disabled: !!doc?.disabled,
+      lastSeenAt: doc?.lastSeenAt ?? null,
+    });
   } catch (err) {
     console.error('Fehler bei /api/push/register:', err);
     return res.status(500).json({ success: false, error: 'Serverfehler bei push/register' });
@@ -49,17 +84,23 @@ router.post('/register', async (req, res) => {
 });
 
 /**
- * (Optional) POST /api/push/unregister
+ * POST /api/push/unregister
  * Body: { token: string }
- * - Markiert einen Token als disabled (löscht ihn nicht sofort).
+ * - Markiert einen Token als disabled (löscht ihn nicht).
  */
 router.post('/unregister', async (req, res) => {
   try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ success: false, error: 'token erforderlich' });
+    const rawToken = (req.body?.token ?? '').trim();
+    if (!rawToken) {
+      return res.status(400).json({ success: false, error: 'token erforderlich' });
+    }
 
-    await PushToken.updateOne({ token }, { $set: { disabled: true } });
-    return res.json({ success: true });
+    const r = await PushToken.updateOne(
+      { token: rawToken },
+      { $set: { disabled: true, disabledReason: 'manual-unregister', disabledAt: new Date() } }
+    );
+
+    return res.json({ success: true, matched: r.matchedCount || r.n, modified: r.modifiedCount || r.nModified });
   } catch (err) {
     console.error('Fehler bei /api/push/unregister:', err);
     return res.status(500).json({ success: false, error: 'Serverfehler bei push/unregister' });
@@ -78,31 +119,33 @@ router.post('/unregister', async (req, res) => {
  *  }
  *
  * Zweck:
- *  - „Los“: markNotified (damit kein weiterer Push für dieses Offer×Gerät)
- *  - „Interessiert mich nicht“: dismissed (nie wieder pushen)
- *  - „Später erinnern“: snooze(minutes) → remindAt gesetzt, danach darf erneut gepusht werden
+ *  - „go“: markNotified (damit kein weiterer Push für dieses Offer×Gerät)
+ *  - „dismiss“: dismissed (nie wieder pushen)
+ *  - „snooze“: snooze(minutes) → remindAt gesetzt, danach darf erneut gepusht werden
  */
 router.post('/action', async (req, res) => {
   try {
-    const { action, offerId, token: inlineToken, userId, minutes } = req.body || {};
+    const action = String(req.body?.action || '').toLowerCase().trim();
+    const offerId = String(req.body?.offerId || '').trim();
+    const inlineToken = req.body?.token ? String(req.body.token).trim() : null;
+    const userId = req.body?.userId ? String(req.body.userId).trim() : null;
+    const minutesRaw = Number(req.body?.minutes);
 
-    // Validierung: action
-    const A = String(action || '').toLowerCase();
-    if (!['go', 'dismiss', 'snooze'].includes(A)) {
+    if (!['go', 'dismiss', 'snooze'].includes(action)) {
       return res.status(400).json({ success: false, error: 'Ungültige action' });
     }
-
-    // Validierung: offerId
-    if (!offerId || !mongoose.Types.ObjectId.isValid(offerId)) {
+    if (!offerId || !isValidObjectId(offerId)) {
       return res.status(400).json({ success: false, error: 'Ungültige offerId' });
     }
 
-    // PushToken bestimmen (bevorzugt via token)
+    // Device/Token auflösen
     let dev = null;
-    if (typeof inlineToken === 'string' && inlineToken.trim()) {
-      dev = await PushToken.findOne({ token: inlineToken.trim() }).lean();
-    } else if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      dev = await PushToken.findOne({ userId, disabled: false }).sort({ updatedAt: -1 }).lean();
+    if (inlineToken) {
+      dev = await PushToken.findOne({ token: inlineToken }).lean();
+    } else if (userId && isValidObjectId(userId)) {
+      dev = await PushToken.findOne({ userId: new mongoose.Types.ObjectId(userId), disabled: false })
+        .sort({ updatedAt: -1 })
+        .lean();
     }
 
     if (!dev) {
@@ -114,21 +157,20 @@ router.post('/action', async (req, res) => {
 
     const deviceTokenId = dev._id;
 
-    // Snooze-Dauer bereinigen
-    const snoozeMinRaw = Number(minutes);
-    const snoozeMin = Number.isFinite(snoozeMinRaw) ? snoozeMinRaw : 60; // Default 60
-    const snoozeMinutes = Math.max(5, Math.min(1440, snoozeMin)); // 5 min – 24 h
+    // Snooze-Dauer: clamp 5–1440 Minuten
+    const minutes = Number.isFinite(minutesRaw) ? minutesRaw : 60;
+    const snoozeMinutes = Math.max(5, Math.min(1440, minutes));
 
     let resultDoc = null;
     let newStatus = null;
 
-    if (A === 'go') {
+    if (action === 'go') {
       resultDoc = await OfferVisibility.markNotified(deviceTokenId, offerId, new Date());
       newStatus = VIS.NOTIFIED;
-    } else if (A === 'dismiss') {
+    } else if (action === 'dismiss') {
       resultDoc = await OfferVisibility.dismiss(deviceTokenId, offerId);
       newStatus = VIS.DISMISSED;
-    } else if (A === 'snooze') {
+    } else if (action === 'snooze') {
       resultDoc = await OfferVisibility.snooze(deviceTokenId, offerId, snoozeMinutes);
       newStatus = VIS.SNOOZED;
     }
@@ -136,12 +178,12 @@ router.post('/action', async (req, res) => {
     return res.json({
       success: true,
       applied: true,
-      action: A,
+      action,
       offerId,
       deviceToken: dev.token,
       status: newStatus,
       remindAt: resultDoc?.remindAt ?? null,
-      updatedAt: resultDoc?.updatedAt ?? null
+      updatedAt: resultDoc?.updatedAt ?? null,
     });
   } catch (err) {
     console.error('Fehler bei /api/push/action:', err);
