@@ -18,6 +18,93 @@ function normPlatform(p) {
 function isValidObjectId(v) {
   try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
 }
+function chunk(arr, n = 99) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+/** shared singleton */
+const expo = new Expo();
+
+/**
+ * Sendet Push-Nachrichten über Expo mit korrekten Android-Parametern.
+ * - Fügt channelId, categoryId, priority: 'high', ttl und data hinzu.
+ * - Holt Expo-Receipts ab und deaktiviert ungültige Tokens.
+ */
+async function sendExpoPushSafe(tokens, payload) {
+  const valid = (tokens || []).filter(t => t && Expo.isExpoPushToken(t.token) && !t.disabled);
+  if (valid.length === 0) {
+    return { sent: 0, tickets: [], errors: ['no-valid-tokens'], disabledTokens: [] };
+  }
+
+  const messages = valid.map(t => ({
+    to: t.token,
+    title: payload.title,
+    body: payload.body,
+    sound: payload.sound ?? 'default',
+    priority: payload.priority ?? 'high',
+    ttl: typeof payload.ttl === 'number' ? payload.ttl : 300,
+    data: payload.data || {},
+    channelId: payload.channelId || 'offers',    // muss mit App-Channel übereinstimmen
+    categoryId: payload.categoryId || 'offer-go' // muss mit App-Category übereinstimmen
+  }));
+
+  const tickets = [];
+  const errors = [];
+  const disabledTokens = [];
+
+  // Tickets holen
+  for (const batch of chunk(messages, 99)) {
+    try {
+      const batchTickets = await expo.sendPushNotificationsAsync(batch);
+      tickets.push(...(Array.isArray(batchTickets) ? batchTickets : []));
+    } catch (e) {
+      errors.push(`expo-send:${e?.message || String(e)}`);
+    }
+  }
+
+  // Receipts holen
+  const ids = tickets.map(t => t?.id).filter(Boolean);
+  for (const idBatch of chunk(ids, 99)) {
+    try {
+      const receipts = await expo.getPushNotificationReceiptsAsync(idBatch);
+      for (const [id, r] of Object.entries(receipts || {})) {
+        if (!r) continue;
+        if (r.status === 'ok') continue;
+
+        if (r.status === 'error') {
+          const err = r.details?.error || r.message || 'unknown';
+          errors.push(`receipt:${id}:${err}`);
+
+          // Bestimmte Fehler → Token deaktivieren
+          if (/DeviceNotRegistered|MessageTooBig|MessageRateExceeded|InvalidCredentials/i.test(err)) {
+            // Ticket -> Token-Auflösung
+            const ticket = tickets.find(t => t?.id === id);
+            const token = ticket?.to;
+            if (token) {
+              try {
+                await PushToken.updateOne(
+                  { token },
+                  { $set: { disabled: true, disabledReason: err, disabledAt: new Date() } }
+                );
+                disabledTokens.push(token);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      errors.push(`expo-receipts:${e?.message || String(e)}`);
+    }
+  }
+
+  const sent = tickets.filter(t => t?.status === 'ok').length;
+  if (errors.length) console.warn('[push] errors', errors.slice(0, 6));
+  return { sent, tickets, errors, disabledTokens };
+}
 
 /* ───────────────────────── Routes ───────────────────────── */
 
@@ -39,12 +126,10 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'token und platform sind erforderlich' });
     }
 
-    // Expo-Token-Validierung (z.B. "ExponentPushToken[xxxx]")
     if (!Expo.isExpoPushToken(rawToken)) {
       return res.status(400).json({ success: false, error: 'kein gültiger Expo Push Token' });
     }
 
-    // optionale Referenzen nur speichern, wenn plausibel
     const $set = {
       token: rawToken,
       platform,
@@ -56,15 +141,11 @@ router.post('/register', async (req, res) => {
     if (userId && isValidObjectId(userId)) $set.userId = new mongoose.Types.ObjectId(userId);
     else $set.userId = null;
 
-    // deviceId darf String bleiben (z.B. Install-ID)
     $set.deviceId = deviceId || null;
 
     const doc = await PushToken.findOneAndUpdate(
       { token: rawToken },
-      {
-        $setOnInsert: { createdAt: new Date() },
-        $set,
-      },
+      { $setOnInsert: { createdAt: new Date() }, $set },
       { new: true, upsert: true }
     ).lean();
 
@@ -188,6 +269,40 @@ router.post('/action', async (req, res) => {
   } catch (err) {
     console.error('Fehler bei /api/push/action:', err);
     return res.status(500).json({ success: false, error: 'Serverfehler bei push/action' });
+  }
+});
+
+/**
+ * (Debug) POST /api/push/test
+ * Body: { token?: string, userId?: string, title?: string, body?: string, data?: object }
+ * - Sendet sofort einen Push (Foreground-kompatibel, falls Client NotificationHandler zeigt).
+ */
+router.post('/test', async (req, res) => {
+  try {
+    let tok = (req.body?.token ?? '').trim();
+    const userId = req.body?.userId ? String(req.body.userId).trim() : null;
+
+    if (!tok && userId && isValidObjectId(userId)) {
+      const dev = await PushToken.findOne({ userId: new mongoose.Types.ObjectId(userId), disabled: false })
+        .sort({ updatedAt: -1 }).lean();
+      tok = dev?.token || '';
+    }
+    if (!tok) return res.status(400).json({ success: false, error: 'token (oder userId) erforderlich' });
+    if (!Expo.isExpoPushToken(tok)) return res.status(400).json({ success: false, error: 'kein gültiger Expo Push Token' });
+
+    const title = req.body?.title || 'StepsMatch • Test';
+    const body  = req.body?.body  || 'Foreground/Background Test';
+    const data  = req.body?.data  || {};
+
+    const meta = await sendExpoPushSafe([{ token: tok, disabled: false }], {
+      title, body, data, sound: 'default', priority: 'high', ttl: 300,
+      channelId: 'offers', categoryId: 'offer-go'
+    });
+
+    return res.json({ success: true, meta });
+  } catch (err) {
+    console.error('Fehler bei /api/push/test:', err);
+    return res.status(500).json({ success: false, error: 'Serverfehler bei push/test' });
   }
 });
 
