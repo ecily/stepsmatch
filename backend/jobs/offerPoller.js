@@ -1,4 +1,3 @@
-// backend/jobs/offerPoller.js
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
@@ -43,6 +42,13 @@ const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
 const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
 const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
 
+// Projekt-Scope (Filter Tokens auf dieses Projekt, falls gesetzt)
+const PROJECT_ID =
+  process.env.EXPO_PROJECT_ID ||
+  process.env.EXPO_PROJECT ||
+  process.env.PROJECT_ID ||
+  null;
+
 let timer = null;
 
 /* ───────── Start/Stop ───────── */
@@ -68,9 +74,9 @@ export function startOfferPoller() {
       const now = new Date();
       const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
-      // 2) Tokens mit frischer Location
+      // 2) Tokens mit frischer Location (ggf. auf Projekt einschränken)
       const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
-      const tokensFresh = await PushToken.find({
+      const tokenQuery = {
         disabled: { $ne: true },
         'lastLocation.coordinates.0': { $exists: true },
         $or: [
@@ -78,8 +84,11 @@ export function startOfferPoller() {
           { lastSeenAt: { $gte: freshSince } },
           { updatedAt: { $gte: freshSince } },
         ],
-      })
-        .select('_id token platform interests lastLocation')
+      };
+      if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
+
+      const tokensFresh = await PushToken.find(tokenQuery)
+        .select('_id token platform interests lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt')
         .lean();
 
       if (DEBUG) {
@@ -116,7 +125,7 @@ export function startOfferPoller() {
             );
 
           // Geo-Query gegen frische Tokens
-          const nearTokens = await PushToken.find({
+          const nearQuery = {
             _id: { $in: tokensFresh.map((t) => t._id) },
             lastLocation: {
               $near: {
@@ -124,8 +133,11 @@ export function startOfferPoller() {
                 $maxDistance: radiusM,
               },
             },
-          })
-            .select('_id token platform interests lastLocation')
+          };
+          // (projectId bereits implizit, weil wir via _id subsetten)
+
+          const nearTokens = await PushToken.find(nearQuery)
+            .select('_id token platform interests lastLocation projectId deviceId')
             .lean();
 
           // Interessen-Matching
@@ -152,7 +164,7 @@ export function startOfferPoller() {
           if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
           if (!toNotifyDocs.length) continue;
 
-          // 5) Push senden (robust via sendPushAndCheckReceipts – wie Diagnose)
+          // 5) Push senden (robust via sendPushAndCheckReceipts – inkl. DeviceNotRegistered-Retry)
           const tokens = toNotifyDocs
             .map((t) => t.token)
             .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
@@ -164,7 +176,7 @@ export function startOfferPoller() {
           const data = {
             type: 'offer',
             offerId: String(offer._id),
-            route: `/offers/${offer._id}`,  // hilft beim Client-Log/Deeplink
+            route: `/offers/${offer._id}`, // hilft beim Client-Log/Deeplink
             source: 'poller',
           };
 
@@ -216,19 +228,22 @@ export function startOfferPoller() {
           // Optional: lokale Deaktivierung (zusätzlich zu utils/push.js Fail-Safe)
           const disabledCount = Array.isArray(diag?.disabledTokens) ? diag.disabledTokens.length : 0;
           if (disabledCount > 0) {
-            await PushToken.updateMany(
-              { token: { $in: diag.disabledTokens } },
-              { $set: { disabled: true } }
-            );
+            await PushToken.updateMany({ token: { $in: diag.disabledTokens } }, { $set: { disabled: true } });
           }
 
           // 🔎 Kompaktes Batch-Log inkl. Receipts-Übersicht
           const summary = diag?.receipts?.summary || {};
           console.log(
             `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
-            `disabled=${disabledCount} invalid=${(diag?.invalid || []).length} ` +
-            `receipts=${JSON.stringify(summary)}`
+              `disabled=${disabledCount} invalid=${(diag?.invalid || []).length} ` +
+              `receipts=${JSON.stringify(summary)}`
           );
+          if (diag?.retry && diag.retry.count > 0) {
+            console.log(
+              `[offerPoller][retry] attempts=${diag.retry.count} succeeded=${diag.retry.succeeded} ` +
+                `targets=${JSON.stringify(diag.retry.targets || [])}`
+            );
+          }
         } catch (offerErr) {
           console.error('[offerPoller][offer] error:', offerErr?.message || offerErr);
           continue; // nächstes Offer

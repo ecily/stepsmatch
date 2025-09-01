@@ -1,4 +1,3 @@
-// backend/routes/offers.js
 import express from 'express';
 import mongoose from 'mongoose';
 import { performance } from 'perf_hooks';
@@ -7,7 +6,7 @@ import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
 
-// ⬇️ NEU: wir nutzen die robuste Receipt-Utility (wie bei roundtrip/diagnose)
+// ⬇️ robustes Receipt-Utility (wie bei roundtrip/diagnose)
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js';
@@ -40,11 +39,8 @@ function parseProjection(fields) {
 }
 
 // Toleranter „jetzt gültig“-Check
-// - validDates: { from: ISO, to: ISO } (optional)
-// - validDays:  [0..6] (0=So) ODER ['Sun','Mon',...]
-// - validTimes: { from: "HH:mm", to: "HH:mm" } (optional)
 function isActiveNow(o, now = new Date()) {
-  const local = now; // Server läuft i. d. R. in UTC; Logik hier ist tolerant
+  const local = now;
   const dayIdx = local.getDay(); // 0..6
   const mins = local.getHours() * 60 + local.getMinutes();
 
@@ -103,6 +99,13 @@ const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 const LAST_LOCATION_MAX_AGE_MS = Number(process.env.PUSH_LAST_LOCATION_MAX_AGE_MS || 10 * 60_000);
 const MAX_DISTANCE_M_DEFAULT   = Number(process.env.PUSH_MAX_DISTANCE_M || 1500);
 
+// Projekt-Scope (wie im Poller)
+const PROJECT_ID =
+  process.env.EXPO_PROJECT_ID ||
+  process.env.EXPO_PROJECT ||
+  process.env.PROJECT_ID ||
+  null;
+
 // nutzt identisch die Receipt-Logik wie /api/push/roundtrip-diagnose
 async function notifyOfferNow(offer) {
   try {
@@ -119,7 +122,7 @@ async function notifyOfferNow(offer) {
 
     const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
     // frische Tokens mit Location
-    const tokensFresh = await PushToken.find({
+    const tokenQuery = {
       disabled: { $ne: true },
       'lastLocation.coordinates.0': { $exists: true },
       $or: [
@@ -127,13 +130,18 @@ async function notifyOfferNow(offer) {
         { lastSeenAt: { $gte: freshSince } },
         { updatedAt: { $gte: freshSince } },
       ],
-    }).select('_id token lastLocation').lean();
+    };
+    if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
+
+    const tokensFresh = await PushToken.find(tokenQuery)
+      .select('_id token lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt')
+      .lean();
 
     if (!tokensFresh.length) {
       return { ok: false, reason: 'no_fresh_tokens' };
     }
 
-    // Geo-Query: im Radius
+    // Geo-Query: im Radius (implizit auf tokensFresh begrenzt)
     const near = await PushToken.find({
       _id: { $in: tokensFresh.map(t => t._id) },
       lastLocation: {
@@ -142,7 +150,7 @@ async function notifyOfferNow(offer) {
           $maxDistance: radiusM,
         },
       },
-    }).select('_id token').lean();
+    }).select('_id token projectId deviceId').lean();
 
     if (!near.length) {
       return { ok: false, reason: 'no_near_tokens' };
@@ -174,7 +182,7 @@ async function notifyOfferNow(offer) {
       tokens,
       title,
       body,
-      data: { type: 'offer', offerId: String(offer._id) },
+      data: { type: 'offer', offerId: String(offer._id), route: `/offers/${offer._id}`, source: 'offer-create' },
       channelId: PUSH_CHANNEL_ID,
       priority: PUSH_PRIORITY,
       sound: PUSH_SOUND,
@@ -213,6 +221,9 @@ async function notifyOfferNow(offer) {
 
     const summary = diag?.receipts?.summary || {};
     console.log(`[offerNotifyNow] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} receipts=${JSON.stringify(summary)}`);
+    if (diag?.retry && diag.retry.count > 0) {
+      console.log(`[offerNotifyNow][retry] attempts=${diag.retry.count} succeeded=${diag.retry.succeeded} targets=${JSON.stringify(diag.retry.targets || [])}`);
+    }
     return { ok: true, tried: tokens.length, sentOk: sentTokens.length, receipts: summary };
   } catch (e) {
     console.error('[offerNotifyNow] error', e?.message || e);
@@ -562,10 +573,9 @@ router.post('/', async (req, res) => {
     const offer = new Offer(req.body);
     const saved = await offer.save();
 
-    // ⬇️ NEU: Sofort-Push an Tokens im Radius, wenn Offer aktuell aktiv ist
+    // ⬇️ Sofort-Push an Tokens im Radius, wenn Offer aktuell aktiv ist
     try {
       if (isActiveNow(saved) && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
-        // bewusst MIT await, damit wir ein Ergebnis ins API-Response packen können (hilft dir beim Debuggen)
         const notify = await notifyOfferNow(saved);
         console.log('[offers.create] notify summary:', notify);
         return res.status(201).json({ ok: true, offer: saved, notify });
@@ -574,7 +584,6 @@ router.post('/', async (req, res) => {
       console.warn('[offers.create] geoPush skipped:', e?.message || e);
     }
 
-    // Fallback: Offer ohne Notifikation (z. B. kein Radius/keine Koordinaten)
     return res.status(201).json({ ok: true, offer: saved, notify: { ok: false, reason: 'not_active_or_no_geo' } });
   } catch (err) {
     console.error('[offers.create] error:', err?.message || err);
@@ -635,7 +644,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
 
-    // ⬇️ NEU: Bei Updates ebenfalls Push triggern, wenn Offer aktuell aktiv ist
+    // ⬇️ Bei Updates ebenfalls Push triggern, wenn Offer aktuell aktiv ist
     try {
       if (isActiveNow(updatedOffer) && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
         const notify = await notifyOfferNow(updatedOffer);

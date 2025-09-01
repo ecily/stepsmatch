@@ -5,6 +5,8 @@ import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import * as Random from 'expo-random';
 import Constants from 'expo-constants';
 
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
@@ -51,6 +53,49 @@ function scheduleRoundtripFallback(rid, { title, body, offerId }) {
       console.log('[push] dev fallback error', String(e), 'rid=', rid);
     }
   }, 4000);
+}
+
+// ────────────────────────────────────────────────────────────
+// Persistente Device-ID (keine OS-ID, stabil per SecureStore)
+// ────────────────────────────────────────────────────────────
+const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
+const DEVICE_ID_ASYNC_KEY  = 'deviceId.v1.mirror';
+
+function bytesToUuidV4(bytes) {
+  // RFC4122 v4 – Bits setzen
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant RFC4122
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+}
+
+async function generateUuidV4() {
+  const bytes = await Random.getRandomBytesAsync(16);
+  return bytesToUuidV4(bytes);
+}
+
+async function getPersistentDeviceId() {
+  // 1) SecureStore
+  try {
+    const existing = await SecureStore.getItemAsync(DEVICE_ID_SECURE_KEY);
+    if (existing) return existing;
+  } catch (_) {}
+
+  // 2) AsyncStorage (Mirror)
+  try {
+    const mirror = await AsyncStorage.getItem(DEVICE_ID_ASYNC_KEY);
+    if (mirror) {
+      // best effort: in SecureStore nachziehen
+      try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, mirror); } catch (_) {}
+      return mirror;
+    }
+  } catch (_) {}
+
+  // 3) Neu erzeugen & speichern
+  const fresh = await generateUuidV4();
+  try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, fresh); } catch (_) {}
+  try { await AsyncStorage.setItem(DEVICE_ID_ASYNC_KEY, fresh); } catch (_) {}
+  return fresh;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -134,17 +179,24 @@ async function getExpoToken() {
   return token;
 }
 
-async function registerTokenWithBackend({ expoToken, deviceId }) {
+async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
   try {
+    const payload = {
+      token: expoToken,
+      platform: Platform.OS,
+      deviceId,
+      projectId: RESOLVED_PROJECT_ID,
+    };
+    if (lastLocation?.coords) {
+      payload.lastLocation = {
+        type: 'Point',
+        coordinates: [lastLocation.coords.longitude, lastLocation.coords.latitude],
+      };
+    }
     const res = await fetch(`${API_BASE}/push/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: expoToken,
-        platform: Platform.OS,
-        deviceId,
-        projectId: RESOLVED_PROJECT_ID,
-      }),
+      body: JSON.stringify(payload),
     });
     const json = await res.json();
     console.log('[push] register =>', res.status, JSON.stringify(json));
@@ -161,15 +213,15 @@ export async function initPush() {
   const granted = await askNotificationPermission();
   if (!granted) return;
 
-  let deviceId = null;
-  try {
-    const Application = await import('expo-application');
-    deviceId = Application?.default?.androidId || Application?.androidId || null;
-  } catch {}
-
+  const deviceId = await getPersistentDeviceId();
   const token = await getExpoToken();
   console.log('[Push] Expo token', token);
-  await registerTokenWithBackend({ expoToken: token, deviceId });
+  console.log('[Push] deviceId', deviceId);
+
+  // Erste Registrierung (ohne/mit lastLocation, wenn verfügbar)
+  let lastLoc = null;
+  try { lastLoc = await Location.getLastKnownPositionAsync({}); } catch (_) {}
+  await registerTokenWithBackend({ expoToken: token, deviceId, lastLocation: lastLoc || undefined });
 
   // Empfangs-Listener (FG/BG Log)
   Notifications.addNotificationReceivedListener((notification) => {
@@ -230,11 +282,13 @@ async function sendHeartbeat({ latitude, longitude, accuracy }) {
 
   try {
     const token = await getExpoToken(); // 🔑 Token IMMER mitsenden!
+    const deviceId = await getPersistentDeviceId();
     const res = await fetch(`${API_BASE}/location/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token,                             // <— WICHTIG
+        deviceId,                          // <— jetzt immer dabei
         lat: latitude,
         lng: longitude,
         accuracy,                          // <— korrektes Feld (nicht "acc")
@@ -276,6 +330,9 @@ export async function kickstartBackgroundLocation() {
     }
 
     const loc = await Location.getLastKnownPositionAsync({});
+    const deviceId = await getPersistentDeviceId();
+    const token = await getExpoToken();
+
     if (loc?.coords) {
       await sendHeartbeat({
         latitude: loc.coords.latitude,
@@ -284,19 +341,22 @@ export async function kickstartBackgroundLocation() {
       });
 
       // Sicherstellen, dass Register + Location initial auch gesetzt sind
-      const token = await getExpoToken();
       const res = await fetch(`${API_BASE}/push/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
           platform: Platform.OS,
+          deviceId, // <— jetzt gesetzt
           lastLocation: { type: 'Point', coordinates: [loc.coords.longitude, loc.coords.latitude] },
           projectId: RESOLVED_PROJECT_ID,
         }),
       });
       const json = await res.json();
       console.log('[BGLOC] Kickstart register', res.status, JSON.stringify(json));
+    } else {
+      // auch ohne loc: deviceId registrieren
+      await registerTokenWithBackend({ expoToken: token, deviceId });
     }
   } catch (e) {
     console.log('[BGLOC] kickstart error', String(e));

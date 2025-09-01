@@ -12,7 +12,9 @@
       "resizeMode": "cover",
       "backgroundColor": "#0d4ea6"
     },
-    "ios": { "supportsTablet": true },
+    "ios": {
+      "supportsTablet": true
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -21,24 +23,59 @@
       "edgeToEdgeEnabled": true,
       "package": "com.ecily.mobile",
       "googleServicesFile": "./google-services.json",
-      "config": { "googleMaps": { "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY" } },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"
+        }
+      },
       "permissions": [
-        "VIBRATE","ACCESS_COARSE_LOCATION","ACCESS_FINE_LOCATION","ACCESS_BACKGROUND_LOCATION",
-        "FOREGROUND_SERVICE","FOREGROUND_SERVICE_LOCATION","WAKE_LOCK","POST_NOTIFICATIONS"
+        "VIBRATE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
       ],
       "foregroundService": {
         "notificationTitle": "StepsMatch läuft im Hintergrund",
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden."
       }
     },
-    "web": { "bundler": "metro", "output": "static", "favicon": "./assets/images/favicon.png" },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
     "plugins": [
-      ["expo-splash-screen", { "image": "./assets/splash.png", "resizeMode": "cover", "backgroundColor": "#0d4ea6" }],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#0d4ea6"
+        }
+      ],
       "expo-font",
-      ["expo-notifications", { "sounds": ["./assets/sounds/arrival.mp3"] }],
-      "expo-location"
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/arrival.mp3"
+          ]
+        }
+      ],
+      "expo-location",
+      "expo-secure-store"
     ],
-    "experiments": { "typedRoutes": true },
-    "extra": { "eas": { "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed" } }
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed"
+      }
+    }
   }
 }
