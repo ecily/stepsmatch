@@ -12,6 +12,12 @@ const PROJECT_ID =
   process.env.PROJECT_ID ||
   null;
 
+// ⏳ Grace-Periode für frische Tokens gegen "DeviceNotRegistered"-Races (Default: 2 Min)
+const GRACE_MS = (() => {
+  const mins = Number(process.env.PUSH_GRACE_MINUTES || 2);
+  return Number.isFinite(mins) && mins > 0 ? mins * 60 * 1000 : 2 * 60 * 1000;
+})();
+
 // Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests deinem Expo-Projekt sicher zugeordnet sind.
 const expo = accessToken ? new Expo({ accessToken }) : new Expo();
 
@@ -106,9 +112,23 @@ async function safeDisableToken(token) {
   } catch {}
 }
 
+// Prüft, ob ein Token-Dokument "frisch" ist (innerhalb der Grace-Periode)
+function isFreshDoc(doc) {
+  if (!doc) return false;
+  const now = Date.now();
+  const ts = [
+    doc.createdAt ? new Date(doc.createdAt).getTime() : null,
+    doc.lastSeenAt ? new Date(doc.lastSeenAt).getTime() : null,
+    doc.updatedAt ? new Date(doc.updatedAt).getTime() : null,
+  ].filter((n) => Number.isFinite(n));
+  if (!ts.length) return false;
+  const newest = Math.max(...ts);
+  return now - newest <= GRACE_MS;
+}
+
 /**
  * Komfort: sendet, verarbeitet Receipts und:
- *  - markiert DeviceNotRegistered-Token als disabled,
+ *  - markiert DeviceNotRegistered-Token als disabled (ABER: NICHT, wenn frischer Token innerhalb der Grace-Periode),
  *  - versucht EINEN Retry mit dem neuesten aktiven Token derselben deviceId (im selben projectId),
  *  - liefert Diagnosefelder (disabledTokens, invalid, retry-Summary) zurück.
  */
@@ -128,6 +148,7 @@ export async function sendPushAndCheckReceipts({
     disabledTokens: [],
     invalid: [],
     retry: { count: 0, succeeded: 0, targets: [] },
+    graceMs: GRACE_MS,
   };
 
   // 1) Initial send
@@ -142,33 +163,48 @@ export async function sendPushAndCheckReceipts({
     const receipts = await checkReceipts(sent.ticketIds);
     result.receipts = receipts;
 
-    // 3) DeviceNotRegistered behandeln
+    // 3) DeviceNotRegistered behandeln (mit Grace-Periode)
     const retryCandidates = new Set(); // neue Tokens (strings) zum Retry
     for (const ticketId of Object.keys(receipts.receipts || {})) {
       const r = receipts.receipts[ticketId];
       if (!r) continue;
 
-      // Fehler-Mapping
       if (r.status === 'error') {
         const code = r.details?.error || r.message || 'unknown';
         if (code === 'DeviceNotRegistered') {
           const badToken = sent.idToToken[ticketId];
           if (badToken) {
-            await safeDisableToken(badToken);
-            result.disabledTokens.push(badToken);
+            let fresh = false;
+            let devId = null;
+            let proj = null;
 
-            // 🔁 Falls deviceId bekannt → neuesten gültigen Token für dasselbe Gerät finden (gleiches Projekt)
             try {
-              const badDoc = await PushToken.findOne({ token: badToken }).select('deviceId projectId').lean();
-              const devId = badDoc?.deviceId || null;
-              const proj = badDoc?.projectId || null;
+              const badDoc = await PushToken.findOne({ token: badToken })
+                .select('deviceId projectId createdAt updatedAt lastSeenAt disabled')
+                .lean();
 
+              fresh = isFreshDoc(badDoc);
+              devId = badDoc?.deviceId || null;
+              proj = badDoc?.projectId || null;
+
+              if (fresh) {
+                console.warn(
+                  '[push] DeviceNotRegistered for FRESH token (within grace). NOT disabling.',
+                  badToken.slice(0, 22) + '…',
+                  { graceMs: GRACE_MS, deviceId: devId, projectId: proj }
+                );
+              } else {
+                await safeDisableToken(badToken);
+                result.disabledTokens.push(badToken);
+              }
+
+              // 🔁 Falls deviceId bekannt → neuesten gültigen Token für dasselbe Gerät finden (gleiches Projekt)
               if (devId) {
                 const q = {
                   deviceId: devId,
                   disabled: { $ne: true },
                 };
-                // auf Projekt einschränken (muss mit Client übereinstimmen)
+                // Auf Projekt einschränken (muss mit Client übereinstimmen)
                 const projFilter = PROJECT_ID || proj || null;
                 if (projFilter) q.projectId = projFilter;
 
@@ -183,7 +219,10 @@ export async function sendPushAndCheckReceipts({
                   retryCandidates.add(newestToken);
                 }
               }
-            } catch {}
+            } catch (e) {
+              // Falls DB-Lookup fehlschlägt: lieber NICHT blind disable'n
+              console.error('[push] error while handling DeviceNotRegistered', e);
+            }
           }
         } else if (code === 'MessageTooBig' || code === 'MessageRateExceeded') {
           // bekannte Fehler, aber kein Token-Problem
@@ -224,7 +263,8 @@ export async function sendPushAndCheckReceipts({
           }
         }
       } catch (e) {
-        // Retry-Fehler ignorieren, bleiben im Log sichtbar
+        // Retry-Fehler bleiben im Log sichtbar
+        console.error('[push] retry send error', e);
       }
     }
   }

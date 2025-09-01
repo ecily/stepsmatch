@@ -12,22 +12,17 @@ import Constants from 'expo-constants';
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK = 'stepsmatch-geofence-task';
 
-const HEARTBEAT_MIN_SECONDS = 45;      // Throttle für Heartbeats
-const TIME_INTERVAL_MS = 60 * 1000;    // BG-Location Intervall
+const HEARTBEAT_MIN_SECONDS = 45;
+const TIME_INTERVAL_MS = 60 * 1000;
 const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
 const RESOLVED_PROJECT_ID =
   (Constants?.expoConfig?.extra && Constants.expoConfig.extra.eas?.projectId) ||
   (Constants?.easConfig && Constants.easConfig.projectId) ||
-  '08559a29-b307-47e9-a130-d3b31f73b4ed'; // Fallback auf dein echtes Projekt
+  '08559a29-b307-47e9-a130-d3b31f73b4ed';
 
 // ────────────────────────────────────────────────────────────
-// KEIN globaler Notification-Handler hier – der ist in app/_layout.js gesetzt.
-// (Vermeidet Doppel-Handler und deprecated shouldShowAlert.)
-// ────────────────────────────────────────────────────────────
-
-// ────────────────────────────────────────────────────────────
-// DEV-Roundtrip-Fallback (nur DEV)
+// DEV fallback
 // ────────────────────────────────────────────────────────────
 let pendingFallbackRid = null;
 let remoteArrivedForRid = new Set();
@@ -56,42 +51,33 @@ function scheduleRoundtripFallback(rid, { title, body, offerId }) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Persistente Device-ID (keine OS-ID, stabil per SecureStore)
+// Persistent Device ID
 // ────────────────────────────────────────────────────────────
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
 const DEVICE_ID_ASYNC_KEY  = 'deviceId.v1.mirror';
 
 function bytesToUuidV4(bytes) {
-  // RFC4122 v4 – Bits setzen
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant RFC4122
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
 }
-
 async function generateUuidV4() {
   const bytes = await Random.getRandomBytesAsync(16);
   return bytesToUuidV4(bytes);
 }
-
 async function getPersistentDeviceId() {
-  // 1) SecureStore
   try {
     const existing = await SecureStore.getItemAsync(DEVICE_ID_SECURE_KEY);
     if (existing) return existing;
   } catch (_) {}
-
-  // 2) AsyncStorage (Mirror)
   try {
     const mirror = await AsyncStorage.getItem(DEVICE_ID_ASYNC_KEY);
     if (mirror) {
-      // best effort: in SecureStore nachziehen
       try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, mirror); } catch (_) {}
       return mirror;
     }
   } catch (_) {}
-
-  // 3) Neu erzeugen & speichern
   const fresh = await generateUuidV4();
   try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, fresh); } catch (_) {}
   try { await AsyncStorage.setItem(DEVICE_ID_ASYNC_KEY, fresh); } catch (_) {}
@@ -150,17 +136,11 @@ async function askNotificationPermission() {
   return true;
 }
 
-const TOKEN_KEY = 'expoPushToken.v1';
-let _expoTokenCache = null;
+const TOKEN_KEY = 'expoPushToken.v2';
+let CURRENT_EXPO_TOKEN = null;
+let REGISTERED_READY = false; // 🔒 Heartbeat feuert erst danach
 
-async function getExpoToken() {
-  if (_expoTokenCache) return _expoTokenCache;
-  const cached = await AsyncStorage.getItem(TOKEN_KEY);
-  if (cached) {
-    _expoTokenCache = cached;
-    return cached;
-  }
-
+async function resolveExpoTokenAuthoritative() {
   console.log(
     '[push] meta projectId extra=',
     Constants?.expoConfig?.extra?.eas?.projectId,
@@ -169,14 +149,26 @@ async function getExpoToken() {
     'releaseChannel=',
     Constants?.expoConfig?.releaseChannel
   );
-
-  const token = (await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID })).data;
+  const { data: freshToken } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
+  const cached = await AsyncStorage.getItem(TOKEN_KEY);
+  if (cached !== freshToken) {
+    await AsyncStorage.setItem(TOKEN_KEY, freshToken);
+    console.log('[push] token changed -> cache updated');
+  }
+  CURRENT_EXPO_TOKEN = freshToken;
   console.log('[push] resolveProjectId =', RESOLVED_PROJECT_ID);
-  console.log('[push] expoToken =', token);
-
-  _expoTokenCache = token;
-  await AsyncStorage.setItem(TOKEN_KEY, token);
-  return token;
+  console.log('[push] expoToken =', freshToken);
+  return freshToken;
+}
+async function getCurrentExpoToken() {
+  if (CURRENT_EXPO_TOKEN) return CURRENT_EXPO_TOKEN;
+  const cached = await AsyncStorage.getItem(TOKEN_KEY);
+  if (cached) {
+    CURRENT_EXPO_TOKEN = cached;
+    resolveExpoTokenAuthoritative().catch(() => {});
+    return cached;
+  }
+  return resolveExpoTokenAuthoritative();
 }
 
 async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
@@ -200,6 +192,7 @@ async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
     });
     const json = await res.json();
     console.log('[push] register =>', res.status, JSON.stringify(json));
+    if (res.ok) REGISTERED_READY = true; // 🔓 erst jetzt dürfen Heartbeats raus
   } catch (e) {
     console.warn('[push] register error', String(e));
   }
@@ -214,16 +207,23 @@ export async function initPush() {
   if (!granted) return;
 
   const deviceId = await getPersistentDeviceId();
-  const token = await getExpoToken();
+
+  // 🔎 Native FCM-Token (für Diagnose sichtbar machen)
+  try {
+    const native = await Notifications.getDevicePushTokenAsync();
+    console.log('[push] nativePushToken', native?.type, native?.data ? String(native.data).slice(0,24) + '…' : null);
+  } catch (e) {
+    console.log('[push] nativePushToken error', String(e));
+  }
+
+  const token = await resolveExpoTokenAuthoritative();
   console.log('[Push] Expo token', token);
   console.log('[Push] deviceId', deviceId);
 
-  // Erste Registrierung (ohne/mit lastLocation, wenn verfügbar)
   let lastLoc = null;
   try { lastLoc = await Location.getLastKnownPositionAsync({}); } catch (_) {}
   await registerTokenWithBackend({ expoToken: token, deviceId, lastLocation: lastLoc || undefined });
 
-  // Empfangs-Listener (FG/BG Log)
   Notifications.addNotificationReceivedListener((notification) => {
     const c = notification?.request?.content || {};
     const data = c.data || {};
@@ -233,8 +233,6 @@ export async function initPush() {
       channelId: c.channelId || 'offers',
       data,
     }));
-
-    // Roundtrip-Remote erkannt → DEV-Fallback für denselben rid abbrechen
     const src = data?.source;
     const t = data?.t;
     if (src === 'roundtrip' && typeof t === 'number') {
@@ -245,53 +243,31 @@ export async function initPush() {
   console.log('[push] listeners installed');
 }
 
-export async function sendRoundtripTest({ offerId = 'TEST', title, body } = {}) {
-  const rid = String(Date.now());
-  try {
-    const res = await fetch(`${API_BASE}/push/roundtrip`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offerId,
-        title: title || 'StepsMatch',
-        body: body || 'Das ist ein Test-Push aus der App.',
-        channelId: 'offers',
-        projectId: RESOLVED_PROJECT_ID,
-      }),
-    });
-    const json = await res.json();
-    console.log('[push] roundtrip =>', res.status, JSON.stringify(json), 'rid=', rid);
-
-    scheduleRoundtripFallback(rid, {
-      title: 'StepsMatch (DEV Fallback)',
-      body: 'Falls Remote im FG nicht sichtbar ist.',
-      offerId,
-    });
-  } catch (e) {
-    console.log('[push] roundtrip error', String(e), 'rid=', rid);
-  }
-}
-
 // ───────────── BG-Location & Heartbeat ─────────────
 let lastHeartbeatAt = 0;
 
 async function sendHeartbeat({ latitude, longitude, accuracy }) {
+  if (!REGISTERED_READY) {
+    console.log('[HB] skipped (not registered yet)');
+    return;
+  }
   const now = Date.now();
   if (now - lastHeartbeatAt < HEARTBEAT_MIN_SECONDS * 1000) return;
   lastHeartbeatAt = now;
 
   try {
-    const token = await getExpoToken(); // 🔑 Token IMMER mitsenden!
+    const token = await getCurrentExpoToken();
     const deviceId = await getPersistentDeviceId();
+    console.log('[HB] using token =', token);
     const res = await fetch(`${API_BASE}/location/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token,                             // <— WICHTIG
-        deviceId,                          // <— jetzt immer dabei
+        token,
+        deviceId,
         lat: latitude,
         lng: longitude,
-        accuracy,                          // <— korrektes Feld (nicht "acc")
+        accuracy,
         platform: Platform.OS,
         projectId: RESOLVED_PROJECT_ID,
       }),
@@ -330,33 +306,12 @@ export async function kickstartBackgroundLocation() {
     }
 
     const loc = await Location.getLastKnownPositionAsync({});
-    const deviceId = await getPersistentDeviceId();
-    const token = await getExpoToken();
-
     if (loc?.coords) {
       await sendHeartbeat({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
         accuracy: loc.coords.accuracy,
       });
-
-      // Sicherstellen, dass Register + Location initial auch gesetzt sind
-      const res = await fetch(`${API_BASE}/push/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          platform: Platform.OS,
-          deviceId, // <— jetzt gesetzt
-          lastLocation: { type: 'Point', coordinates: [loc.coords.longitude, loc.coords.latitude] },
-          projectId: RESOLVED_PROJECT_ID,
-        }),
-      });
-      const json = await res.json();
-      console.log('[BGLOC] Kickstart register', res.status, JSON.stringify(json));
-    } else {
-      // auch ohne loc: deviceId registrieren
-      await registerTokenWithBackend({ expoToken: token, deviceId });
     }
   } catch (e) {
     console.log('[BGLOC] kickstart error', String(e));
@@ -394,12 +349,14 @@ export default function PushInitializer() {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    console.log('[BGLOC] BackgroundLocationManager: start in PushInitializer');
-    initPush();
-    kickstartBackgroundLocation();
+    (async () => {
+      console.log('[BGLOC] BackgroundLocationManager: start in PushInitializer');
+      // ⛓️ Sequenz: Erst push init & register, DANN BG-Location/Heartbeat
+      await initPush();
+      await kickstartBackgroundLocation();
+    })();
 
     const sub = AppState.addEventListener('change', async (next) => {
-      // Beim Resume → Channel sicherstellen & einen Heartbeat triggern
       if (appState.current.match(/inactive|background/) && next === 'active') {
         await ensureChannels();
         try {

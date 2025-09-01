@@ -9,6 +9,7 @@ const router = express.Router();
 // ────────── Konstants & Helpers ──────────
 const PLATFORMS = new Set(['android', 'ios', 'web']);
 const DEFAULT_CHANNEL = 'offers'; // 🔔 Für Android-Channel-Zuordnung
+
 const normPlatform = (p) => {
   const s = String(p || '').toLowerCase().trim();
   return PLATFORMS.has(s) ? s : 'android';
@@ -46,12 +47,9 @@ router.post('/register', async (req, res) => {
     console.log(
       '[push] register',
       token.slice(0, 22) + '…',
-      'platform=',
-      doc.platform,
-      'deviceId=',
-      doc.deviceId,
-      'projectId=',
-      projectId
+      'platform=', doc.platform,
+      'deviceId=', doc.deviceId,
+      'projectId=', projectId
     );
     res.json({
       success: true,
@@ -106,11 +104,27 @@ router.post('/roundtrip', async (req, res) => {
 });
 
 // POST /api/push/roundtrip-diagnose (send + receipts)
+// Neu: akzeptiert optional req.body.token und sendet IMMER damit, auch wenn dieser in der DB disabled ist.
 router.post('/roundtrip-diagnose', async (req, res) => {
   try {
-    const { offerId: rawOfferId, title: rawTitle, body: rawBody } = req.body || {};
-    const last = await PushToken.findOne({ disabled: { $ne: true } }).sort({ lastSeenAt: -1 }).lean();
-    if (!last?.token) return res.status(404).json({ success: false, error: 'no-token' });
+    const { token: explicitToken, offerId: rawOfferId, title: rawTitle, body: rawBody } = req.body || {};
+
+    let chosenToken = null;
+    let projectId = null;
+    let tokenSource = 'db-latest-enabled';
+
+    if (explicitToken && typeof explicitToken === 'string') {
+      chosenToken = explicitToken.trim();
+      tokenSource = 'explicit';
+      // Optional: projectId aus DB nachziehen, auch wenn disabled
+      const doc = await PushToken.findOne({ token: chosenToken }).lean();
+      if (doc?.projectId) projectId = doc.projectId;
+    } else {
+      const last = await PushToken.findOne({ disabled: { $ne: true } }).sort({ lastSeenAt: -1 }).lean();
+      if (!last?.token) return res.status(404).json({ success: false, error: 'no-token' });
+      chosenToken = last.token;
+      projectId = last.projectId || null;
+    }
 
     const offerId = rawOfferId || 'TEST_DIAG';
     const payload = { offerId, route: `/offers/${offerId}`, source: 'roundtrip', t: Date.now() };
@@ -119,12 +133,19 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 
     console.log(
       '[push] diagnose build',
-      JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload, channelId: DEFAULT_CHANNEL })
+      JSON.stringify({
+        to: chosenToken.slice(0, 22) + '…',
+        title,
+        body,
+        data: payload,
+        channelId: DEFAULT_CHANNEL,
+        tokenSource
+      })
     );
 
     // ➕ channelId mitschicken
     const diag = await sendPushAndCheckReceipts({
-      tokens: [last.token],
+      tokens: [chosenToken],
       title,
       body,
       data: payload,
@@ -132,11 +153,12 @@ router.post('/roundtrip-diagnose', async (req, res) => {
       sound: 'default',
       priority: 'high',
       delayMs: 3500,
+      // Hinweis: Grace-Periode (DeviceNotRegistered bei frischen Tokens) wird in utils/push.js behandelt.
     });
 
     console.log('[push] diagnose sent', JSON.stringify(diag.sent));
     console.log('[push] diagnose receipts summary', JSON.stringify(diag.receipts.summary));
-    res.json({ success: true, projectId: last.projectId || null, diag });
+    res.json({ success: true, projectId, diag, tokenSource });
   } catch (e) {
     console.error('[push] diagnose error', e);
     res.status(500).json({ success: false, error: 'server-error' });

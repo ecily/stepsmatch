@@ -439,6 +439,22 @@ export default function HomeTab() {
     return () => { try { sub?.remove?.(); } catch {} };
   }, [navigateFromNotifData]);
 
+  /* 🔁 Push-FG-Refresh: sofort neu laden, wenn "offer"-Push im Vordergrund eintrifft */
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((n) => {
+      try {
+        const data = n?.request?.content?.data || {};
+        if (data?.type === 'offer') {
+          // optional: kleines Dev-Toast
+          if (__DEV__) showDev('Neues Angebot – Liste aktualisieren …');
+          // Liste im FG sofort aktualisieren
+          fetchFnRef.current?.({ pageToLoad: 1, mode: 'push' });
+        }
+      } catch {}
+    });
+    return () => { try { sub?.remove?.(); } catch {} };
+  }, [showDev]);
+
   /* Cold-Start Navigation */
   useEffect(() => {
     let mounted = true;
