@@ -28,6 +28,13 @@ function isValidObjectId(v) {
   }
 }
 
+// Projekt-Scope (optional, empfohlen setzen)
+const PROJECT_ID =
+  process.env.EXPO_PROJECT_ID ||
+  process.env.EXPO_PROJECT ||
+  process.env.PROJECT_ID ||
+  null;
+
 /* ───────────────── Heartbeat ───────────────── */
 router.post('/heartbeat', async (req, res) => {
   try {
@@ -100,7 +107,7 @@ router.post('/heartbeat', async (req, res) => {
       lng.toFixed(5),
       accuracy !== undefined ? `±${Math.round(accuracy)}m` : '',
       deviceId ? `dev=${deviceId}` : '',
-      projectId ? `pid=${projectId}` : '',
+      (projectId || PROJECT_ID) ? `pid=${projectId || PROJECT_ID}` : '',
       source ? `src=${source}` : ''
     );
 
@@ -112,7 +119,7 @@ router.post('/heartbeat', async (req, res) => {
       accuracy: accuracy ?? null,
       speed: speed ?? null,
       t: now.getTime(),
-      projectId: projectId ?? doc?.projectId ?? null,
+      projectId: projectId ?? doc?.projectId ?? PROJECT_ID ?? null,
       deviceId: deviceId ?? doc?.deviceId ?? null,
     });
   } catch (e) {
@@ -122,57 +129,97 @@ router.post('/heartbeat', async (req, res) => {
 });
 
 /* ───────────────── Geofence-Enter → Sofort-Push ─────────────────
-   Body: { token, offerId, lat?, lng?, accuracy?, deviceId?, projectId? }
+   Body: { token?, deviceId?, offerId, lat?, lng?, accuracy?, projectId? }
+   Robust:
+   - akzeptiert token ODER deviceId (mind. eines erforderlich)
+   - upsertet Token-Dokument bei Location-Update
+   - sendet an den neuesten aktiven Token je deviceId/project (falls möglich)
+   - nutzt sendPushAndCheckReceipts (mit DeviceNotRegistered-Retry)
 */
 router.post('/geofence-enter', async (req, res) => {
   try {
     const b = req.body || {};
-    const token = String(b.token || '').trim();
-    const offerId = String(b.offerId || '').trim();
+    const rawToken = String(b.token || '').trim();
+    const hasToken = rawToken && rawToken.startsWith('ExponentPushToken[');
+    const deviceId = b.deviceId ? String(b.deviceId) : null;
+    const projectIdReq = b.projectId ? String(b.projectId) : null;
+    const projectFilter = projectIdReq || PROJECT_ID || null;
 
-    if (!token || !token.startsWith('ExponentPushToken[')) {
-      return res.status(400).json({ ok: 0, error: 'token_invalid_or_missing' });
-    }
+    const offerId = String(b.offerId || '').trim();
     if (!isValidObjectId(offerId)) {
       return res.status(400).json({ ok: 0, error: 'offerId_invalid' });
     }
-
-    // Optional: Location aktualisieren
-    let lat = toNum(b.lat);
-    let lng = toNum(b.lng);
-    if (isValidNumber(lat) && isValidNumber(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-      await PushToken.updateOne(
-        { token },
-        {
-          $set: {
-            lastLocation: { type: 'Point', coordinates: [lng, lat] },
-            lastHeartbeatAt: new Date(),
-            lastSeenAt: new Date(),
-            disabled: false,
-            ...(b.projectId ? { projectId: String(b.projectId) } : {}),
-            ...(b.deviceId ? { deviceId: String(b.deviceId) } : {}),
-          },
-        }
-      );
+    if (!hasToken && !deviceId) {
+      return res.status(400).json({ ok: 0, error: 'token_or_deviceId_required' });
     }
 
-    const [tokDoc, offer] = await Promise.all([
-      PushToken.findOne({ token, disabled: { $ne: true } }, { _id: 1, token: 1 }).lean(),
-      Offer.findById(offerId).lean(),
-    ]);
-    if (!tokDoc) return res.status(404).json({ ok: 0, error: 'token_not_found_or_disabled' });
-    if (!offer) return res.status(404).json({ ok: 0, error: 'offer_not_found' });
+    // Optional: Location aktualisieren (+ Token-Dokument anlegen, falls es noch keines gibt)
+    let lat = toNum(b.lat);
+    let lng = toNum(b.lng);
+    const haveCoords =
+      isValidNumber(lat) && isValidNumber(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
-    // Zeitscheibe prüfen
+    if (haveCoords && hasToken) {
+      const now = new Date();
+      const $set = {
+        lastLocation: { type: 'Point', coordinates: [lng, lat] },
+        lastHeartbeatAt: now,
+        lastSeenAt: now,
+        disabled: false,
+        ...(projectFilter ? { projectId: projectFilter } : {}),
+        ...(deviceId ? { deviceId } : {}),
+      };
+      const $setOnInsert = {
+        platform: b.platform ? String(b.platform).toLowerCase() : 'android',
+      };
+      await PushToken.findOneAndUpdate(
+        { token: rawToken },
+        { $set, $setOnInsert },
+        { upsert: true, new: true }
+      ).lean();
+    }
+
+    // Offer laden + Zeitfenster prüfen
+    const offer = await Offer.findById(offerId).lean();
+    if (!offer) return res.status(404).json({ ok: 0, error: 'offer_not_found' });
     if (!isOfferActiveNow(offer, 'Europe/Vienna', new Date())) {
       console.log('[geofence] offer not active now, skip push', offerId);
       return res.json({ ok: 1, pushed: 0, reason: 'offer_not_active' });
     }
 
+    // Ziel-Token bestimmen:
+    // 1) Bevorzugt: neuester aktiver Token per deviceId (+ project)
+    // 2) Fallback: angegebenes rawToken, sofern nicht disabled
+    let targetDoc = null;
+
+    if (deviceId) {
+      const q = { deviceId, disabled: { $ne: true } };
+      if (projectFilter) q.projectId = projectFilter;
+      targetDoc = await PushToken.findOne(q)
+        .sort({ lastSeenAt: -1, updatedAt: -1 })
+        .select('_id token deviceId projectId')
+        .lean();
+    }
+    if (!targetDoc && hasToken) {
+      targetDoc = await PushToken.findOne({ token: rawToken, disabled: { $ne: true } })
+        .select('_id token deviceId projectId')
+        .lean();
+    }
+
+    // Falls gar kein Dokument (z. B. brandneues Token noch nicht registriert):
+    // mit rohem Token versuchen (sendPushAndCheckReceipts kümmert sich um Disable/Retry)
+    const sendToken = targetDoc?.token || (hasToken ? rawToken : null);
+    if (!sendToken) {
+      return res.status(404).json({ ok: 0, error: 'no_deliverable_token' });
+    }
+
     // Sichtbarkeit / Duplikatschutz
-    const canPush = await OfferVisibility.shouldNotify(tokDoc._id, offer._id, new Date());
-    if (!canPush) {
-      return res.json({ ok: 1, pushed: 0, reason: 'visibility_blocked' });
+    // Wenn wir ein konkretes Token-Dokument haben, können wir granular prüfen
+    if (targetDoc?._id) {
+      const canPush = await OfferVisibility.shouldNotify(targetDoc._id, offer._id, new Date());
+      if (!canPush) {
+        return res.json({ ok: 1, pushed: 0, reason: 'visibility_blocked' });
+      }
     }
 
     const title = offer.name ?? 'Neues Angebot in deiner Nähe';
@@ -186,7 +233,7 @@ router.post('/geofence-enter', async (req, res) => {
     };
 
     const diag = await sendPushAndCheckReceipts({
-      tokens: [token],
+      tokens: [sendToken],
       title,
       body,
       data,
@@ -196,25 +243,42 @@ router.post('/geofence-enter', async (req, res) => {
       delayMs: 2500,
     });
 
-    const okTicket = Array.isArray(diag?.sent?.tickets)
-      ? diag.sent.tickets.find((t) => t?.status === 'ok')
-      : null;
-    const pushed = okTicket ? 1 : 0;
+    // Ermitteln, ob der initiale Send "ok" war
+    const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
+    const okFirst = tickets.find((t) => t?.status === 'ok') ? 1 : 0;
 
-    if (pushed) {
-      await OfferVisibility.markNotified(tokDoc._id, offer._id, new Date());
+    // OfferVisibility setzen:
+    // - Wenn initial ok: markiere für den (bekannten) Token
+    // - Wenn initial fail & Retry erfolgreich: markiere für den neuesten aktiven Token der deviceId
+    let pushed = okFirst;
+    if (okFirst && targetDoc?._id) {
+      await OfferVisibility.markNotified(targetDoc._id, offer._id, new Date());
+    } else if (!okFirst && (diag?.retry?.succeeded || 0) > 0) {
+      pushed = 1;
+      // jüngsten aktiven Token je deviceId holen (falls deviceId bekannt) & markieren
+      const dev = targetDoc?.deviceId || deviceId || null;
+      if (dev) {
+        const q = { deviceId: dev, disabled: { $ne: true } };
+        if (projectFilter) q.projectId = projectFilter;
+        const newest = await PushToken.findOne(q).sort({ lastSeenAt: -1, updatedAt: -1 }).select('_id token').lean();
+        if (newest?._id) {
+          await OfferVisibility.markNotified(newest._id, offer._id, new Date());
+        }
+      }
     }
 
+    const summary = diag?.receipts?.summary || {};
     console.log(
-      `[geofence] offer=${offer._id} token=${token.slice(0, 22)}… pushed=${pushed} receipts=${JSON.stringify(
-        diag?.receipts?.summary || {}
-      )}`
+      `[geofence] offer=${offer._id} token=${String(sendToken).slice(0, 22)}… pushed=${pushed} receipts=${JSON.stringify(
+        summary
+      )}${diag?.retry && diag.retry.count > 0 ? ` retry=${JSON.stringify(diag.retry)}` : ''}`
     );
 
     return res.json({
       ok: 1,
       pushed,
-      receipts: diag?.receipts?.summary || {},
+      receipts: summary,
+      retry: diag?.retry || { count: 0, succeeded: 0 },
     });
   } catch (e) {
     console.error('[geofence] error', e?.message || e);
