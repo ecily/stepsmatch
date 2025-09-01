@@ -12,7 +12,8 @@ const PushTokenSchema = new mongoose.Schema(
     lastHeartbeatAt: { type: Date },
     lastLocation: {
       type: { type: String, enum: ['Point'], default: 'Point' },
-      coordinates: { type: [Number], index: '2dsphere', default: undefined }, // [lng, lat]
+      // GeoJSON: [lng, lat]
+      coordinates: { type: [Number], default: undefined },
     },
     interests: { type: [String], default: [] },
     projectId: { type: String, default: null },
@@ -20,7 +21,11 @@ const PushTokenSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// 🔎 Indizes
 PushTokenSchema.index({ lastHeartbeatAt: -1 });
 PushTokenSchema.index({ updatedAt: -1 });
+
+// ✅ WICHTIG: 2dsphere-Index auf dem GeoJSON-Feld selbst (für $geoNear)
+PushTokenSchema.index({ lastLocation: '2dsphere' }, { name: 'lastLocation_2dsphere' });
 
 export default mongoose.model('PushToken', PushTokenSchema);
