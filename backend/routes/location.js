@@ -21,7 +21,11 @@ function toNum(v) {
   return NaN;
 }
 function isValidObjectId(v) {
-  try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
+  try {
+    return !!v && mongoose.Types.ObjectId.isValid(String(v));
+  } catch {
+    return false;
+  }
 }
 
 /* ───────────────── Heartbeat ───────────────── */
@@ -31,7 +35,7 @@ router.post('/heartbeat', async (req, res) => {
     const token = String(b.token || '').trim();
     const source = String(b.source || 'hb').trim();
 
-    if (!token.startsWith('ExponentPushToken[')) {
+    if (!token || !token.startsWith('ExponentPushToken[')) {
       return res.status(400).json({ ok: false, error: 'token_invalid_or_missing' });
     }
 
@@ -51,8 +55,10 @@ router.post('/heartbeat', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'coords_out_of_range' });
     }
 
-    const accuracy = isValidNumber(toNum(b.accuracy)) ? Number(toNum(b.accuracy)) : undefined;
-    const speed = isValidNumber(toNum(b.speed)) ? Number(toNum(b.speed)) : undefined;
+    const accuracyNum = toNum(b.accuracy);
+    const accuracy = isValidNumber(accuracyNum) ? Number(accuracyNum) : undefined;
+    const speedNum = toNum(b.speed);
+    const speed = isValidNumber(speedNum) ? Number(speedNum) : undefined;
     const ts = b.ts ? new Date(b.ts) : new Date();
     const lastLocationAt = isNaN(ts) ? new Date() : ts;
 
@@ -73,10 +79,12 @@ router.post('/heartbeat', async (req, res) => {
       lastLocationAt,
       ...(projectId ? { projectId } : {}),
       ...(deviceId ? { deviceId } : {}),
-      ...(platform ? { platform } : {}),
+      // ⚠️ platform NICHT hier setzen (Konflikt), nur on-insert:
     };
 
-    const $setOnInsert = { platform: platform || 'android' };
+    const $setOnInsert = {
+      platform: platform || 'android',
+    };
 
     const doc = await PushToken.findOneAndUpdate(
       { token },
@@ -115,24 +123,21 @@ router.post('/heartbeat', async (req, res) => {
 
 /* ───────────────── Geofence-Enter → Sofort-Push ─────────────────
    Body: { token, offerId, lat?, lng?, accuracy?, deviceId?, projectId? }
-   Wirkung:
-   - optional lastLocation updaten (wenn lat/lng da)
-   - OfferVisibility prüfen → wenn zulässig, sofort Push senden
-   - Receipts auswerten, ggf. Token deaktivieren
 */
 router.post('/geofence-enter', async (req, res) => {
   try {
     const b = req.body || {};
     const token = String(b.token || '').trim();
     const offerId = String(b.offerId || '').trim();
-    if (!token.startsWith('ExponentPushToken['])) {
+
+    if (!token || !token.startsWith('ExponentPushToken[')) {
       return res.status(400).json({ ok: 0, error: 'token_invalid_or_missing' });
     }
     if (!isValidObjectId(offerId)) {
       return res.status(400).json({ ok: 0, error: 'offerId_invalid' });
     }
 
-    // Optional: Location aktualisieren (hilft dem Poller/Logs)
+    // Optional: Location aktualisieren
     let lat = toNum(b.lat);
     let lng = toNum(b.lng);
     if (isValidNumber(lat) && isValidNumber(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
@@ -158,20 +163,18 @@ router.post('/geofence-enter', async (req, res) => {
     if (!tokDoc) return res.status(404).json({ ok: 0, error: 'token_not_found_or_disabled' });
     if (!offer) return res.status(404).json({ ok: 0, error: 'offer_not_found' });
 
-    // Zeitscheibe checken (optional streng)
+    // Zeitscheibe prüfen
     if (!isOfferActiveNow(offer, 'Europe/Vienna', new Date())) {
       console.log('[geofence] offer not active now, skip push', offerId);
-      // Wir antworten 200, aber ohne Push
       return res.json({ ok: 1, pushed: 0, reason: 'offer_not_active' });
     }
 
-    // Darf gepusht werden? (kein dismissed, nicht snoozed in Zukunft, nicht schon notified)
+    // Sichtbarkeit / Duplikatschutz
     const canPush = await OfferVisibility.shouldNotify(tokDoc._id, offer._id, new Date());
     if (!canPush) {
       return res.json({ ok: 1, pushed: 0, reason: 'visibility_blocked' });
     }
 
-    // Sofort pushen (identisch zu Poller/Diagnose-Setup)
     const title = offer.name ?? 'Neues Angebot in deiner Nähe';
     const body = 'Tippe, um Details zu sehen.';
     const data = {
