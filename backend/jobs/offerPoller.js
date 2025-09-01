@@ -2,9 +2,8 @@
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
-// ⬇️ Wechsel auf dieselbe robuste Utility wie Roundtrip/Diagnose:
-import { sendPushAndCheckReceipts } from '../utils/push.js'; // ✅ konsistent zur Diagnose-Route
-import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // ✅ TZ-sicherer Helper (Europe/Vienna)
+import { sendPushAndCheckReceipts } from '../utils/push.js'; // robust wie Diagnose
+import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // TZ-sicher
 
 /* ───────── Helpers ───────── */
 function envMs(name, def) {
@@ -38,9 +37,9 @@ const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 30 * 60_
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 const TZ = 'Europe/Vienna';
 
-// Push-Defaults (App-seitig existierende Channel/Category beachten)
+// Push-Defaults (müssen zur App passen)
 const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
-const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go';
+// const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go'; // optional für Actions
 const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
 const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
 
@@ -101,127 +100,139 @@ export function startOfferPoller() {
 
       // 3) Für jedes Offer → Tokens im Radius
       for (const offer of activeOffers) {
-        const coords = offer?.location?.coordinates;
-        const [lng, lat] = Array.isArray(coords) ? coords : [];
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        try {
+          const coords = offer?.location?.coordinates;
+          const [lng, lat] = Array.isArray(coords) ? coords : [];
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-        const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
-        if (!Number.isFinite(radiusM) || radiusM <= 0) continue;
+          const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
+          if (!Number.isFinite(radiusM) || radiusM <= 0) continue;
 
-        if (DEBUG)
-          console.log(
-            `[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM} @ [${lat.toFixed(
-              5
-            )},${lng.toFixed(5)}]`
-          );
+          if (DEBUG)
+            console.log(
+              `[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM} @ [${lat.toFixed(
+                5
+              )},${lng.toFixed(5)}]`
+            );
 
-        // Geo-Query gegen frische Tokens
-        const nearTokens = await PushToken.find({
-          _id: { $in: tokensFresh.map((t) => t._id) },
-          lastLocation: {
-            $near: {
-              $geometry: { type: 'Point', coordinates: [lng, lat] },
-              $maxDistance: radiusM,
-            },
-          },
-        })
-          .select('_id token platform interests lastLocation')
-          .lean();
-
-        // Interessen-Matching
-        const matched = nearTokens.filter((t) => interestsMatch(offer, t));
-
-        if (DEBUG) {
-          console.log(
-            `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${radiusM}`
-          );
-        }
-        if (!matched.length) continue;
-
-        // 4) Spam-Schutz via OfferVisibility
-        const vis = await OfferVisibility.find({
-          offerId: offer._id,
-          deviceToken: { $in: matched.map((t) => t._id) },
-          $or: [{ status: 'notified' }, { status: 'dismissed' }, { status: 'snoozed', remindAt: { $gt: now } }],
-        })
-          .select('deviceToken status remindAt')
-          .lean();
-
-        const already = new Set(vis.map((v) => String(v.deviceToken)));
-        const toNotifyDocs = matched.filter((t) => !already.has(String(t._id)));
-        if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
-        if (!toNotifyDocs.length) continue;
-
-        // 5) Push senden (robust via sendPushAndCheckReceipts – wie Diagnose)
-        const tokens = toNotifyDocs
-          .map((t) => t.token)
-          .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
-
-        if (!tokens.length) continue;
-
-        const payload = {
-          title: offer.name ?? 'Neues Angebot in deiner Nähe',
-          body: 'Tippe, um Details zu sehen.',
-          data: { type: 'offer', offerId: String(offer._id) },
-          channelId: PUSH_CHANNEL_ID,
-          priority: PUSH_PRIORITY,
-          sound: PUSH_SOUND,
-          // categoryId: PUSH_CATEGORY_ID, // optional; falls du im Client Actions nutzt
-        };
-
-        // ⬇️ WICHTIG: identisch zur Diagnose-Route, liefert Tickets + Receipts
-        const diag = await sendPushAndCheckReceipts({
-          tokens,
-          title: payload.title,
-          body: payload.body,
-          data: payload.data,
-          channelId: payload.channelId,
-          priority: payload.priority,
-          sound: payload.sound,
-          delayMs: 2500,
-        });
-
-        // Erfolgreich gesendete Tokens (wie in roundtrip)
-        const sentTokens = [];
-        const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
-        for (let i = 0; i < tickets.length; i++) {
-          const t = tickets[i];
-          if (t?.status === 'ok' && tokens[i]) {
-            sentTokens.push(tokens[i]);
-          }
-        }
-
-        // 6) OfferVisibility für erfolgreich gesendete Tokens auf notified setzen
-        if (sentTokens.length) {
-          const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
-          const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
-
-          const nowIso = new Date();
-          const bulk = [];
-          for (const tok of sentTokens) {
-            const deviceTokenId = byToken.get(tok);
-            if (!deviceTokenId) continue;
-            bulk.push({
-              updateOne: {
-                filter: { offerId: offer._id, deviceToken: deviceTokenId },
-                update: {
-                  $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
-                  $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
-                },
-                upsert: true,
+          // Geo-Query gegen frische Tokens
+          const nearTokens = await PushToken.find({
+            _id: { $in: tokensFresh.map((t) => t._id) },
+            lastLocation: {
+              $near: {
+                $geometry: { type: 'Point', coordinates: [lng, lat] },
+                $maxDistance: radiusM,
               },
-            });
-          }
-          if (bulk.length) await OfferVisibility.bulkWrite(bulk);
-        }
+            },
+          })
+            .select('_id token platform interests lastLocation')
+            .lean();
 
-        // 🔎 Kurzes, immer sichtbares Batch-Log (auch ohne DEBUG), inkl. receipts summary
-        const summary = diag?.receipts?.summary || {};
-        console.log(
-          `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
-          `disabled=${(diag?.disabledTokens || []).length} invalid=${(diag?.invalid || []).length} ` +
-          `receipts=${JSON.stringify(summary)}`
-        );
+          // Interessen-Matching
+          const matched = nearTokens.filter((t) => interestsMatch(offer, t));
+
+          if (DEBUG) {
+            console.log(
+              `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${radiusM}`
+            );
+          }
+          if (!matched.length) continue;
+
+          // 4) Spam-Schutz via OfferVisibility
+          const vis = await OfferVisibility.find({
+            offerId: offer._id,
+            deviceToken: { $in: matched.map((t) => t._id) },
+            $or: [{ status: 'notified' }, { status: 'dismissed' }, { status: 'snoozed', remindAt: { $gt: now } }],
+          })
+            .select('deviceToken status remindAt')
+            .lean();
+
+          const already = new Set(vis.map((v) => String(v.deviceToken)));
+          const toNotifyDocs = matched.filter((t) => !already.has(String(t._id)));
+          if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
+          if (!toNotifyDocs.length) continue;
+
+          // 5) Push senden (robust via sendPushAndCheckReceipts – wie Diagnose)
+          const tokens = toNotifyDocs
+            .map((t) => t.token)
+            .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
+
+          if (!tokens.length) continue;
+
+          const title = offer.name ?? 'Neues Angebot in deiner Nähe';
+          const body = 'Tippe, um Details zu sehen.';
+          const data = {
+            type: 'offer',
+            offerId: String(offer._id),
+            route: `/offers/${offer._id}`,  // hilft beim Client-Log/Deeplink
+            source: 'poller',
+          };
+
+          const diag = await sendPushAndCheckReceipts({
+            tokens,
+            title,
+            body,
+            data,
+            channelId: PUSH_CHANNEL_ID,
+            priority: PUSH_PRIORITY,
+            sound: PUSH_SOUND,
+            delayMs: 2500,
+          });
+
+          // Erfolgreich gesendete Tokens (Ticket-Position ~ Token-Position)
+          const sentTokens = [];
+          const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
+          for (let i = 0; i < tickets.length; i++) {
+            const t = tickets[i];
+            if (t?.status === 'ok' && tokens[i]) {
+              sentTokens.push(tokens[i]);
+            }
+          }
+
+          // 6) OfferVisibility für erfolgreich gesendete Tokens auf notified setzen
+          if (sentTokens.length) {
+            const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
+            const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
+
+            const nowIso = new Date();
+            const bulk = [];
+            for (const tok of sentTokens) {
+              const deviceTokenId = byToken.get(tok);
+              if (!deviceTokenId) continue;
+              bulk.push({
+                updateOne: {
+                  filter: { offerId: offer._id, deviceToken: deviceTokenId },
+                  update: {
+                    $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
+                    $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
+                  },
+                  upsert: true,
+                },
+              });
+            }
+            if (bulk.length) await OfferVisibility.bulkWrite(bulk);
+          }
+
+          // Optional: lokale Deaktivierung (zusätzlich zu utils/push.js Fail-Safe)
+          const disabledCount = Array.isArray(diag?.disabledTokens) ? diag.disabledTokens.length : 0;
+          if (disabledCount > 0) {
+            await PushToken.updateMany(
+              { token: { $in: diag.disabledTokens } },
+              { $set: { disabled: true } }
+            );
+          }
+
+          // 🔎 Kompaktes Batch-Log inkl. Receipts-Übersicht
+          const summary = diag?.receipts?.summary || {};
+          console.log(
+            `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
+            `disabled=${disabledCount} invalid=${(diag?.invalid || []).length} ` +
+            `receipts=${JSON.stringify(summary)}`
+          );
+        } catch (offerErr) {
+          console.error('[offerPoller][offer] error:', offerErr?.message || offerErr);
+          continue; // nächstes Offer
+        }
       }
 
       if (!DEBUG && process.env.NODE_ENV !== 'production') {

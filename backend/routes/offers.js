@@ -6,7 +6,11 @@ import Offer from '../models/Offer.js';
 import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
-import { sendPushToNearbyTokensForOffer } from '../utils/geoPush.js'; // ⬅️ NEU
+
+// ⬇️ NEU: wir nutzen die robuste Receipt-Utility (wie bei roundtrip/diagnose)
+import PushToken from '../models/PushToken.js';
+import OfferVisibility from '../models/OfferVisibility.js';
+import { sendPushAndCheckReceipts } from '../utils/push.js';
 
 const router = express.Router();
 
@@ -35,12 +39,12 @@ function parseProjection(fields) {
   return proj;
 }
 
-// Toleranter „jetzt gültig“-Check, abgestimmt auf deine Felder:
+// Toleranter „jetzt gültig“-Check
 // - validDates: { from: ISO, to: ISO } (optional)
-// - validDays:  [0..6] (0=So) oder ['Mon', 'Tue', ...] (optional)
+// - validDays:  [0..6] (0=So) ODER ['Sun','Mon',...]
 // - validTimes: { from: "HH:mm", to: "HH:mm" } (optional)
 function isActiveNow(o, now = new Date()) {
-  const local = now;
+  const local = now; // Server läuft i. d. R. in UTC; Logik hier ist tolerant
   const dayIdx = local.getDay(); // 0..6
   const mins = local.getHours() * 60 + local.getMinutes();
 
@@ -91,6 +95,132 @@ function isActiveNow(o, now = new Date()) {
 }
 
 /* ────────────────────────────────────────────────────────────
+   Push-Helper: sofort Tokens im Radius benachrichtigen
+   ──────────────────────────────────────────────────────────── */
+const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
+const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
+const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
+const LAST_LOCATION_MAX_AGE_MS = Number(process.env.PUSH_LAST_LOCATION_MAX_AGE_MS || 10 * 60_000);
+const MAX_DISTANCE_M_DEFAULT   = Number(process.env.PUSH_MAX_DISTANCE_M || 1500);
+
+// nutzt identisch die Receipt-Logik wie /api/push/roundtrip-diagnose
+async function notifyOfferNow(offer) {
+  try {
+    const coords = offer?.location?.coordinates;
+    const [lng, lat] = Array.isArray(coords) ? coords : [];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { ok: false, reason: 'no_coords' };
+    }
+
+    const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
+    if (!Number.isFinite(radiusM) || radiusM <= 0) {
+      return { ok: false, reason: 'bad_radius' };
+    }
+
+    const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
+    // frische Tokens mit Location
+    const tokensFresh = await PushToken.find({
+      disabled: { $ne: true },
+      'lastLocation.coordinates.0': { $exists: true },
+      $or: [
+        { lastHeartbeatAt: { $gte: freshSince } },
+        { lastSeenAt: { $gte: freshSince } },
+        { updatedAt: { $gte: freshSince } },
+      ],
+    }).select('_id token lastLocation').lean();
+
+    if (!tokensFresh.length) {
+      return { ok: false, reason: 'no_fresh_tokens' };
+    }
+
+    // Geo-Query: im Radius
+    const near = await PushToken.find({
+      _id: { $in: tokensFresh.map(t => t._id) },
+      lastLocation: {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [lng, lat] },
+          $maxDistance: radiusM,
+        },
+      },
+    }).select('_id token').lean();
+
+    if (!near.length) {
+      return { ok: false, reason: 'no_near_tokens' };
+    }
+
+    // Suppression: nicht doppelt nerven
+    const vis = await OfferVisibility.find({
+      offerId: offer._id,
+      deviceToken: { $in: near.map(t => t._id) },
+      $or: [
+        { status: 'notified' },
+        { status: 'dismissed' },
+        { status: 'snoozed', remindAt: { $gt: new Date() } }
+      ],
+    }).select('deviceToken').lean();
+
+    const already = new Set(vis.map(v => String(v.deviceToken)));
+    const toNotifyDocs = near.filter(t => !already.has(String(t._id)));
+
+    const tokens = toNotifyDocs.map(t => t.token).filter(Boolean);
+    if (!tokens.length) {
+      return { ok: false, reason: 'nothing_to_notify' };
+    }
+
+    const title = offer.name || 'Neues Angebot in deiner Nähe';
+    const body  = 'Tippe, um Details zu sehen.';
+
+    const diag = await sendPushAndCheckReceipts({
+      tokens,
+      title,
+      body,
+      data: { type: 'offer', offerId: String(offer._id) },
+      channelId: PUSH_CHANNEL_ID,
+      priority: PUSH_PRIORITY,
+      sound: PUSH_SOUND,
+      delayMs: 2500,
+    });
+
+    // sent-ok Tokens ermitteln
+    const sentTokens = [];
+    const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
+    for (let i = 0; i < tickets.length; i++) {
+      const t = tickets[i];
+      if (t?.status === 'ok' && tokens[i]) sentTokens.push(tokens[i]);
+    }
+
+    // OfferVisibility setzen
+    if (sentTokens.length) {
+      const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
+      const byToken = new Map(sentDocs.map(d => [d.token, d._id]));
+      const nowIso = new Date();
+      const bulk = sentTokens.map(tok => {
+        const deviceTokenId = byToken.get(tok);
+        if (!deviceTokenId) return null;
+        return {
+          updateOne: {
+            filter: { offerId: offer._id, deviceToken: deviceTokenId },
+            update: {
+              $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
+              $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
+            },
+            upsert: true,
+          }
+        };
+      }).filter(Boolean);
+      if (bulk.length) await OfferVisibility.bulkWrite(bulk);
+    }
+
+    const summary = diag?.receipts?.summary || {};
+    console.log(`[offerNotifyNow] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} receipts=${JSON.stringify(summary)}`);
+    return { ok: true, tried: tokens.length, sentOk: sentTokens.length, receipts: summary };
+  } catch (e) {
+    console.error('[offerNotifyNow] error', e?.message || e);
+    return { ok: false, error: e?.message || 'error' };
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
    TEST: bis zu 3 Angebote (mit Bildern)
    ──────────────────────────────────────────────────────────── */
 router.get('/test-offers', async (req, res) => {
@@ -108,27 +238,15 @@ router.get('/test-offers', async (req, res) => {
 
 /* ────────────────────────────────────────────────────────────
    Optimierte LISTE: GET /api/offers
-   Query:
-     - lat,lng (Float) -> optional $geoNear + distance
-     - maxDistanceM (Int, default 150)
-     - interests (CSV/Array) -> match auf subcategory (case-insens.)
-     - activeNow (1/0)
-     - withProvider (1/0)
-     - page (Int, default 1), limit (Int, default 20, max 100)
-     - fields (CSV) -> Projektion (schlank)
-   Response:
-     { page, limit, total, hasMore, tookMs, data: [...] }
    ──────────────────────────────────────────────────────────── */
 router.get('/', async (req, res) => {
   const t0 = performance.now();
 
-  // Hilfsbau: toleranter Interessen-Match (regex-basiert auf category/subcategory)
   function buildInterestsOrClause(interestsLC) {
     if (!Array.isArray(interestsLC) || interestsLC.length === 0) return null;
     const ors = [];
     for (const term of interestsLC) {
       if (!term) continue;
-      // Escape einfache Regex-Sonderzeichen
       const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       ors.push({ subcategory: { $regex: safe, $options: 'i' } });
       ors.push({ category:   { $regex: safe, $options: 'i' } });
@@ -136,7 +254,6 @@ router.get('/', async (req, res) => {
     return ors.length ? { $or: ors } : null;
   }
 
-  // Baut die Aggregation-Pipeline dynamisch
   function buildPipeline({ hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit }) {
     const pipeline = [];
 
@@ -149,16 +266,13 @@ router.get('/', async (req, res) => {
         }
       };
       if (Number.isFinite(maxDistanceM) && maxDistanceM > 0) {
-        // harte Distanz nur, wenn gewünscht
         geo.$geoNear.maxDistance = maxDistanceM;
       }
       pipeline.push(geo);
     }
 
     const interestsClause = buildInterestsOrClause(interestsLC);
-    if (interestsClause) {
-      pipeline.push({ $match: interestsClause });
-    }
+    if (interestsClause) pipeline.push({ $match: interestsClause });
 
     if (projection) {
       pipeline.push({ $project: projection });
@@ -186,12 +300,11 @@ router.get('/', async (req, res) => {
     const lng = toFloat(req.query.lng, null);
     const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
 
-    const maxDistanceM = toInt(req.query.maxDistanceM, 1500); // etwas großzügiger default
+    const maxDistanceM = toInt(req.query.maxDistanceM, 1500);
     const page = Math.max(1, toInt(req.query.page, 1));
     const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
     const skip = (page - 1) * limit;
 
-    // Interessen (CSV/Array) zu LC
     const interestsRaw = toArray(req.query.interests);
     const interestsLC = interestsRaw.map(s => String(s).toLowerCase()).filter(Boolean);
 
@@ -201,7 +314,6 @@ router.get('/', async (req, res) => {
     const projection = parseProjection(req.query.fields);
     const providerSelect = 'name address category description contact location user';
 
-    // 1) erste Pipeline (respektiert maxDistanceM)
     let pipeline = buildPipeline({
       hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit
     });
@@ -211,7 +323,6 @@ router.get('/', async (req, res) => {
     let docs = facet.docs || [];
     let total = (facet.totalDocs[0]?.count) || 0;
 
-    // 2) Fallback: keine Treffer? Dann ohne maxDistance neu versuchen (nur wenn Geo vorhanden)
     if (hasGeo && total === 0) {
       const pipelineNoMax = buildPipeline({
         hasGeo, lat, lng, maxDistanceM: null, interestsLC, projection, skip, limit
@@ -222,7 +333,6 @@ router.get('/', async (req, res) => {
       total = (facet.totalDocs[0]?.count) || 0;
     }
 
-    // Optional Provider
     if (withProvider && docs.length) {
       const ids = docs.map(d => d._id);
       const populated = await Offer.find({ _id: { $in: ids } }, projection || {})
@@ -232,13 +342,8 @@ router.get('/', async (req, res) => {
       docs = docs.map(d => byId.get(String(d._id)) || d);
     }
 
-    // activeNow-Filter (tolerant); Hinweis: falls projection gültige Felder entfernt,
-    // ist das ok -> fehlende Felder bedeuten "true" in isActiveNow
     if (activeNow) {
       docs = docs.filter(o => isActiveNow(o));
-      // Achtung: total/hasMore beziehen sich auf pre-filter; für Klarheit neu berechnen:
-      // (Wir zählen hier nur die aktuelle Seite; für echte Total-Genauigkeit bräuchte man ein 2. Facet.)
-      // Für UX reicht i.d.R. dieses Verhalten, da Pagination sowieso vom Server gesteuert wird.
     }
 
     const tookMs = Math.round(performance.now() - t0);
@@ -256,9 +361,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-
 /* ────────────────────────────────────────────────────────────
-   GEO-Abfrage mit Interessen via $geoNear (bestehend)
+   GEO-Abfragen (bestehend)
    ──────────────────────────────────────────────────────────── */
 router.post('/nearby', async (req, res) => {
   try {
@@ -266,8 +370,8 @@ router.post('/nearby', async (req, res) => {
       lat,
       lng,
       interests,
-      maxDistance = 5000, // Meter (anpassbar)
-      limit = 30          // Anzahl Ergebnisse (anpassbar)
+      maxDistance = 5000,
+      limit = 30
     } = req.body;
 
     const latitude = Number(lat);
@@ -316,15 +420,12 @@ router.post('/nearby', async (req, res) => {
   }
 });
 
-/* ────────────────────────────────────────────────────────────
-   Öffentliche Nearby-Route ohne Interessen (bestehend)
-   ──────────────────────────────────────────────────────────── */
 router.post('/nearby-noauth', async (req, res) => {
   try {
     const {
       lat,
       lng,
-      maxDistance = 5000, // Meter
+      maxDistance = 5000,
       limit = 30
     } = req.body;
 
@@ -369,8 +470,7 @@ router.post('/nearby-noauth', async (req, res) => {
 });
 
 /**
- * Leichtgewichtige Nearby-Route für Geofencing (bestehend)
- * GET /offers/nearby-geofence?lat=..&lng=..&limit=50&maxDistance=5000
+ * Nearby-Geofence (GET)
  */
 router.get('/nearby-geofence', async (req, res) => {
   try {
@@ -455,7 +555,7 @@ router.get('/nearby-geofence', async (req, res) => {
 });
 
 /* ────────────────────────────────────────────────────────────
-   CRUD & Counter (bestehend)
+   CRUD & Counter
    ──────────────────────────────────────────────────────────── */
 router.post('/', async (req, res) => {
   try {
@@ -465,19 +565,33 @@ router.post('/', async (req, res) => {
     // ⬇️ NEU: Sofort-Push an Tokens im Radius, wenn Offer aktuell aktiv ist
     try {
       if (isActiveNow(saved) && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
-        setImmediate(() => {
-          sendPushToNearbyTokensForOffer(saved).catch(err =>
-            console.error('[offers.create] geoPush error:', err)
-          );
-        });
+        // bewusst MIT await, damit wir ein Ergebnis ins API-Response packen können (hilft dir beim Debuggen)
+        const notify = await notifyOfferNow(saved);
+        console.log('[offers.create] notify summary:', notify);
+        return res.status(201).json({ ok: true, offer: saved, notify });
       }
     } catch (e) {
       console.warn('[offers.create] geoPush skipped:', e?.message || e);
     }
 
-    res.status(201).json(saved);
+    // Fallback: Offer ohne Notifikation (z. B. kein Radius/keine Koordinaten)
+    return res.status(201).json({ ok: true, offer: saved, notify: { ok: false, reason: 'not_active_or_no_geo' } });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('[offers.create] error:', err?.message || err);
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// Manueller Trigger für bestehende Offers
+router.post('/:id/notify-now', async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.id).lean();
+    if (!offer) return res.status(404).json({ ok: false, error: 'offer_not_found' });
+    const notify = await notifyOfferNow(offer);
+    return res.json({ ok: true, notify });
+  } catch (e) {
+    console.error('[offers:notify-now] error', e?.message || e);
+    return res.status(500).json({ ok: false, error: 'notify_failed' });
   }
 });
 
@@ -524,20 +638,18 @@ router.put('/:id', async (req, res) => {
     // ⬇️ NEU: Bei Updates ebenfalls Push triggern, wenn Offer aktuell aktiv ist
     try {
       if (isActiveNow(updatedOffer) && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
-        setImmediate(() => {
-          sendPushToNearbyTokensForOffer(updatedOffer).catch(err =>
-            console.error('[offers.update] geoPush error:', err)
-          );
-        });
+        const notify = await notifyOfferNow(updatedOffer);
+        console.log('[offers.update] notify summary:', notify);
+        return res.json({ ok: true, offer: updatedOffer, notify });
       }
     } catch (e) {
       console.warn('[offers.update] geoPush skipped:', e?.message || e);
     }
 
-    res.json(updatedOffer);
+    res.json({ ok: true, offer: updatedOffer, notify: { ok: false, reason: 'not_active_or_no_geo' } });
   } catch (error) {
     console.error('Fehler beim Aktualisieren des Angebots:', error);
-    res.status(400).json({ error: 'Fehler beim Aktualisieren des Angebots' });
+    res.status(400).json({ ok: false, error: 'Fehler beim Aktualisieren des Angebots' });
   }
 });
 

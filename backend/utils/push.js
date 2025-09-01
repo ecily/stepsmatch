@@ -4,15 +4,25 @@ import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
 
 const accessToken = process.env.EXPO_ACCESS_TOKEN || null;
-// Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests definitiv deinem Expo-Projekt zugeordnet sind.
+console.log('[push] EXPO_ACCESS_TOKEN present =', Boolean(accessToken)); // Health-Log
+
+// Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests deinem Expo-Projekt sicher zugeordnet sind.
 const expo = accessToken ? new Expo({ accessToken }) : new Expo();
 
 /**
  * Sendet Push an das Expo-Gateway (mit Chunking).
- * channelId="offers", sound="default", priority="high".
+ * Default: channelId="offers", sound="default", priority="high".
  * Gibt Tickets + Mapping id->token zurück.
  */
-export async function sendPush({ tokens, title, body, data = {} }) {
+export async function sendPush({
+  tokens,
+  title,
+  body,
+  data = {},
+  channelId = 'offers',
+  sound = 'default',
+  priority = 'high',
+}) {
   const valid = (tokens || []).filter((t) => Expo.isExpoPushToken(t));
   if (!valid.length) {
     return { sent: 0, tickets: [], errors: ['no-valid-tokens'], okCount: 0, ticketIds: [], idToToken: {} };
@@ -23,20 +33,20 @@ export async function sendPush({ tokens, title, body, data = {} }) {
     title,
     body,
     data,
-    channelId: 'offers',
-    sound: 'default',
-    priority: 'high',
+    channelId,
+    sound,
+    priority,
   }));
 
   const chunks = expo.chunkPushNotifications(messages);
   const tickets = [];
   const errors = [];
-  const idToToken = {}; // wird nach dem Senden gefüllt
+  const idToToken = {};
 
   for (const chunk of chunks) {
     try {
       const res = await expo.sendPushNotificationsAsync(chunk);
-      // Mappe Ticket IDs auf Tokens aus dem jeweiligen Chunk (gleiche Reihenfolge)
+      // Map Ticket IDs -> Tokens (gleiche Reihenfolge)
       res.forEach((t, i) => {
         const token = chunk[i]?.to;
         if (t?.id && token) idToToken[t.id] = token;
@@ -52,7 +62,7 @@ export async function sendPush({ tokens, title, body, data = {} }) {
   return { sent: messages.length, tickets, errors, okCount, ticketIds, idToToken };
 }
 
-/** Receipts abholen */
+/** Receipts abholen (+ kompakte Summary) */
 export async function checkReceipts(ticketIds = []) {
   const chunks = expo.chunkPushNotificationReceiptIds(ticketIds);
   const receipts = [];
@@ -69,7 +79,8 @@ export async function checkReceipts(ticketIds = []) {
 
   // flatten
   const flat = receipts.reduce((acc, obj) => Object.assign(acc, obj), {});
-  const summary = { ok: 0, errors: {} };
+  const summary = { ok: 0, errors: {} }; // errors gruppiert nach Code
+
   for (const id of Object.keys(flat)) {
     const r = flat[id];
     if (!r) continue;
@@ -85,13 +96,25 @@ export async function checkReceipts(ticketIds = []) {
 
 /**
  * Komfort: sendet und deaktiviert Tokens mit DeviceNotRegistered.
+ * Alle Optionen werden durchgereicht (channelId/sound/priority).
  */
-export async function sendPushAndCheckReceipts({ tokens, title, body, data = {}, delayMs = 3500 }) {
-  const sent = await sendPush({ tokens, title, body, data });
+export async function sendPushAndCheckReceipts({
+  tokens,
+  title,
+  body,
+  data = {},
+  channelId = 'offers',
+  sound = 'default',
+  priority = 'high',
+  delayMs = 3500,
+}) {
+  const sent = await sendPush({ tokens, title, body, data, channelId, sound, priority });
 
   let receipts = { receipts: {}, errors: [], summary: { ok: 0, errors: {} } };
   if (sent.ticketIds?.length) {
-    await new Promise((r) => setTimeout(r, delayMs));
+    if (delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
     receipts = await checkReceipts(sent.ticketIds);
 
     // 👉 Token-Hygiene: DeviceNotRegistered → disabled=true
