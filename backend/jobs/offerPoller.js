@@ -29,10 +29,18 @@ function interestsMatch(offer, token) {
   return req.some((r) => have.has(r));
 }
 
+// Haversine (Meter)
+function distanceMeters(lng1, lat1, lng2, lat2) {
+  function toRad(d) { return (d * Math.PI) / 180; }
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
-/* ───────── !!!!!! ───────── */
-/* ───────── ecily ───────── */
-/* ───────── !!!!!! ───────── */
 /* ───────── Konfig ───────── */
 // ⏱️ Polling alle 60s (via ENV überschreibbar)
 const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
@@ -40,15 +48,21 @@ const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 // Wie weit zurück neue/aktualisierte Offers berücksichtigt werden
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 
-// 🛰️ Freshness-Fenster für Standort radikal kürzer (Default 3 Minuten)
+// 🛰️ Freshness-Fenster für Standort (Default 2 Minuten)
 const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 2 * 60_000);
 
 // Fallback-Radius, falls Offer keinen Radius hat
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 
-// ➕ Accuracy-Puffer: weitet den Geofence in der Query leicht aus
-// (Worst-Case-Puffer; realer Wert pro Token kann optional später berücksichtigt werden)
+// ➕ Globaler Accuracy-Puffer (für Geo-Query)
 const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 15); // Meter
+
+// 🔧 Pro-Token-Accuracy-Cap für die Nachfilterung (Haversine)
+const ACCURACY_TOKEN_CAP = Number(process.env.PUSH_ACCURACY_TOKEN_CAP ?? 60); // Meter
+
+// Für die Vorselektion wählen wir die größere der beiden Puffer,
+// damit genug Kandidaten in die Nachfilterung fallen.
+const SEARCH_BUFFER = Math.max(ACCURACY_BUFFER_MAX, ACCURACY_TOKEN_CAP);
 
 const TZ = 'Europe/Vienna';
 
@@ -74,7 +88,8 @@ export function startOfferPoller() {
 
   if (DEBUG) {
     console.log(
-      `[offerPoller][debug] cfg interval=${INTERVAL_MS}ms freshness=${LAST_LOCATION_MAX_AGE_MS}ms accuracyBuf=${ACCURACY_BUFFER_MAX}m`
+      `[offerPoller][debug] cfg interval=${INTERVAL_MS}ms freshness=${LAST_LOCATION_MAX_AGE_MS}ms ` +
+      `accuracyBuf=${ACCURACY_BUFFER_MAX}m tokenCap=${ACCURACY_TOKEN_CAP}m`
     );
   } else {
     console.log(`[offerPoller] started — every ${INTERVAL_MS}ms`);
@@ -125,7 +140,7 @@ export function startOfferPoller() {
         return;
       }
 
-      // 3) Für jedes Offer → Tokens im Radius (+Accuracy-Puffer)
+      // 3) Für jedes Offer → Tokens im Radius (+Puffer)
       for (const offer of activeOffers) {
         try {
           const coords = offer?.location?.coordinates;
@@ -135,23 +150,25 @@ export function startOfferPoller() {
           const baseRadiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
           if (!Number.isFinite(baseRadiusM) || baseRadiusM <= 0) continue;
 
-          // Puffer anwenden
-          const effRadiusM = Math.max(1, baseRadiusM + ACCURACY_BUFFER_MAX);
+          // Suchradius für $near (großzügig, damit die Nachfilterung Kandidaten bekommt)
+          const searchRadiusM = Math.max(1, baseRadiusM + SEARCH_BUFFER);
+          // Reiner globaler Eff-Radius (nur Info)
+          const effRadiusGlobal = Math.max(1, baseRadiusM + ACCURACY_BUFFER_MAX);
 
-          if (DEBUG)
+          if (DEBUG) {
             console.log(
-              `[offerPoller][debug] offer=${offer._id} using radiusM=${baseRadiusM} eff=${effRadiusM} @ [${lat.toFixed(
-                5
-              )},${lng.toFixed(5)}]`
+              `[offerPoller][debug] offer=${offer._id} using base=${baseRadiusM}m ` +
+              `search=${searchRadiusM}m effGlobal=${effRadiusGlobal}m @ [lng,lat]=[${lng.toFixed(5)},${lat.toFixed(5)}]`
             );
+          }
 
-          // Geo-Query gegen frische Tokens (mit Puffer-Radius)
+          // Geo-Query gegen frische Tokens (großzügiger searchRadius)
           const nearQuery = {
             _id: { $in: tokensFresh.map((t) => t._id) },
             lastLocation: {
               $near: {
                 $geometry: { type: 'Point', coordinates: [lng, lat] },
-                $maxDistance: effRadiusM,
+                $maxDistance: searchRadiusM,
               },
             },
           };
@@ -160,23 +177,26 @@ export function startOfferPoller() {
             .select('_id token platform interests lastLocation projectId deviceId lastAccuracy')
             .lean();
 
-          // Interessen-Matching
+          // Interessen-Matching (vorweg)
           let matched = nearTokens.filter((t) => interestsMatch(offer, t));
 
-          // Optionales Feinfilter: wenn lastAccuracy vorhanden, echte effRadius pro Token bilden
+          // Feinfilter: echte Distanz + token-spezifischer Eff-Radius
           if (matched.length) {
             matched = matched.filter((t) => {
               const acc = Number(t?.lastAccuracy);
-              if (!Number.isFinite(acc) || acc <= 0) return true; // kein Wert → bereits durch Puffer abgedeckt
-              // Wenn Accuracy größer als globaler Puffer ist, erlauben wir noch bis zu diesem Wert
-              // (Soft-Cap über ACCURACY_BUFFER_MAX hinaus vermeiden wir hier bewusst)
-              return true;
+              const capAcc = Number.isFinite(acc) && acc > 0 ? Math.min(acc, ACCURACY_TOKEN_CAP) : 0;
+              const effForToken = baseRadiusM + capAcc; // per Token erweiterter Radius
+              const [tlng, tlat] = (t?.lastLocation?.coordinates || []);
+              if (!Number.isFinite(tlng) || !Number.isFinite(tlat)) return false;
+              const dist = distanceMeters(lng, lat, tlng, tlat);
+              return dist <= effForToken;
             });
           }
 
           if (DEBUG) {
             console.log(
-              `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${baseRadiusM} eff=${effRadiusM}`
+              `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} ` +
+              `radius=${baseRadiusM} effGlobal=${effRadiusGlobal}`
             );
           }
           if (!matched.length) continue;

@@ -51,8 +51,6 @@ function scheduleRoundtripFallback(rid, { title, body, offerId }) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Persistent Device ID
-// ────────────────────────────────────────────────────────────
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
 const DEVICE_ID_ASYNC_KEY  = 'deviceId.v1.mirror';
 
@@ -192,7 +190,15 @@ async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
     });
     const json = await res.json();
     console.log('[push] register =>', res.status, JSON.stringify(json));
-    if (res.ok) REGISTERED_READY = true; // 🔓 erst jetzt dürfen Heartbeats raus
+    if (res.ok) {
+      REGISTERED_READY = true; // 🔓 erst jetzt dürfen Heartbeats raus
+      try {
+        // ▶️ BG-Location jetzt (einmalig) NACH erfolgreichem Register starten
+        await kickstartBackgroundLocation();
+      } catch (e) {
+        console.warn('[BGLOC] auto-start after register failed', String(e));
+      }
+    }
   } catch (e) {
     console.warn('[push] register error', String(e));
   }
@@ -288,9 +294,9 @@ export async function kickstartBackgroundLocation() {
     const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     if (!started) {
       await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: TIME_INTERVAL_MS,
-        distanceInterval: 0,
+        accuracy: Location.Accuracy.High,     // ⬅️ High wie gewünscht
+        timeInterval: TIME_INTERVAL_MS,       // ~60 s
+        distanceInterval: 10,                 // ⬅️ 10 m wie gewünscht
         foregroundService: {
           notificationTitle: 'StepsMatch',
           notificationBody: 'Hintergrund-Ortungsdienst aktiv',
@@ -351,9 +357,10 @@ export default function PushInitializer() {
   useEffect(() => {
     (async () => {
       console.log('[BGLOC] BackgroundLocationManager: start in PushInitializer');
-      // ⛓️ Sequenz: Erst push init & register, DANN BG-Location/Heartbeat
+      // ⛓️ Sequenz: Erst push init & register; BG-Location wird
+      // automatisch im register-Callback gestartet (wenn ok).
       await initPush();
-      await kickstartBackgroundLocation();
+      // (früherer Direktruf von kickstartBackgroundLocation() hier wurde entfernt)
     })();
 
     const sub = AppState.addEventListener('change', async (next) => {
