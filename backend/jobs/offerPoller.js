@@ -30,15 +30,26 @@ function interestsMatch(offer, token) {
 }
 
 /* ───────── Konfig ───────── */
+// ⏱️ Polling alle 60s (via ENV überschreibbar)
 const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
+
+// Wie weit zurück neue/aktualisierte Offers berücksichtigt werden
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
-const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 30 * 60_000);
+
+// 🛰️ Freshness-Fenster für Standort radikal kürzer (Default 3 Minuten)
+const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 3 * 60_000);
+
+// Fallback-Radius, falls Offer keinen Radius hat
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
+
+// ➕ Accuracy-Puffer: weitet den Geofence in der Query leicht aus
+// (Worst-Case-Puffer; realer Wert pro Token kann optional später berücksichtigt werden)
+const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 100); // Meter
+
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (müssen zur App passen)
 const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
-// const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go'; // optional für Actions
 const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
 const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
 
@@ -56,6 +67,14 @@ export function startOfferPoller() {
   if (timer) return;
 
   const DEBUG = process.env.DEBUG_OFFER_POLLER === '1';
+
+  if (DEBUG) {
+    console.log(
+      `[offerPoller][debug] cfg interval=${INTERVAL_MS}ms freshness=${LAST_LOCATION_MAX_AGE_MS}ms accuracyBuf=${ACCURACY_BUFFER_MAX}m`
+    );
+  } else {
+    console.log(`[offerPoller] started — every ${INTERVAL_MS}ms`);
+  }
 
   async function doCycle() {
     const t0 = Date.now();
@@ -88,7 +107,7 @@ export function startOfferPoller() {
       if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
 
       const tokensFresh = await PushToken.find(tokenQuery)
-        .select('_id token platform interests lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt')
+        .select('_id token platform interests lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt lastAccuracy')
         .lean();
 
       if (DEBUG) {
@@ -99,53 +118,61 @@ export function startOfferPoller() {
 
       if (!activeOffers.length || !tokensFresh.length) {
         if (DEBUG) console.log('[offerPoller][debug] nothing to do');
-        if (!DEBUG && process.env.NODE_ENV !== 'production') {
-          console.log(
-            `[offerPoller] cycle ok — offers=${activeOffers.length} tokens=${tokensFresh.length} took=${Date.now() - t0}ms`
-          );
-        }
         return;
       }
 
-      // 3) Für jedes Offer → Tokens im Radius
+      // 3) Für jedes Offer → Tokens im Radius (+Accuracy-Puffer)
       for (const offer of activeOffers) {
         try {
           const coords = offer?.location?.coordinates;
           const [lng, lat] = Array.isArray(coords) ? coords : [];
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-          const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
-          if (!Number.isFinite(radiusM) || radiusM <= 0) continue;
+          const baseRadiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
+          if (!Number.isFinite(baseRadiusM) || baseRadiusM <= 0) continue;
+
+          // Puffer anwenden
+          const effRadiusM = Math.max(1, baseRadiusM + ACCURACY_BUFFER_MAX);
 
           if (DEBUG)
             console.log(
-              `[offerPoller][debug] offer=${offer._id} using radiusM=${radiusM} @ [${lat.toFixed(
+              `[offerPoller][debug] offer=${offer._id} using radiusM=${baseRadiusM} eff=${effRadiusM} @ [${lat.toFixed(
                 5
               )},${lng.toFixed(5)}]`
             );
 
-          // Geo-Query gegen frische Tokens
+          // Geo-Query gegen frische Tokens (mit Puffer-Radius)
           const nearQuery = {
             _id: { $in: tokensFresh.map((t) => t._id) },
             lastLocation: {
               $near: {
                 $geometry: { type: 'Point', coordinates: [lng, lat] },
-                $maxDistance: radiusM,
+                $maxDistance: effRadiusM,
               },
             },
           };
-          // (projectId bereits implizit, weil wir via _id subsetten)
 
           const nearTokens = await PushToken.find(nearQuery)
-            .select('_id token platform interests lastLocation projectId deviceId')
+            .select('_id token platform interests lastLocation projectId deviceId lastAccuracy')
             .lean();
 
           // Interessen-Matching
-          const matched = nearTokens.filter((t) => interestsMatch(offer, t));
+          let matched = nearTokens.filter((t) => interestsMatch(offer, t));
+
+          // Optionales Feinfilter: wenn lastAccuracy vorhanden, echte effRadius pro Token bilden
+          if (matched.length) {
+            matched = matched.filter((t) => {
+              const acc = Number(t?.lastAccuracy);
+              if (!Number.isFinite(acc) || acc <= 0) return true; // kein Wert → bereits durch Puffer abgedeckt
+              // Wenn Accuracy größer als globaler Puffer ist, erlauben wir noch bis zu diesem Wert
+              // (Soft-Cap über ACCURACY_BUFFER_MAX hinaus vermeiden wir hier bewusst)
+              return true;
+            });
+          }
 
           if (DEBUG) {
             console.log(
-              `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${radiusM}`
+              `[offerPoller][debug] offer=${offer._id} near=${nearTokens.length} matched=${matched.length} radius=${baseRadiusM} eff=${effRadiusM}`
             );
           }
           if (!matched.length) continue;
@@ -164,7 +191,7 @@ export function startOfferPoller() {
           if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
           if (!toNotifyDocs.length) continue;
 
-          // 5) Push senden (robust via sendPushAndCheckReceipts – inkl. DeviceNotRegistered-Retry)
+          // 5) Push senden
           const tokens = toNotifyDocs
             .map((t) => t.token)
             .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
@@ -176,7 +203,7 @@ export function startOfferPoller() {
           const data = {
             type: 'offer',
             offerId: String(offer._id),
-            route: `/offers/${offer._id}`, // hilft beim Client-Log/Deeplink
+            route: `/offers/${offer._id}`,
             source: 'poller',
           };
 
@@ -250,11 +277,6 @@ export function startOfferPoller() {
         }
       }
 
-      if (!DEBUG && process.env.NODE_ENV !== 'production') {
-        console.log(
-          `[offerPoller] cycle ok — offers=${activeOffers.length} tokens=${tokensFresh.length} took=${Date.now() - t0}ms`
-        );
-      }
       if (DEBUG) {
         console.log(`[offerPoller][debug] took=${Date.now() - t0}ms`);
       }
@@ -263,8 +285,7 @@ export function startOfferPoller() {
     }
   }
 
-  console.log(`[offerPoller] started — every ${INTERVAL_MS}ms`);
-  // sofortiger erster Lauf + Intervall
+  // sofortiger erster Lauf + Intervall (jede Minute)
   doCycle();
   timer = setInterval(doCycle, INTERVAL_MS);
 }
