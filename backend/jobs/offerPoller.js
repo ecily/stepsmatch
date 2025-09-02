@@ -29,6 +29,10 @@ function interestsMatch(offer, token) {
   return req.some((r) => have.has(r));
 }
 
+
+/* ───────── !!!!!! ───────── */
+/* ───────── ecily ───────── */
+/* ───────── !!!!!! ───────── */
 /* ───────── Konfig ───────── */
 // ⏱️ Polling alle 60s (via ENV überschreibbar)
 const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
@@ -37,14 +41,14 @@ const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 
 // 🛰️ Freshness-Fenster für Standort radikal kürzer (Default 3 Minuten)
-const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 3 * 60_000);
+const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 2 * 60_000);
 
 // Fallback-Radius, falls Offer keinen Radius hat
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
 
 // ➕ Accuracy-Puffer: weitet den Geofence in der Query leicht aus
 // (Worst-Case-Puffer; realer Wert pro Token kann optional später berücksichtigt werden)
-const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 100); // Meter
+const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 15); // Meter
 
 const TZ = 'Europe/Vienna';
 
