@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
@@ -80,36 +81,148 @@ const PROJECT_ID =
 
 let timer = null;
 
+/* ───────── Leader-Lock & Dedup-Lock (Mongo) ───────── */
+// Collection-Namen
+const LEADER_COLL = 'offer_poller_leader';
+const PUSHLOCKS_COLL = 'offer_poller_pushlocks';
+
+// Lease-Zeit für Leader (etwas > Intervall)
+const LEASE_MS = Math.max(INTERVAL_MS * 3, 45_000);
+
+// Id der Instanz
+const INSTANCE_ID = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+
+// einmalige Index-Initialisierung
+let indexesReady = false;
+async function ensureIndexes() {
+  if (indexesReady) return;
+  const db = mongoose.connection.db;
+
+  // Leader: unique-Key + TTL auf expiresAt
+  const leader = db.collection(LEADER_COLL);
+  await leader.createIndex({ key: 1 }, { unique: true, name: 'leader_key_unique' });
+  await leader.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'leader_expire_ttl' });
+
+  // PushLocks: eindeutige Kombination (offerId, deviceTokenId) + TTL
+  const locks = db.collection(PUSHLOCKS_COLL);
+  await locks.createIndex({ offerId: 1, deviceTokenId: 1 }, { unique: true, name: 'pushlock_offer_token_unique' });
+  await locks.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'pushlock_expire_ttl' });
+
+  indexesReady = true;
+}
+
+// versucht Leader-Lock zu erlangen/erneuern
+async function acquireLeader() {
+  const db = mongoose.connection.db;
+  const leader = db.collection(LEADER_COLL);
+  const now = new Date();
+  const exp = new Date(now.getTime() + LEASE_MS);
+  const filter = {
+    key: 'offerPoller',
+    $or: [
+      { expiresAt: { $lte: now } },
+      { leaderId: INSTANCE_ID },
+    ],
+  };
+  const update = {
+    $set: { key: 'offerPoller', leaderId: INSTANCE_ID, expiresAt: exp, updatedAt: now },
+    $setOnInsert: { createdAt: now },
+  };
+  const opts = { upsert: true, returnDocument: 'after' };
+  try {
+    const res = await leader.findOneAndUpdate(filter, update, opts);
+    return res?.value?.leaderId === INSTANCE_ID ? { ok: true, expiresAt: res.value.expiresAt } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// Idempotenz-Locks für Batch (ein Insert je (offerId, deviceTokenId))
+async function createPushLocks(offerId, deviceTokenIds, ttlMs) {
+  if (!deviceTokenIds?.length) return { inserted: [], skipped: deviceTokenIds || [] };
+  const db = mongoose.connection.db;
+  const locks = db.collection(PUSHLOCKS_COLL);
+  const now = new Date();
+  const exp = new Date(now.getTime() + Math.max(ttlMs, 1));
+  const docs = deviceTokenIds.map((id) => ({
+    offerId: new mongoose.Types.ObjectId(String(offerId)),
+    deviceTokenId: new mongoose.Types.ObjectId(String(id)),
+    createdAt: now,
+    expiresAt: exp,
+    instanceId: INSTANCE_ID,
+  }));
+
+  const inserted = [];
+  const skipped = [];
+  // Bulk über Einzelversuche (damit wir pro Doc auf Duplicate reagieren können)
+  for (const d of docs) {
+    try {
+      await locks.insertOne(d);
+      inserted.push(String(d.deviceTokenId));
+    } catch (e) {
+      // Duplicate-Key → bereits gepusht (oder parallel)
+      skipped.push(String(d.deviceTokenId));
+    }
+  }
+  return { inserted, skipped };
+}
+
 /* ───────── Start/Stop ───────── */
 export function startOfferPoller() {
   if (timer) return;
 
   const DEBUG = process.env.DEBUG_OFFER_POLLER === '1';
 
+  const suspicious = [];
+  if (INTERVAL_MS < 10_000) suspicious.push(`interval=${INTERVAL_MS}ms looks low`);
+  if (LAST_LOCATION_MAX_AGE_MS > 10 * 60_000) suspicious.push(`freshness=${LAST_LOCATION_MAX_AGE_MS}ms looks high`);
+  if (ACCURACY_BUFFER_MAX > 200) suspicious.push(`accuracyBuf=${ACCURACY_BUFFER_MAX}m unusual`);
+  if (ACCURACY_TOKEN_CAP > 200) suspicious.push(`tokenCap=${ACCURACY_TOKEN_CAP}m unusual`);
+
   if (DEBUG) {
     console.log(
       `[offerPoller][debug] cfg interval=${INTERVAL_MS}ms freshness=${LAST_LOCATION_MAX_AGE_MS}ms ` +
-      `accuracyBuf=${ACCURACY_BUFFER_MAX}m tokenCap=${ACCURACY_TOKEN_CAP}m`
+      `accuracyBuf=${ACCURACY_BUFFER_MAX}m tokenCap=${ACCURACY_TOKEN_CAP}m lease=${LEASE_MS}ms instance=${INSTANCE_ID}`
     );
+    if (suspicious.length) console.warn('[offerPoller][debug][warn]', suspicious.join(' | '));
   } else {
-    console.log(`[offerPoller] started — every ${INTERVAL_MS}ms`);
+    console.log(`[offerPoller] started — every ${INTERVAL_MS}ms (instance=${INSTANCE_ID})`);
   }
 
   async function doCycle() {
     const t0 = Date.now();
+    const now = new Date();
+
     try {
+      await ensureIndexes();
+
+      // Leader nur einmal pro Zyklus holen/verlängern
+      const leader = await acquireLeader();
+      if (!leader.ok) {
+        if (DEBUG) console.log('[offerPoller][debug] leader=false → skip cycle');
+        return;
+      }
+
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
 
-      // 1) Neu/aktualisierte Offers
+      // 1) Kandidaten: neu/aktualisiert ODER aktuell datums-gültig
       const candidateOffers = await Offer.find({
-        $or: [{ createdAt: { $gte: since } }, { updatedAt: { $gte: since } }],
+        $or: [
+          { createdAt: { $gte: since } },
+          { updatedAt: { $gte: since } },
+          {
+            $and: [
+              { $or: [{ 'validDates.from': { $exists: false } }, { 'validDates.from': { $lte: now } }] },
+              { $or: [{ 'validDates.to':   { $exists: false } }, { 'validDates.to':   { $gte: now } }] },
+            ],
+          },
+        ],
       })
         .select(
           '_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired'
         )
         .lean();
 
-      const now = new Date();
       const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
       // 2) Tokens mit frischer Location (ggf. auf Projekt einschränken)
@@ -131,7 +244,7 @@ export function startOfferPoller() {
 
       if (DEBUG) {
         console.log(
-          `[offerPoller][debug] candidates=${candidateOffers.length} active=${activeOffers.length} tokensFresh=${tokensFresh.length}`
+          `[offerPoller][debug] leader=true candidates=${candidateOffers.length} active=${activeOffers.length} tokensFresh=${tokensFresh.length}`
         );
       }
 
@@ -215,8 +328,20 @@ export function startOfferPoller() {
           if (DEBUG) console.log(`[offerPoller][debug] offer=${offer._id} toNotify=${toNotifyDocs.length}`);
           if (!toNotifyDocs.length) continue;
 
+          // 4.1) **Idempotenz-Lock** pro (offerId, deviceToken) für NEW_OFFER_WINDOW_MS
+          const deviceTokenIds = toNotifyDocs.map((t) => t._id);
+          const lockRes = await createPushLocks(offer._id, deviceTokenIds, NEW_OFFER_WINDOW_MS);
+          const lockedSet = new Set(lockRes.inserted);
+          const deduped = toNotifyDocs.filter((t) => lockedSet.has(String(t._id)));
+          if (DEBUG) {
+            console.log(
+              `[offerPoller][debug] offer=${offer._id} dedup: inserted=${lockRes.inserted.length} skipped=${lockRes.skipped.length}`
+            );
+          }
+          if (!deduped.length) continue;
+
           // 5) Push senden
-          const tokens = toNotifyDocs
+          const tokens = deduped
             .map((t) => t.token)
             .filter((tok) => typeof tok === 'string' && tok.trim().length > 0);
 
@@ -302,15 +427,21 @@ export function startOfferPoller() {
       }
 
       if (DEBUG) {
-        console.log(`[offerPoller][debug] took=${Date.now() - t0}ms`);
+        console.log(
+          `[offerPoller][debug] took=${Date.now() - t0}ms leader=true leaseLeft=${Math.max(0, (new Date().getTime() + LEASE_MS) - Date.now())}ms`
+        );
       }
     } catch (e) {
       console.error('[offerPoller] cycle error:', e?.message || e);
     }
   }
 
-  // sofortiger erster Lauf + Intervall (jede Minute)
-  doCycle();
+  // sofortiger erster Lauf + Intervall
+  (async () => {
+    try { await ensureIndexes(); } catch {}
+    await doCycle();
+  })();
+
   timer = setInterval(doCycle, INTERVAL_MS);
 }
 

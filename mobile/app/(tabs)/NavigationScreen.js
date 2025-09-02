@@ -9,10 +9,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import colors from '../../theme/colors';
-import { fetchRoute } from '../../services/directions';
+import fetchRoute from '../../services/directions'; // ✅ default import (nicht { fetchRoute })
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark'; // <- so belassen
 import { MaterialIcons } from '@expo/vector-icons'; // Accessible-Icon
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ NEU: Aktiv-Check (Europe/Vienna)
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ Aktiv-Check (Europe/Vienna)
+import Constants from 'expo-constants'; // ✅ Directions-Key aus app.config.js (extra)
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -32,7 +33,10 @@ function distanceMeters(a, b) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return Math.round(R * 2 * Math.atan2(Math.sqrt(A), Math.sqrt(1 - A)));
 }
-function formatDistance(m) { if (m == null) return ''; return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`; }
+function formatDistance(m) {
+  if (m == null) return '';
+  return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+}
 function bearingDegrees(from, to) {
   const φ1 = toRad(from.latitude), φ2 = toRad(to.latitude);
   const λ1 = toRad(from.longitude), λ2 = toRad(to.longitude);
@@ -110,7 +114,8 @@ const sampleEvery = (route, stepMeters = 18, maxPoints = 420) => {
 };
 
 /* ─────────── Config/Tuning ─────────── */
-const DIRECTIONS_KEY = process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY || '';
+const DIRECTIONS_KEY = Constants.expoConfig?.extra?.directionsKey || ''; // ✅ aus app.config.js
+console.log('[NavigationScreen] directionsKeyPresent:', !!DIRECTIONS_KEY); // nur true/false
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
 const POSITION_UPDATE_MIN_DIST = 3;
 const ANIMATE_THROTTLE_MS = 600;
@@ -226,8 +231,6 @@ export default function NavigationScreen() {
     return [];
   }, [routeCoords, userLocation, offerPos]);
 
-  // (vorher: dottedRoute via Marker) — entfällt zugunsten Polyline
-
   // Adresse – robust
   const providerAddress = useMemo(() => {
     const fromOffer =
@@ -254,6 +257,8 @@ export default function NavigationScreen() {
     Animated.timing(sheetY, { toValue: sheetH || 280, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true })
       .start(() => { setArrived(false); if (cb) cb(); });
   }, [sheetY, sheetH]);
+
+  const deviceMotionHeadingRef = useRef(null);
 
   const animateTo = useCallback((pos, maybeUpdateHeading = false) => {
     const now = Date.now();
@@ -316,7 +321,6 @@ export default function NavigationScreen() {
   }), [hudPullY]);
 
   /* ─────────── DeviceMotion ─────────── */
-  const deviceMotionHeadingRef = useRef(null);
   useEffect(() => {
     (async () => {
       try {
@@ -518,7 +522,7 @@ export default function NavigationScreen() {
     }
     try {
       setRouteLoading(true); setRouteError(null);
-      const coords = await fetchRoute(origin, dest, DIRECTIONS_KEY, 'walking', { avoidStairs: !!avoidStairs });
+      const coords = await fetchRoute(origin, dest, DIRECTIONS_KEY, 'walking', { avoidStairs: !!avoidStairs, timeoutMs: 10000 });
       const arr = Array.isArray(coords) ? coords : [];
       setRouteCoords(arr);
       await AsyncStorage.setItem(STORE_ROUTE, JSON.stringify(arr));
@@ -541,6 +545,7 @@ export default function NavigationScreen() {
       }
     } finally { setRouteLoading(false); }
   }, [avoidStairs]);
+
   useEffect(() => {
     if (offerPos && userLocation) loadRouteFrom(userLocation, offerPos);
     else { setRouteCoords([]); setRouteError(!DIRECTIONS_KEY ? 'Kein Directions-Key' : null); }
@@ -700,7 +705,7 @@ export default function NavigationScreen() {
           />
         )}
 
-        {/* Leichte Route als Polyline (statt 100e Marker) */}
+        {/* Leichte Route als Polyline */}
         {remainingRoute.length >= 2 && (
           <Polyline
             coordinates={remainingRoute}

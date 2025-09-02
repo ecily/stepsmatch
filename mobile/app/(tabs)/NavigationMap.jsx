@@ -8,8 +8,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '../../theme/colors';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
+import Constants from 'expo-constants';
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
+const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
 
 /* Geo helpers */

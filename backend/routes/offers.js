@@ -1,20 +1,21 @@
+// backend/routes/offers.js
 import express from 'express';
 import mongoose from 'mongoose';
 import { performance } from 'perf_hooks';
 import Offer from '../models/Offer.js';
 import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
-import cloudinary from '../utils/cloudinary.js'; // (aktuell nicht genutzt, kann bleiben)
+import cloudinary from '../utils/cloudinary.js';
 
-// ⬇️ robustes Receipt-Utility (wie bei roundtrip/diagnose)
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js';
+import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
 
 const router = express.Router();
 
 /* ────────────────────────────────────────────────────────────
-   Utils
+   Helpers
    ──────────────────────────────────────────────────────────── */
 function toArray(val) {
   if (!val) return [];
@@ -38,56 +39,49 @@ function parseProjection(fields) {
   return proj;
 }
 
-// Toleranter „jetzt gültig“-Check
-function isActiveNow(o, now = new Date()) {
-  const local = now;
-  const dayIdx = local.getDay(); // 0..6
-  const mins = local.getHours() * 60 + local.getMinutes();
+function isHHMM(s) {
+  return typeof s === 'string' && /^(\d{1,2}):(\d{2})$/.test(s);
+}
 
-  // Dates
-  let dateOk = true;
-  if (o?.validDates?.from) {
-    const from = new Date(o.validDates.from);
-    if (!isNaN(from)) dateOk = dateOk && local >= from;
-  }
-  if (o?.validDates?.to) {
-    const to = new Date(o.validDates.to);
-    if (!isNaN(to)) dateOk = dateOk && local <= to;
-  }
+// Normalisiert eingehende Offer-Payload sanft (mutiert obj)
+function normalizeOfferPayload(obj = {}) {
+  // validTimes: akzeptiere start/end → from/to
+  const vt = obj.validTimes || obj.times || {};
+  const from = vt.from ?? vt.start ?? null;
+  const to   = vt.to   ?? vt.end   ?? null;
 
-  // Days
-  let dayOk = true;
-  if (Array.isArray(o?.validDays) && o.validDays.length) {
-    if (typeof o.validDays[0] === 'number') {
-      dayOk = o.validDays.includes(dayIdx);
-    } else {
-      const map = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      dayOk = o.validDays.includes(map[dayIdx]);
-    }
+  if (from || to) {
+    obj.validTimes = {};
+    if (from && isHHMM(from)) obj.validTimes.from = from;
+    if (to   && isHHMM(to))   obj.validTimes.to   = to;
+  } else if ('validTimes' in obj && !obj.validTimes) {
+    delete obj.validTimes;
   }
 
-  // Times
-  const parseHHMM = (s) => {
-    if (typeof s !== 'string') return null;
-    const m = s.match(/^(\d{1,2}):(\d{2})$/);
-    if (!m) return null;
-    const h = +m[1], mm = +m[2];
-    if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
-    return h * 60 + mm;
-  };
-  let timeOk = true;
-  const startMin = parseHHMM(o?.validTimes?.from);
-  const endMin   = parseHHMM(o?.validTimes?.to);
-  if (startMin != null && endMin != null) {
-    if (endMin >= startMin) timeOk = mins >= startMin && mins <= endMin;
-    else timeOk = mins >= startMin || mins <= endMin; // über Mitternacht
-  } else if (startMin != null) {
-    timeOk = mins >= startMin;
-  } else if (endMin != null) {
-    timeOk = mins <= endMin;
+  // validDates: akzeptiere start/end/on/date → from/to
+  const vd = obj.validDates || {};
+  const single = vd.on ?? vd.date ?? obj.validOn ?? obj.date;
+  const fromD = vd.from ?? vd.start ?? (single ?? null);
+  const toD   = vd.to   ?? vd.end   ?? (single ?? null);
+
+  if (fromD || toD) {
+    obj.validDates = {};
+    if (fromD) obj.validDates.from = new Date(fromD);
+    if (toD)   obj.validDates.to   = new Date(toD);
+  } else if ('validDates' in obj && !obj.validDates) {
+    delete obj.validDates;
   }
 
-  return dateOk && dayOk && timeOk;
+  // validDays: Strings/Nummern beibehalten (Interpretation in isOfferActiveNow)
+  if (Array.isArray(obj.validDays) && obj.validDays.length === 0) {
+    delete obj.validDays;
+  }
+
+  // location: stelle sicher, dass Zahlen sind
+  if (obj.location && Array.isArray(obj.location.coordinates)) {
+    obj.location.coordinates = obj.location.coordinates.map((n) => Number(n));
+  }
+  return obj;
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -99,14 +93,12 @@ const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 const LAST_LOCATION_MAX_AGE_MS = Number(process.env.PUSH_LAST_LOCATION_MAX_AGE_MS || 10 * 60_000);
 const MAX_DISTANCE_M_DEFAULT   = Number(process.env.PUSH_MAX_DISTANCE_M || 1500);
 
-// Projekt-Scope (wie im Poller)
 const PROJECT_ID =
   process.env.EXPO_PROJECT_ID ||
   process.env.EXPO_PROJECT ||
   process.env.PROJECT_ID ||
   null;
 
-// nutzt identisch die Receipt-Logik wie /api/push/roundtrip-diagnose
 async function notifyOfferNow(offer) {
   try {
     const coords = offer?.location?.coordinates;
@@ -121,7 +113,6 @@ async function notifyOfferNow(offer) {
     }
 
     const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
-    // frische Tokens mit Location
     const tokenQuery = {
       disabled: { $ne: true },
       'lastLocation.coordinates.0': { $exists: true },
@@ -141,7 +132,6 @@ async function notifyOfferNow(offer) {
       return { ok: false, reason: 'no_fresh_tokens' };
     }
 
-    // Geo-Query: im Radius (implizit auf tokensFresh begrenzt)
     const near = await PushToken.find({
       _id: { $in: tokensFresh.map(t => t._id) },
       lastLocation: {
@@ -156,7 +146,6 @@ async function notifyOfferNow(offer) {
       return { ok: false, reason: 'no_near_tokens' };
     }
 
-    // Suppression: nicht doppelt nerven
     const vis = await OfferVisibility.find({
       offerId: offer._id,
       deviceToken: { $in: near.map(t => t._id) },
@@ -189,7 +178,6 @@ async function notifyOfferNow(offer) {
       delayMs: 2500,
     });
 
-    // sent-ok Tokens ermitteln
     const sentTokens = [];
     const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
     for (let i = 0; i < tickets.length; i++) {
@@ -197,7 +185,6 @@ async function notifyOfferNow(offer) {
       if (t?.status === 'ok' && tokens[i]) sentTokens.push(tokens[i]);
     }
 
-    // OfferVisibility setzen
     if (sentTokens.length) {
       const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
       const byToken = new Map(sentDocs.map(d => [d.token, d._id]));
@@ -234,7 +221,7 @@ async function notifyOfferNow(offer) {
 /* ────────────────────────────────────────────────────────────
    TEST: bis zu 3 Angebote (mit Bildern)
    ──────────────────────────────────────────────────────────── */
-router.get('/test-offers', async (req, res) => {
+router.get('/test-offers', async (_req, res) => {
   try {
     const offers = await Offer.find(
       {},
@@ -354,7 +341,8 @@ router.get('/', async (req, res) => {
     }
 
     if (activeNow) {
-      docs = docs.filter(o => isActiveNow(o));
+      // zentrale Logik verwenden (Europe/Vienna)
+      docs = docs.filter(o => isOfferActiveNow(o, 'Europe/Vienna'));
     }
 
     const tookMs = Math.round(performance.now() - t0);
@@ -494,7 +482,7 @@ router.get('/nearby-geofence', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Ungültige Parameter: lat/lng erforderlich' });
     }
 
-    // 1) Schneller Weg: $geoNear Aggregation
+    // 1) $geoNear
     try {
       const rows = await Offer.aggregate([
         {
@@ -570,12 +558,14 @@ router.get('/nearby-geofence', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 router.post('/', async (req, res) => {
   try {
+    normalizeOfferPayload(req.body);
+
     const offer = new Offer(req.body);
     const saved = await offer.save();
 
-    // ⬇️ Sofort-Push an Tokens im Radius, wenn Offer aktuell aktiv ist
+    // Sofort-Push wenn aktuell aktiv
     try {
-      if (isActiveNow(saved) && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
+      if (isOfferActiveNow(saved, 'Europe/Vienna') && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
         const notify = await notifyOfferNow(saved);
         console.log('[offers.create] notify summary:', notify);
         return res.status(201).json({ ok: true, offer: saved, notify });
@@ -591,7 +581,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Manueller Trigger für bestehende Offers
+// Manueller Trigger
 router.post('/:id/notify-now', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id).lean();
@@ -635,6 +625,8 @@ router.get('/:id', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
+    normalizeOfferPayload(req.body);
+
     const updatedOffer = await Offer.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
@@ -644,9 +636,9 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
 
-    // ⬇️ Bei Updates ebenfalls Push triggern, wenn Offer aktuell aktiv ist
+    // Bei Updates: Push triggern, wenn aktuell aktiv
     try {
-      if (isActiveNow(updatedOffer) && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
+      if (isOfferActiveNow(updatedOffer, 'Europe/Vienna') && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
         const notify = await notifyOfferNow(updatedOffer);
         console.log('[offers.update] notify summary:', notify);
         return res.json({ ok: true, offer: updatedOffer, notify });

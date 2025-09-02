@@ -129,7 +129,9 @@ app.use((err, _req, res, _next) => {
    ───────────────────────────────────────────────────────────── */
 connectDB()
   .then(() => {
-    if (process.env.OFFER_POLLER_ENABLED !== "0") {
+    const pollerDisabled = process.env.OFFER_POLLER_ENABLED === "0";
+    console.log(`[startup] OFFER_POLLER_ENABLED=${pollerDisabled ? '0 (disabled)' : '1 (enabled)'}`);
+    if (!pollerDisabled) {
       startOfferPoller();
     }
 

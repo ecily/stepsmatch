@@ -4,7 +4,7 @@
  * Aktiv jetzt? – strikt im Kalender "Europe/Vienna".
  * Unterstützt:
  *  - validDays / weekdays: ["Montag","Di","Wednesday","Thu", 0..6]   (Mo=0 … So=6)
- *  - validTimes: { start: "HH:mm", end: "HH:mm" } inkl. Nachtfenster (22:00–02:00)
+ *  - validTimes: { from: "HH:mm", to: "HH:mm" }  (akzeptiert auch start/end) inkl. Nachtfenster (22:00–02:00)
  *  - validDates:
  *      - { from, to }  (inklusive, lokale Kalendertage)
  *      - { date } oder { on }  (Einzeltag)
@@ -79,10 +79,13 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   }
 
   // 2) Uhrzeit inkl. Nachtfenster
-  const vt = offer.validTimes || offer.times;
-  if (vt && (vt.start || vt.end)) {
-    const sMin = parseHHMM(vt.start ?? '00:00');
-    const eMin = parseHHMM(vt.end   ?? '23:59');
+  const vtRaw = offer.validTimes || offer.times || {};
+  const fromStr = vtRaw.from ?? vtRaw.start ?? null;
+  const toStr   = vtRaw.to   ?? vtRaw.end   ?? null;
+
+  if (fromStr || toStr) {
+    const sMin = parseHHMM(fromStr ?? '00:00');
+    const eMin = parseHHMM(toStr   ?? '23:59');
     if (sMin != null && eMin != null && sMin !== eMin) {
       if (sMin < eMin) {
         if (!(minutes >= sMin && minutes <= eMin)) return false;
