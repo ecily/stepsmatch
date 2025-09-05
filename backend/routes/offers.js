@@ -7,10 +7,8 @@ import Provider from '../models/Provider.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js';
 
-import PushToken from '../models/PushToken.js';
-import OfferVisibility from '../models/OfferVisibility.js';
-import { sendPushAndCheckReceipts } from '../utils/push.js';
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
+import { sendPushToNearbyTokensForOffer } from '../utils/geoPush.js';
 
 const router = express.Router();
 
@@ -87,131 +85,11 @@ function normalizeOfferPayload(obj = {}) {
 /* ────────────────────────────────────────────────────────────
    Push-Helper: sofort Tokens im Radius benachrichtigen
    ──────────────────────────────────────────────────────────── */
-const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
-const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
-const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
-const LAST_LOCATION_MAX_AGE_MS = Number(process.env.PUSH_LAST_LOCATION_MAX_AGE_MS || 10 * 60_000);
-const MAX_DISTANCE_M_DEFAULT   = Number(process.env.PUSH_MAX_DISTANCE_M || 1500);
-
-const PROJECT_ID =
-  process.env.EXPO_PROJECT_ID ||
-  process.env.EXPO_PROJECT ||
-  process.env.PROJECT_ID ||
-  null;
-
 async function notifyOfferNow(offer) {
   try {
-    const coords = offer?.location?.coordinates;
-    const [lng, lat] = Array.isArray(coords) ? coords : [];
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return { ok: false, reason: 'no_coords' };
-    }
-
-    const radiusM = Number(offer.radiusMeters ?? offer.radius ?? MAX_DISTANCE_M_DEFAULT);
-    if (!Number.isFinite(radiusM) || radiusM <= 0) {
-      return { ok: false, reason: 'bad_radius' };
-    }
-
-    const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
-    const tokenQuery = {
-      disabled: { $ne: true },
-      'lastLocation.coordinates.0': { $exists: true },
-      $or: [
-        { lastHeartbeatAt: { $gte: freshSince } },
-        { lastSeenAt: { $gte: freshSince } },
-        { updatedAt: { $gte: freshSince } },
-      ],
-    };
-    if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
-
-    const tokensFresh = await PushToken.find(tokenQuery)
-      .select('_id token lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt')
-      .lean();
-
-    if (!tokensFresh.length) {
-      return { ok: false, reason: 'no_fresh_tokens' };
-    }
-
-    const near = await PushToken.find({
-      _id: { $in: tokensFresh.map(t => t._id) },
-      lastLocation: {
-        $near: {
-          $geometry: { type: 'Point', coordinates: [lng, lat] },
-          $maxDistance: radiusM,
-        },
-      },
-    }).select('_id token projectId deviceId').lean();
-
-    if (!near.length) {
-      return { ok: false, reason: 'no_near_tokens' };
-    }
-
-    const vis = await OfferVisibility.find({
-      offerId: offer._id,
-      deviceToken: { $in: near.map(t => t._id) },
-      $or: [
-        { status: 'notified' },
-        { status: 'dismissed' },
-        { status: 'snoozed', remindAt: { $gt: new Date() } }
-      ],
-    }).select('deviceToken').lean();
-
-    const already = new Set(vis.map(v => String(v.deviceToken)));
-    const toNotifyDocs = near.filter(t => !already.has(String(t._id)));
-
-    const tokens = toNotifyDocs.map(t => t.token).filter(Boolean);
-    if (!tokens.length) {
-      return { ok: false, reason: 'nothing_to_notify' };
-    }
-
-    const title = offer.name || 'Neues Angebot in deiner Nähe';
-    const body  = 'Tippe, um Details zu sehen.';
-
-    const diag = await sendPushAndCheckReceipts({
-      tokens,
-      title,
-      body,
-      data: { type: 'offer', offerId: String(offer._id), route: `/offers/${offer._id}`, source: 'offer-create' },
-      channelId: PUSH_CHANNEL_ID,
-      priority: PUSH_PRIORITY,
-      sound: PUSH_SOUND,
-      delayMs: 2500,
-    });
-
-    const sentTokens = [];
-    const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
-    for (let i = 0; i < tickets.length; i++) {
-      const t = tickets[i];
-      if (t?.status === 'ok' && tokens[i]) sentTokens.push(tokens[i]);
-    }
-
-    if (sentTokens.length) {
-      const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
-      const byToken = new Map(sentDocs.map(d => [d.token, d._id]));
-      const nowIso = new Date();
-      const bulk = sentTokens.map(tok => {
-        const deviceTokenId = byToken.get(tok);
-        if (!deviceTokenId) return null;
-        return {
-          updateOne: {
-            filter: { offerId: offer._id, deviceToken: deviceTokenId },
-            update: {
-              $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
-              $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
-            },
-            upsert: true,
-          }
-        };
-      }).filter(Boolean);
-      if (bulk.length) await OfferVisibility.bulkWrite(bulk);
-    }
-
-    const summary = diag?.receipts?.summary || {};
-    console.log(`[offerNotifyNow] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} receipts=${JSON.stringify(summary)}`);
-    if (diag?.retry && diag.retry.count > 0) {
-      console.log(`[offerNotifyNow][retry] attempts=${diag.retry.count} succeeded=${diag.retry.succeeded} targets=${JSON.stringify(diag.retry.targets || [])}`);
-    }
-    return { ok: true, tried: tokens.length, sentOk: sentTokens.length, receipts: summary };
+    // Delegation an gehärtete Geo-Push-Logik (Sanity-Puffer, Project-Scope, ActiveNow, usw.)
+    const now = new Date();
+    return await sendPushToNearbyTokensForOffer(offer, { now });
   } catch (e) {
     console.error('[offerNotifyNow] error', e?.message || e);
     return { ok: false, error: e?.message || 'error' };

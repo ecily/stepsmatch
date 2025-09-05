@@ -40,7 +40,8 @@ export default {
       ],
       foregroundService: {
         notificationTitle: "StepsMatch läuft im Hintergrund",
-        notificationBody: "Dein Standort wird verwendet, um passende Angebote zu finden."
+        notificationBody: "Dein Standort wird verwendet, um passende Angebote zu finden.",
+        notificationChannelId: "com.ecily.mobile:stepsmatch-bg-location-task"
       }
     },
     web: {
@@ -58,10 +59,11 @@ export default {
     experiments: { typedRoutes: true },
     extra: {
       eas: { projectId: "08559a29-b307-47e9-a130-d3b31f73b4ed" },
-      // ✅ wichtig: Directions-Key aus .env
       directionsKey: process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY || "",
-      // ✅ NEU: API-Base für Runtime-Code (statt process.env in RN)
       apiBase: process.env.EXPO_PUBLIC_API_BASE_URL || "https://lobster-app-ie9a5.ondigitalocean.app/api"
+    },
+    updates: {
+      enabled: false
     }
   }
 };

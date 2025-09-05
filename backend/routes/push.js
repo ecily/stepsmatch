@@ -1,6 +1,7 @@
 // backend/routes/push.js
 import express from 'express';
 import mongoose from 'mongoose';
+import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
 import { sendPush, sendPushAndCheckReceipts } from '../utils/push.js';
 
@@ -21,6 +22,53 @@ const isValidObjectId = (v) => {
 // (Nur Info/Health) – nicht den Token selbst loggen
 console.log('[push] EXPO_ACCESS_TOKEN present =', Boolean(process.env.EXPO_ACCESS_TOKEN));
 
+// Projekt-Kontext (muss zum Client passen)
+const PROJECT_ID =
+  process.env.EXPO_PROJECT_ID ||
+  process.env.EXPO_PROJECT ||
+  process.env.PROJECT_ID ||
+  null;
+
+console.log('[push] routes projectId =', PROJECT_ID || '(none)');
+
+// Helper: lastLocation robust konvertieren
+function normalizePoint(input) {
+  if (!input || typeof input !== 'object') return null;
+  // Bereits korrektes GeoJSON?
+  if (input.type === 'Point' && Array.isArray(input.coordinates) && input.coordinates.length === 2) {
+    const [lng, lat] = input.coordinates;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { type: 'Point', coordinates: [lng, lat] };
+    }
+  }
+  // Lat/Lng-Objekt?
+  const { lat, lng } = input;
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { type: 'Point', coordinates: [lng, lat] };
+  }
+  return null;
+}
+
+// Helper: Jüngsten aktiven Token holen – bevorzugt mit passender projectId
+async function getLatestActiveTokenPreferProject() {
+  const baseSort = { lastSeenAt: -1, updatedAt: -1, createdAt: -1 };
+
+  if (PROJECT_ID) {
+    const withProject = await PushToken.findOne({
+      disabled: { $ne: true },
+      projectId: PROJECT_ID,
+    }).sort(baseSort).lean();
+    if (withProject?.token) {
+      return withProject;
+    }
+  }
+  // Fallback: beliebiger aktiver Token
+  const anyActive = await PushToken.findOne({
+    disabled: { $ne: true },
+  }).sort(baseSort).lean();
+  return anyActive || null;
+}
+
 // ────────── Routes ──────────
 
 // POST /api/push/register
@@ -30,6 +78,9 @@ router.post('/register', async (req, res) => {
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ success: false, error: 'token-required' });
     }
+
+    const point = normalizePoint(lastLocation);
+
     const doc = await PushToken.findOneAndUpdate(
       { token },
       {
@@ -40,16 +91,18 @@ router.post('/register', async (req, res) => {
         disabled: false,
         lastSeenAt: new Date(),
         ...(projectId ? { projectId } : {}),
-        ...(lastLocation && lastLocation.type === 'Point' ? { lastLocation } : {}),
+        ...(point ? { lastLocation: point } : {}),
       },
       { new: true, upsert: true }
     );
+
     console.log(
       '[push] register',
       token.slice(0, 22) + '…',
       'platform=', doc.platform,
       'deviceId=', doc.deviceId,
-      'projectId=', projectId
+      'projectId=', projectId || '(none)',
+      point ? 'lastLocation=Point' : 'lastLocation=none'
     );
     res.json({
       success: true,
@@ -59,7 +112,7 @@ router.post('/register', async (req, res) => {
       deviceId: doc.deviceId,
       disabled: doc.disabled,
       lastSeenAt: doc.lastSeenAt,
-      projectId,
+      projectId: projectId || null,
     });
   } catch (e) {
     console.error('[push] register error', e);
@@ -71,7 +124,8 @@ router.post('/register', async (req, res) => {
 router.post('/roundtrip', async (req, res) => {
   try {
     const { offerId: rawOfferId, title: rawTitle, body: rawBody } = req.body || {};
-    const last = await PushToken.findOne({ disabled: { $ne: true } }).sort({ lastSeenAt: -1 }).lean();
+
+    const last = await getLatestActiveTokenPreferProject();
     if (!last?.token) return res.status(404).json({ success: false, error: 'no-token' });
 
     const offerId = rawOfferId || 'TEST';
@@ -81,7 +135,7 @@ router.post('/roundtrip', async (req, res) => {
 
     console.log(
       '[push] roundtrip build',
-      JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload, channelId: DEFAULT_CHANNEL })
+      JSON.stringify({ to: last.token.slice(0, 22) + '…', title, body, data: payload, channelId: DEFAULT_CHANNEL, projectId: last.projectId || null })
     );
 
     // ➕ channelId mitschicken
@@ -104,23 +158,27 @@ router.post('/roundtrip', async (req, res) => {
 });
 
 // POST /api/push/roundtrip-diagnose (send + receipts)
-// Neu: akzeptiert optional req.body.token und sendet IMMER damit, auch wenn dieser in der DB disabled ist.
+// Optional: req.body.token – wenn gesetzt, wird IMMER damit gesendet (auch wenn disabled).
 router.post('/roundtrip-diagnose', async (req, res) => {
   try {
     const { token: explicitToken, offerId: rawOfferId, title: rawTitle, body: rawBody } = req.body || {};
 
     let chosenToken = null;
     let projectId = null;
-    let tokenSource = 'db-latest-enabled';
+    let tokenSource = 'db-prefer-project';
 
     if (explicitToken && typeof explicitToken === 'string') {
-      chosenToken = explicitToken.trim();
+      const trimmed = explicitToken.trim();
+      if (!Expo.isExpoPushToken(trimmed)) {
+        return res.status(400).json({ success: false, error: 'invalid-expo-token-format' });
+      }
+      chosenToken = trimmed;
       tokenSource = 'explicit';
       // Optional: projectId aus DB nachziehen, auch wenn disabled
       const doc = await PushToken.findOne({ token: chosenToken }).lean();
       if (doc?.projectId) projectId = doc.projectId;
     } else {
-      const last = await PushToken.findOne({ disabled: { $ne: true } }).sort({ lastSeenAt: -1 }).lean();
+      const last = await getLatestActiveTokenPreferProject();
       if (!last?.token) return res.status(404).json({ success: false, error: 'no-token' });
       chosenToken = last.token;
       projectId = last.projectId || null;
@@ -139,7 +197,8 @@ router.post('/roundtrip-diagnose', async (req, res) => {
         body,
         data: payload,
         channelId: DEFAULT_CHANNEL,
-        tokenSource
+        tokenSource,
+        projectId: projectId || null,
       })
     );
 

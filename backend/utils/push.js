@@ -12,6 +12,15 @@ const PROJECT_ID =
   process.env.PROJECT_ID ||
   null;
 
+// Optional: Striktes Scoping aktiv? (nur Tokens mit passendem projectId zulassen)
+// Default: an (true). Zum Debuggen/Notfall: PUSH_ENFORCE_PROJECT_SCOPE=0
+const ENFORCE_PROJECT_SCOPE = !['0', 'false', 'False'].includes(
+  String(process.env.PUSH_ENFORCE_PROJECT_SCOPE ?? '1')
+);
+
+console.log('[push] Project ID =', PROJECT_ID || '(none)');
+console.log('[push] Enforce project scope =', ENFORCE_PROJECT_SCOPE);
+
 // ⏳ Grace-Periode für frische Tokens gegen "DeviceNotRegistered"-Races (Default: 2 Min)
 const GRACE_MS = (() => {
   const mins = Number(process.env.PUSH_GRACE_MINUTES || 2);
@@ -20,6 +29,64 @@ const GRACE_MS = (() => {
 
 // Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests deinem Expo-Projekt sicher zugeordnet sind.
 const expo = accessToken ? new Expo({ accessToken }) : new Expo();
+
+/**
+ * Prüft Tokens gegen DB & Projekt-Scope.
+ * - Muss Expo-Format haben
+ * - Muss in DB existieren
+ * - Darf nicht disabled sein
+ * - Bei ENFORCE_PROJECT_SCOPE && PROJECT_ID: doc.projectId muss matchen
+ */
+async function scopeAndValidateTokens(rawTokens = []) {
+  const dropped = { invalidFormat: [], unknown: [], disabled: [], mismatch: [] };
+  if (!rawTokens.length) return { scoped: [], dropped };
+
+  // Nur Expo-Format weiter betrachten (spart DB-Query)
+  const expoLike = rawTokens.filter((t) => Expo.isExpoPushToken(t));
+  const docs = await PushToken.find({ token: { $in: expoLike } })
+    .select('token projectId disabled')
+    .lean();
+  const byToken = new Map(docs.map((d) => [d.token, d]));
+
+  const scoped = [];
+  for (const t of rawTokens) {
+    if (!Expo.isExpoPushToken(t)) {
+      dropped.invalidFormat.push(t);
+      continue;
+    }
+    const doc = byToken.get(t);
+    if (!doc) {
+      dropped.unknown.push(t);
+      continue;
+    }
+    if (doc.disabled) {
+      dropped.disabled.push(t);
+      continue;
+    }
+    if (ENFORCE_PROJECT_SCOPE && PROJECT_ID && doc.projectId && doc.projectId !== PROJECT_ID) {
+      dropped.mismatch.push(t);
+      continue;
+    }
+    scoped.push(t);
+  }
+
+  // Kompakte Sichtbarkeit im Log (nur Counts, keine Token)
+  const totalDropped =
+    dropped.invalidFormat.length + dropped.unknown.length + dropped.disabled.length + dropped.mismatch.length;
+  if (totalDropped > 0) {
+    console.warn('[push] token filter', {
+      in: rawTokens.length,
+      out: scoped.length,
+      dropped: {
+        invalidFormat: dropped.invalidFormat.length,
+        unknown: dropped.unknown.length,
+        disabled: dropped.disabled.length,
+        mismatch: dropped.mismatch.length,
+      },
+    });
+  }
+  return { scoped, dropped };
+}
 
 /**
  * Sendet Push an das Expo-Gateway (mit Chunking).
@@ -35,7 +102,10 @@ export async function sendPush({
   sound = 'default',
   priority = 'high',
 }) {
-  const valid = (tokens || []).filter((t) => Expo.isExpoPushToken(t));
+  // Vor dem Senden strikt gegen DB/Scope prüfen
+  const { scoped } = await scopeAndValidateTokens(tokens || []);
+  const valid = scoped;
+
   if (!valid.length) {
     return { sent: 0, tickets: [], errors: ['no-valid-tokens'], okCount: 0, ticketIds: [], idToToken: {} };
   }
@@ -65,7 +135,12 @@ export async function sendPush({
       });
       tickets.push(...res);
     } catch (e) {
-      errors.push(String(e));
+      const msg = String(e?.message || e);
+      errors.push(msg);
+      // Typische Auth-/Scope-Hinweise prominenter loggen
+      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        console.error('[push] Expo send unauthorized. Prüfe EXPO_ACCESS_TOKEN (hat Zugriff auf dieses Projekt?)');
+      }
     }
   }
 
@@ -193,6 +268,12 @@ export async function sendPushAndCheckReceipts({
                   badToken.slice(0, 22) + '…',
                   { graceMs: GRACE_MS, deviceId: devId, projectId: proj }
                 );
+                if (ENFORCE_PROJECT_SCOPE && PROJECT_ID && proj && proj !== PROJECT_ID) {
+                  console.warn('[push] Hinweis: Token gehört zu anderem projectId als konfiguriert.', {
+                    tokenProject: proj,
+                    serverProject: PROJECT_ID,
+                  });
+                }
               } else {
                 await safeDisableToken(badToken);
                 result.disabledTokens.push(badToken);

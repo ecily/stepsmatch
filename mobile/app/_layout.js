@@ -24,36 +24,68 @@ export default function RootLayout() {
   const tapSub = useRef(null);
 
   useEffect(() => {
-    // Android-Channel sicherstellen (muss mit serverseitigem channelId "offers" matchen)
-    async function ensureChannel() {
-      if (Platform.OS === 'android') {
-        try {
-          await Notifications.setNotificationChannelAsync('offers', {
-            name: 'Offers',
-            importance: Notifications.AndroidImportance.MAX,
-            sound: 'default',
-            vibrationPattern: [250, 250, 500, 250],
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-            bypassDnd: true,
-            // showBadge: false, // optional
-          });
-        } catch (e) {
-          console.warn('[notif] setNotificationChannelAsync failed:', e?.message || e);
-        }
+    async function ensureAndroidChannelsAndCategories() {
+      if (Platform.OS !== 'android') return;
+
+      try {
+        // ✅ Starke Vibration & maximale Wichtigkeit
+        const STRONG_PATTERN = [0, 400, 200, 800, 300, 1000];
+
+        // Neuer High-Priority Channel für lokale Sofort-Pushes
+        await Notifications.setNotificationChannelAsync('offers-high-v2', {
+          name: 'Offers (High)',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: STRONG_PATTERN,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: true,
+        });
+
+        // Rückfallebene: Falls Server/Alt-Code noch "offers" sendet, ist der auch laut/stark
+        await Notifications.setNotificationChannelAsync('offers', {
+          name: 'Offers',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: STRONG_PATTERN,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: true,
+        });
+
+        // Kategorie mit Actions (GO, DISMISS) – passend zu deinem Produktentscheid
+        await Notifications.setNotificationCategoryAsync('offer-go', [
+          {
+            identifier: 'GO',
+            buttonTitle: 'GO',
+            options: { opensAppToForeground: true },
+          },
+          {
+            identifier: 'DISMISS',
+            buttonTitle: 'DISMISS',
+            options: { isDestructive: true },
+          },
+        ]);
+
+        console.log('[notif] channels ready: offers-high-v2 & offers; category: offer-go');
+      } catch (e) {
+        console.warn('[notif] ensure channels/categories failed:', e?.message || e);
       }
     }
-    ensureChannel();
+
+    ensureAndroidChannelsAndCategories();
 
     // Received-Listener: zeigt ankommende Pushes (FG/BG) inkl. Payload
     receiveSub.current = Notifications.addNotificationReceivedListener((n) => {
       try {
         const c = n?.request?.content || {};
-        console.log('[push] received', JSON.stringify({
-          title: c.title,
-          body: c.body,
-          channelId: c.channelId,
-          data: c.data,
-        }));
+        console.log(
+          '[push] received',
+          JSON.stringify({
+            title: c.title,
+            body: c.body,
+            channelId: c.channelId,
+            data: c.data,
+          })
+        );
       } catch {}
     });
 
@@ -65,7 +97,10 @@ export default function RootLayout() {
         const offerId = data?.offerId;
         const route = data?.route || (offerId ? `/offers/${offerId}` : null);
 
-        if (actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER && actionId !== 'GO') {
+        if (
+          actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER &&
+          actionId !== 'GO'
+        ) {
           console.log('[push-tap] ignore action:', actionId, JSON.stringify(data || {}));
           return;
         }

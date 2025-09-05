@@ -1,4 +1,3 @@
-// stepsmatch/mobile/app/(tabs)/index.js
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { sendHeartbeat } from '../../components/PushInitializer'; // ✅ zentraler Heartbeat
 import {
@@ -22,83 +21,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import colors from '../../theme/colors';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ zentraler Helper (Europe/Vienna)
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
-const CATEGORY_ID = 'offers-actions'; // 🔔 Actions: ➡️ / ❌ / 💤
-
-/* ─────────── PUSH: Handler (zeigt Banner auch im Vordergrund) ─────────── */
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-/* ─────────── PUSH: Setup (Channels + Permission + Token + Kategorie) ─────────── */
-async function ensurePushReady() {
-  try {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Default',
-        importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',
-        vibrationPattern: [0, 250, 250, 250],
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-        showBadge: true,
-      });
-      await Notifications.setNotificationChannelAsync('offers', {
-        name: 'Offers',
-        importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',
-        vibrationPattern: [0, 250, 250, 250],
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-        showBadge: true,
-      });
-    }
-
-    await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
-      { identifier: 'go', buttonTitle: '➡️', options: { isDestructive: false, isAuthenticationRequired: false } },
-      { identifier: 'dismiss', buttonTitle: '❌', options: { isDestructive: true, isAuthenticationRequired: false } },
-      { identifier: 'snooze', buttonTitle: '💤', options: { isDestructive: false, isAuthenticationRequired: false } },
-    ]);
-
-    const perm = await Notifications.getPermissionsAsync();
-    if (!perm.granted) {
-      const req = await Notifications.requestPermissionsAsync();
-      if (!req.granted) {
-        console.log('[Push] permission not granted');
-        return null;
-      }
-    }
-
-    const projectId =
-      Constants?.expoConfig?.extra?.eas?.projectId ??
-      Constants?.easConfig?.projectId ??
-      null;
-
-    const tokenResp = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-    const token = tokenResp?.data || null;
-
-    if (token) {
-      const old = await AsyncStorage.getItem('expoPushToken');
-      if (old !== token) await AsyncStorage.setItem('expoPushToken', token);
-      console.log('[Push] Expo token', token);
-    } else {
-      console.log('[Push] no token received');
-    }
-
-    return token;
-  } catch (e) {
-    console.log('[Push] setup error', e?.message || e);
-    return null;
-  }
-}
 
 /* ───────────── Helpers ───────────── */
 
@@ -224,7 +150,6 @@ function parseDateLike(x, role /* 'from' | 'to' */) {
   const d = new Date(s);
   if (isNaN(d)) return null;
 
-  // Falls Server "Z-Mitternacht" liefert → als lokaler Tag interpretieren
   const isZMidnight = /T00:00:00(\.000)?Z$/.test(s);
   if (isZMidnight) {
     const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
@@ -294,7 +219,6 @@ function getRemainingMs(item, now = new Date()) {
       }
     }
   }
-  // Fallback: solange aktiv → bis Tagesende anzeigen
   if (isOfferActiveNow(item, 'Europe/Vienna', now)) {
     const end = endOfDayLocal(now);
     const diff = end.getTime() - now.getTime();
@@ -352,12 +276,8 @@ export default function HomeTab() {
   const heartbeatTimerRef = useRef(null);
   const lastFocusAtRef = useRef(0);
   const appState = useRef(AppState.currentState);
-  const lastTokenRef = useRef(null);
 
   const fetchFnRef = useRef(null);
-
-  // Dedupe & Helper für Notif-Navigation
-  const lastHandledNotifIdRef = useRef(null);
 
   const navigateFromNotifData = useCallback((originLabel, data) => {
     try {
@@ -386,58 +306,16 @@ export default function HomeTab() {
     }
   }, [router]);
 
-  // ⬇️ lokaler Heartbeat-Helper entfernt – zentraler `sendHeartbeat` wird importiert
-
-  /* PUSH: Setup */
+  /* Initial HB: rely on PushInitializer (registriert Token), hier nur Ping */
   useEffect(() => {
     (async () => {
-      const token = await ensurePushReady();
-      if (!token) {
-        if (__DEV__) showDev('Push nicht bereit (Permissions/Token/Channel prüfen).');
-        return;
+      try {
+        await sendHeartbeat(); // ohne Token → nutzt lastKnownPosition & Registration aus PushInitializer
+      } catch (e) {
+        if (__DEV__) showDev('Heartbeat nicht gesendet.');
       }
-      lastTokenRef.current = token;
-      await sendHeartbeat(token);
     })();
   }, [showDev]);
-
-  /* Notif-Response Listener */
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      try {
-        const notifId = response?.notification?.request?.identifier;
-        if (notifId && lastHandledNotifIdRef.current === notifId) return;
-        lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
-
-        const actionId = response?.actionIdentifier;
-        const data = response?.notification?.request?.content?.data || {};
-        const offerId = String(data?.offerId || '');
-
-        if (!actionId || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-          navigateFromNotifData('tap-live', data);
-          return;
-        }
-
-        let action = null;
-        if (actionId === 'go') action = 'go';
-        else if (actionId === 'dismiss') action = 'dismiss';
-        else if (actionId === 'snooze') action = 'snooze';
-
-        if (action && offerId) {
-          const token = await AsyncStorage.getItem('expoPushToken');
-          if (token) {
-            try { await api.post('/location/notify-action', { offerId, action, token }); }
-            catch (e) { console.log('[notify-action] error', e?.message || e); }
-          }
-          if (action === 'go') navigateFromNotifData('tap-action-go', data);
-        }
-      } catch (e) {
-        console.log('[Push] response listener error', e?.message || e);
-      }
-    });
-
-    return () => { try { sub?.remove?.(); } catch {} };
-  }, [navigateFromNotifData]);
 
   /* 🔁 Push-FG-Refresh: sofort neu laden, wenn "offer"-Push im Vordergrund eintrifft */
   useEffect(() => {
@@ -445,42 +323,13 @@ export default function HomeTab() {
       try {
         const data = n?.request?.content?.data || {};
         if (data?.type === 'offer') {
-          // optional: kleines Dev-Toast
           if (__DEV__) showDev('Neues Angebot – Liste aktualisieren …');
-          // Liste im FG sofort aktualisieren
           fetchFnRef.current?.({ pageToLoad: 1, mode: 'push' });
         }
       } catch {}
     });
     return () => { try { sub?.remove?.(); } catch {} };
   }, [showDev]);
-
-  /* Cold-Start Navigation */
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const resp = await Notifications.getLastNotificationResponseAsync();
-        if (!mounted || !resp) return;
-
-        const notifId = resp?.notification?.request?.identifier;
-        if (notifId && lastHandledNotifIdRef.current === notifId) return;
-        lastHandledNotifIdRef.current = notifId ?? lastHandledNotifIdRef.current;
-
-        const actionId = resp?.actionIdentifier;
-        const data = resp?.notification?.request?.content?.data || {};
-
-        if (!actionId || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-          navigateFromNotifData('tap-cold-start', data);
-          return;
-        }
-        if (actionId === 'go') navigateFromNotifData('tap-cold-start-action-go', data);
-      } catch (e) {
-        console.warn('[NotifNav] getLastNotificationResponseAsync Fehler:', e);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [navigateFromNotifData]);
 
   /* Gesehen-IDs */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
@@ -555,7 +404,11 @@ export default function HomeTab() {
         const interestSet = csvToSet(interestsCSV);
 
         let expoToken = null;
-        try { expoToken = await AsyncStorage.getItem('expoPushToken'); } catch {}
+        try {
+          expoToken = (await AsyncStorage.getItem('expoPushToken.v2')) ||
+                      (await AsyncStorage.getItem('expoPushToken')) ||
+                      null;
+        } catch {}
 
         const params = { withProvider: 1, page: pageToLoad, limit };
         const t0 = performance.now();
@@ -584,7 +437,6 @@ export default function HomeTab() {
 
         for (const o of rows) {
           if (!matchesInterests(o, interestSet)) continue;
-          // ✅ zentraler Aktivitäts-Check mit fixer TZ
           if (!isOfferActiveNow(o, 'Europe/Vienna', now)) continue;
 
           const geo = pickOfferLatLng(o);
@@ -598,7 +450,7 @@ export default function HomeTab() {
           if (inside) {
             filtered.push(o);
 
-            // Push-Trigger: „neu gesehen“ in diesem Client → Backend informiert (das pusht weiter)
+            // „neu gesehen“ → Backend informieren (limitiert pro Reload)
             if (expoToken && postsThisReload < MAX_POSTS_PER_RELOAD) {
               const id = String(o._id || '');
               const seenSet = seenIdsRef.current;
@@ -697,9 +549,9 @@ export default function HomeTab() {
       appState.current = next;
       if (prev?.match(/inactive|background/) && next === 'active') {
         const now = Date.now();
-        if (now - lastFocusAtRef.current > 5000) {
+        if (now - (lastFocusAtRef.current || 0) > 5000) {
           lastFocusAtRef.current = now;
-          if (lastTokenRef.current) await sendHeartbeat(lastTokenRef.current);
+          await sendHeartbeat();
           fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
         }
       }
@@ -710,11 +562,6 @@ export default function HomeTab() {
     refreshTimerRef.current = setInterval(() => {
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
     }, 180000);
-
-    // Heartbeat alle 10 Min
-    //heartbeatTimerRef.current = setInterval(() => {
-    //  if (lastTokenRef.current) sendHeartbeat(lastTokenRef.current);
-    //}, 600000);
 
     return () => {
       sub.remove();
@@ -853,7 +700,6 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   const distanceText = formatDistance(distanceMeters);
   const near = isNear(distanceMeters);
 
-  // ✅ echtes Aktiv-Flag (Europe/Vienna)
   const isActiveNowFlag = isOfferActiveNow(item, 'Europe/Vienna', new Date());
 
   const remainingMs = getRemainingMs(item);

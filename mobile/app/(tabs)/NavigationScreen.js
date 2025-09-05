@@ -1,3 +1,4 @@
+// stepsmatch/mobile/app/(tabs)/NavigationScreen.js
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, Animated, PanResponder, Easing } from 'react-native';
 import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -16,6 +17,38 @@ import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ Aktiv-Ch
 import Constants from 'expo-constants'; // ✅ Directions-Key aus app.config.js (extra)
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+
+/* ─────────── Directions-Key: robust auflösen ─────────── */
+function resolveDirectionsKey() {
+  // 1) Bevorzugt: app.config.* -> extra.directionsKey
+  const kExtra =
+    Constants?.expoConfig?.extra?.directionsKey ??
+    Constants?.manifest?.extra?.directionsKey ?? // Fallback für ältere Manifests
+    null;
+
+  // 2) .env public: EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY (wird zur Build-Zeit ersetzt)
+  //    In Hermes ist process.env tree-shaken – defensiv abfragen:
+  const kEnv =
+    (typeof process !== 'undefined' &&
+      process?.env?.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY) ||
+    null;
+
+  const key = String(kExtra ?? kEnv ?? '').trim();
+
+  // Diagnose-Logging (maskiert)
+  const origin =
+    kExtra ? 'extra.directionsKey' :
+    kEnv   ? 'env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY' :
+             'none';
+  const len = key.length;
+  const masked = len >= 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : '(leer)';
+  console.log('[NavigationScreen] directionsKey source=', origin, 'len=', len, 'mask=', masked);
+
+  return key;
+}
+
+const DIRECTIONS_KEY = resolveDirectionsKey();
+const DIRECTIONS_KEY_LEN = DIRECTIONS_KEY.length;
 
 /* ─────────── Geo Helpers ─────────── */
 const toRad = (x) => (x * Math.PI) / 180;
@@ -114,8 +147,6 @@ const sampleEvery = (route, stepMeters = 18, maxPoints = 420) => {
 };
 
 /* ─────────── Config/Tuning ─────────── */
-const DIRECTIONS_KEY = Constants.expoConfig?.extra?.directionsKey || ''; // ✅ aus app.config.js
-console.log('[NavigationScreen] directionsKeyPresent:', !!DIRECTIONS_KEY); // nur true/false
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
 const POSITION_UPDATE_MIN_DIST = 3;
 const ANIMATE_THROTTLE_MS = 600;
@@ -151,7 +182,7 @@ export default function NavigationScreen() {
 
   /* ── 1) State ── */
   const [offer, setOffer] = useState(null);
-  const [providerDoc, setProviderDoc] = useState(null);            // NEW: Provider separat laden
+  const [providerDoc, setProviderDoc] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [userAccuracy, setUserAccuracy] = useState(null);
   const [heading, setHeading] = useState(0);
@@ -522,7 +553,14 @@ export default function NavigationScreen() {
     }
     try {
       setRouteLoading(true); setRouteError(null);
-      const coords = await fetchRoute(origin, dest, DIRECTIONS_KEY, 'walking', { avoidStairs: !!avoidStairs, timeoutMs: 10000 });
+      console.log('[directions] fetchRoute origin/dest=', origin, dest, 'keyLen=', DIRECTIONS_KEY_LEN);
+      const coords = await fetchRoute(
+        origin,
+        dest,
+        DIRECTIONS_KEY,                 // ← robust aufgelöst
+        'walking',
+        { avoidStairs: !!avoidStairs, timeoutMs: 10000 }
+      );
       const arr = Array.isArray(coords) ? coords : [];
       setRouteCoords(arr);
       await AsyncStorage.setItem(STORE_ROUTE, JSON.stringify(arr));
@@ -534,15 +572,29 @@ export default function NavigationScreen() {
         }, 250);
       }
     } catch (e) {
+      const msg = String(e?.message || e || '');
+      let pretty = msg;
+
+      // ✅ Häufige Fälle klarer benennen
+      if (/REQUEST_DENIED/i.test(msg) || /api key/i.test(msg)) {
+        // Hinweis exakt zu eurer Policy:
+        pretty = 'Google Directions: REQUEST_DENIED – Bitte sicherstellen: separater Directions-Webservice-Key **ohne** „Android apps“/HTTP-Referrer-Restriktion. Nur API-Restriktion (Directions, Distance Matrix, Maps JS etc.) aktivieren.';
+      } else if (/OVER_QUERY_LIMIT/i.test(msg)) {
+        pretty = 'Google Directions: OVER_QUERY_LIMIT – Quota/Billing prüfen.';
+      } else if (/NOT_FOUND/i.test(msg)) {
+        pretty = 'Google Directions: NOT_FOUND – Koordinaten prüfen.';
+      }
+
       const cached = await AsyncStorage.getItem(STORE_ROUTE);
       if (cached) {
         const arr = JSON.parse(cached);
         setRouteCoords(arr);
-        setRouteError('Offline – verwende zwischengespeicherte Route');
+        setRouteError(pretty + ' – Offline: verwende zwischengespeicherte Route.');
       } else {
-        setRouteError(String(e));
+        setRouteError(pretty);
         setRouteCoords([]);
       }
+      console.log('[directions] error:', msg);
     } finally { setRouteLoading(false); }
   }, [avoidStairs]);
 

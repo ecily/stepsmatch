@@ -1,6 +1,7 @@
 // backend/routes/location.js
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
 import Offer from '../models/Offer.js';
 import OfferVisibility from '../models/OfferVisibility.js';
@@ -42,7 +43,7 @@ router.post('/heartbeat', async (req, res) => {
     const token = String(b.token || '').trim();
     const source = String(b.source || 'hb').trim();
 
-    if (!token || !token.startsWith('ExponentPushToken[')) {
+    if (!token || !Expo.isExpoPushToken(token)) {
       return res.status(400).json({ ok: false, error: 'token_invalid_or_missing' });
     }
 
@@ -132,7 +133,7 @@ router.post('/heartbeat', async (req, res) => {
    Body: { token?, deviceId?, offerId, lat?, lng?, accuracy?, projectId? }
    Robust:
    - akzeptiert token ODER deviceId (mind. eines erforderlich)
-   - upsertet Token-Dokument bei Location-Update
+   - upsertet Token-Dokument bei Location-Update (auch ohne Koordinaten)
    - sendet an den neuesten aktiven Token je deviceId/project (falls möglich)
    - nutzt sendPushAndCheckReceipts (mit DeviceNotRegistered-Retry)
 */
@@ -140,7 +141,7 @@ router.post('/geofence-enter', async (req, res) => {
   try {
     const b = req.body || {};
     const rawToken = String(b.token || '').trim();
-    const hasToken = rawToken && rawToken.startsWith('ExponentPushToken[');
+    const hasToken = rawToken && Expo.isExpoPushToken(rawToken);
     const deviceId = b.deviceId ? String(b.deviceId) : null;
     const projectIdReq = b.projectId ? String(b.projectId) : null;
     const projectFilter = projectIdReq || PROJECT_ID || null;
@@ -159,16 +160,19 @@ router.post('/geofence-enter', async (req, res) => {
     const haveCoords =
       isValidNumber(lat) && isValidNumber(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
-    if (haveCoords && hasToken) {
+    // Upsert Token-Dokument auch ohne Koordinaten, damit Visibility & Retry stabil sind
+    if (hasToken) {
       const now = new Date();
       const $set = {
-        lastLocation: { type: 'Point', coordinates: [lng, lat] },
         lastHeartbeatAt: now,
         lastSeenAt: now,
         disabled: false,
         ...(projectFilter ? { projectId: projectFilter } : {}),
         ...(deviceId ? { deviceId } : {}),
       };
+      if (haveCoords) {
+        $set.lastLocation = { type: 'Point', coordinates: [lng, lat] };
+      }
       const $setOnInsert = {
         platform: b.platform ? String(b.platform).toLowerCase() : 'android',
       };
@@ -182,14 +186,16 @@ router.post('/geofence-enter', async (req, res) => {
     // Offer laden + Zeitfenster prüfen
     const offer = await Offer.findById(offerId).lean();
     if (!offer) return res.status(404).json({ ok: 0, error: 'offer_not_found' });
-    if (!isOfferActiveNow(offer, 'Europe/Vienna', new Date())) {
+
+    const now = new Date();
+    if (!isOfferActiveNow(offer, 'Europe/Vienna', now)) {
       console.log('[geofence] offer not active now, skip push', offerId);
       return res.json({ ok: 1, pushed: 0, reason: 'offer_not_active' });
     }
 
     // Ziel-Token bestimmen:
     // 1) Bevorzugt: neuester aktiver Token per deviceId (+ project)
-    // 2) Fallback: angegebenes rawToken, sofern nicht disabled
+    // 2) Fallback: angegebenes rawToken (auch wenn Doc disabled ist → nur für Sichtbarkeit), Versand geht an das Token
     let targetDoc = null;
 
     if (deviceId) {
@@ -201,22 +207,24 @@ router.post('/geofence-enter', async (req, res) => {
         .lean();
     }
     if (!targetDoc && hasToken) {
-      targetDoc = await PushToken.findOne({ token: rawToken, disabled: { $ne: true } })
-        .select('_id token deviceId projectId')
-        .lean();
+      targetDoc =
+        (await PushToken.findOne({ token: rawToken, disabled: { $ne: true } })
+          .select('_id token deviceId projectId')
+          .lean()) ||
+        (await PushToken.findOne({ token: rawToken })
+          .select('_id token deviceId projectId disabled')
+          .lean());
     }
 
-    // Falls gar kein Dokument (z. B. brandneues Token noch nicht registriert):
-    // mit rohem Token versuchen (sendPushAndCheckReceipts kümmert sich um Disable/Retry)
+    // Falls gar kein Dokument (brandneu):
     const sendToken = targetDoc?.token || (hasToken ? rawToken : null);
     if (!sendToken) {
       return res.status(404).json({ ok: 0, error: 'no_deliverable_token' });
     }
 
-    // Sichtbarkeit / Duplikatschutz
-    // Wenn wir ein konkretes Token-Dokument haben, können wir granular prüfen
+    // Sichtbarkeit / Duplikatschutz (nur wenn wir ein Doc haben)
     if (targetDoc?._id) {
-      const canPush = await OfferVisibility.shouldNotify(targetDoc._id, offer._id, new Date());
+      const canPush = await OfferVisibility.shouldNotify(targetDoc._id, offer._id, now);
       if (!canPush) {
         return res.json({ ok: 1, pushed: 0, reason: 'visibility_blocked' });
       }
@@ -229,7 +237,7 @@ router.post('/geofence-enter', async (req, res) => {
       offerId: String(offer._id),
       route: `/offers/${offer._id}`,
       source: 'geofence',
-      t: Date.now(),
+      t: now.getTime(),
     };
 
     const diag = await sendPushAndCheckReceipts({
@@ -252,17 +260,16 @@ router.post('/geofence-enter', async (req, res) => {
     // - Wenn initial fail & Retry erfolgreich: markiere für den neuesten aktiven Token der deviceId
     let pushed = okFirst;
     if (okFirst && targetDoc?._id) {
-      await OfferVisibility.markNotified(targetDoc._id, offer._id, new Date());
+      await OfferVisibility.markNotified(targetDoc._id, offer._id, now);
     } else if (!okFirst && (diag?.retry?.succeeded || 0) > 0) {
       pushed = 1;
-      // jüngsten aktiven Token je deviceId holen (falls deviceId bekannt) & markieren
       const dev = targetDoc?.deviceId || deviceId || null;
       if (dev) {
         const q = { deviceId: dev, disabled: { $ne: true } };
         if (projectFilter) q.projectId = projectFilter;
         const newest = await PushToken.findOne(q).sort({ lastSeenAt: -1, updatedAt: -1 }).select('_id token').lean();
         if (newest?._id) {
-          await OfferVisibility.markNotified(newest._id, offer._id, new Date());
+          await OfferVisibility.markNotified(newest._id, offer._id, now);
         }
       }
     }
