@@ -1,8 +1,9 @@
+// backend/jobs/offerPoller.js
 import mongoose from 'mongoose';
 import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
-import { sendPushAndCheckReceipts } from '../utils/push.js'; // robust wie Diagnose
+import { sendPushAndCheckReceipts } from '../utils/push.js'; // robuste Diagnose-Variante
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // TZ-sicher
 
 /* ───────── Helpers ───────── */
@@ -43,13 +44,13 @@ function distanceMeters(lng1, lat1, lng2, lat2) {
 }
 
 /* ───────── Konfig ───────── */
-// ⏱️ Polling alle 60s (via ENV überschreibbar)
+// ⏱️ Polling (via ENV überschreibbar)
 const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 
 // Wie weit zurück neue/aktualisierte Offers berücksichtigt werden
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 
-// 🛰️ Freshness-Fenster für Standort (Default 2 Minuten)
+// 🛰️ Freshness-Fenster für Standort
 const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 2 * 60_000);
 
 // Fallback-Radius, falls Offer keinen Radius hat
@@ -61,16 +62,15 @@ const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 15); 
 // 🔧 Pro-Token-Accuracy-Cap für die Nachfilterung (Haversine)
 const ACCURACY_TOKEN_CAP = Number(process.env.PUSH_ACCURACY_TOKEN_CAP ?? 60); // Meter
 
-// Für die Vorselektion wählen wir die größere der beiden Puffer,
-// damit genug Kandidaten in die Nachfilterung fallen.
+// Vorselektion großzügig, damit die Nachfilterung Kandidaten bekommt
 const SEARCH_BUFFER = Math.max(ACCURACY_BUFFER_MAX, ACCURACY_TOKEN_CAP);
 
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (müssen zur App passen)
 const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
-const PUSH_PRIORITY = process.env.PUSH_PRIORITY || 'high';
-const PUSH_SOUND = process.env.PUSH_SOUND || 'default';
+const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
+const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 
 // Projekt-Scope (Filter Tokens auf dieses Projekt, falls gesetzt)
 const PROJECT_ID =
@@ -79,11 +79,16 @@ const PROJECT_ID =
   process.env.PROJECT_ID ||
   null;
 
+// Re-Notify nach Offer-Update erlauben (Default ON)
+const OFFER_NOTIFY_RESET_ON_UPDATE = !['0','false','off'].includes(
+  String(process.env.OFFER_NOTIFY_RESET_ON_UPDATE ?? '1').toLowerCase()
+);
+
 let timer = null;
 
 /* ───────── Leader-Lock & Dedup-Lock (Mongo) ───────── */
 // Collection-Namen
-const LEADER_COLL = 'offer_poller_leader';
+const LEADER_COLL   = 'offer_poller_leader';
 const PUSHLOCKS_COLL = 'offer_poller_pushlocks';
 
 // Lease-Zeit für Leader (etwas > Intervall)
@@ -200,19 +205,20 @@ export function startOfferPoller() {
           },
         ],
       })
-        .select('_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired')
+        .select('_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired updatedAt createdAt')
         .lean();
 
       const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
 
+      // Tokens mit frischer Location (ggf. Project-Scope)
       const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
       const tokenQuery = {
         disabled: { $ne: true },
         'lastLocation.coordinates.0': { $exists: true },
         $or: [
           { lastHeartbeatAt: { $gte: freshSince } },
-          { lastSeenAt: { $gte: freshSince } },
-          { updatedAt: { $gte: freshSince } },
+          { lastSeenAt:      { $gte: freshSince } },
+          { updatedAt:       { $gte: freshSince } },
         ],
       };
       if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
@@ -248,8 +254,10 @@ export function startOfferPoller() {
             .select('_id token platform interests lastLocation projectId deviceId lastLocationAccuracy')
             .lean();
 
+          // Interessen-Matching
           let matched = nearTokens.filter((t) => interestsMatch(offer, t));
 
+          // Feinfilter: echte Distanz + token-spezifischer Eff-Radius
           if (matched.length) {
             matched = matched.filter((t) => {
               const acc = Number(t?.lastLocationAccuracy);
@@ -264,28 +272,39 @@ export function startOfferPoller() {
 
           if (!matched.length) continue;
 
+          // Dedupe: Snooze blockt immer; notified/dismissed blocken nur, wenn nach cutoff
+          const RESET_ON_UPDATE = OFFER_NOTIFY_RESET_ON_UPDATE;
+          const cutoff = RESET_ON_UPDATE
+            ? new Date(offer?.updatedAt || offer?.createdAt || 0)
+            : new Date(0);
+
           const vis = await OfferVisibility.find({
             offerId: offer._id,
             deviceToken: { $in: matched.map((t) => t._id) },
-            $or: [{ status: 'notified' }, { status: 'dismissed' }, { status: 'snoozed', remindAt: { $gt: now } }],
-          }).select('deviceToken').lean();
+            $or: [
+              { status: 'snoozed', remindAt: { $gt: now } },
+              { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: cutoff } },
+            ],
+          }).select('deviceToken status remindAt lastNotifiedAt').lean();
 
           const already = new Set(vis.map((v) => String(v.deviceToken)));
           const toNotifyDocs = matched.filter((t) => !already.has(String(t._id)));
           if (!toNotifyDocs.length) continue;
 
+          // Idempotenz-Lock je (offerId, deviceToken)
           const deviceTokenIds = toNotifyDocs.map((t) => t._id);
           const lockRes = await createPushLocks(offer._id, deviceTokenIds, NEW_OFFER_WINDOW_MS);
           const lockedSet = new Set(lockRes.inserted);
           const deduped = toNotifyDocs.filter((t) => lockedSet.has(String(t._id)));
           if (!deduped.length) continue;
 
+          // Push senden
           const tokens = deduped.map((t) => t.token).filter(Boolean);
           if (!tokens.length) continue;
 
           const title = offer.name ?? 'Neues Angebot in deiner Nähe';
-          const body = 'Tippe, um Details zu sehen.';
-          const data = {
+          const body  = 'Tippe, um Details zu sehen.';
+          const data  = {
             type: 'offer',
             offerId: String(offer._id),
             route: `/offers/${offer._id}`,
@@ -298,28 +317,36 @@ export function startOfferPoller() {
             body,
             data,
             channelId: PUSH_CHANNEL_ID,
-            priority: PUSH_PRIORITY,
-            sound: PUSH_SOUND,
-            delayMs: 2500,
+            priority:  PUSH_PRIORITY,
+            sound:     PUSH_SOUND,
+            delayMs:   2500,
           });
 
+          // Erfolgreich gesendete Tokens ermitteln
           const sentTokens = [];
           const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
           const idToToken = diag?.sent?.idToToken || {};
-          for (const t of tickets) {
-            if (t?.status === 'ok' && t?.id && idToToken[t.id]) {
-              sentTokens.push(idToToken[t.id]);
+          if (tickets.length) {
+            for (let i = 0; i < tickets.length; i++) {
+              const t = tickets[i];
+              if (t?.status === 'ok') {
+                // bevorzugt idToToken, ansonsten Fallback auf Positions-Mapping
+                const tok = (t?.id && idToToken[t.id]) ? idToToken[t.id] : (tokens[i] || null);
+                if (tok) sentTokens.push(tok);
+              }
             }
           }
 
+          // OfferVisibility auf „notified“ setzen
           if (sentTokens.length) {
             const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
             const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
             const nowIso = new Date();
-            const bulk = sentTokens.map((tok) => {
+            const bulk = [];
+            for (const tok of sentTokens) {
               const deviceTokenId = byToken.get(tok);
-              if (!deviceTokenId) return null;
-              return {
+              if (!deviceTokenId) continue;
+              bulk.push({
                 updateOne: {
                   filter: { offerId: offer._id, deviceToken: deviceTokenId },
                   update: {
@@ -328,16 +355,18 @@ export function startOfferPoller() {
                   },
                   upsert: true,
                 },
-              };
-            }).filter(Boolean);
+              });
+            }
             if (bulk.length) await OfferVisibility.bulkWrite(bulk);
           }
 
+          // lokal deaktivieren falls nötig
           const disabledCount = Array.isArray(diag?.disabledTokens) ? diag.disabledTokens.length : 0;
           if (disabledCount > 0) {
             await PushToken.updateMany({ token: { $in: diag.disabledTokens } }, { $set: { disabled: true } });
           }
 
+          // Logging
           const summary = diag?.receipts?.summary || {};
           console.log(
             `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
@@ -360,6 +389,7 @@ export function startOfferPoller() {
     }
   }
 
+  // Sofortiger erster Lauf + Intervall
   (async () => {
     try { await ensureIndexes(); } catch {}
     await doCycle();
