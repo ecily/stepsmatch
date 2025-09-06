@@ -18,7 +18,7 @@ const router = express.Router();
 function toArray(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val.filter(Boolean);
-  if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
+  if (typeof val === 'string') return val.split(',').map((s) => s.trim()).filter(Boolean);
   return [];
 }
 function toInt(val, def) {
@@ -34,9 +34,10 @@ function parseProjection(fields) {
   if (!arr.length) return null;
   const proj = {};
   for (const f of arr) proj[f] = 1;
+  // _id nie verlieren
+  proj._id = 1;
   return proj;
 }
-
 function isHHMM(s) {
   return typeof s === 'string' && /^(\d{1,2}):(\d{2})$/.test(s);
 }
@@ -46,12 +47,12 @@ function normalizeOfferPayload(obj = {}) {
   // validTimes: akzeptiere start/end → from/to
   const vt = obj.validTimes || obj.times || {};
   const from = vt.from ?? vt.start ?? null;
-  const to   = vt.to   ?? vt.end   ?? null;
+  const to = vt.to ?? vt.end ?? null;
 
   if (from || to) {
     obj.validTimes = {};
     if (from && isHHMM(from)) obj.validTimes.from = from;
-    if (to   && isHHMM(to))   obj.validTimes.to   = to;
+    if (to && isHHMM(to)) obj.validTimes.to = to;
   } else if ('validTimes' in obj && !obj.validTimes) {
     delete obj.validTimes;
   }
@@ -60,12 +61,12 @@ function normalizeOfferPayload(obj = {}) {
   const vd = obj.validDates || {};
   const single = vd.on ?? vd.date ?? obj.validOn ?? obj.date;
   const fromD = vd.from ?? vd.start ?? (single ?? null);
-  const toD   = vd.to   ?? vd.end   ?? (single ?? null);
+  const toD = vd.to ?? vd.end ?? (single ?? null);
 
   if (fromD || toD) {
     obj.validDates = {};
     if (fromD) obj.validDates.from = new Date(fromD);
-    if (toD)   obj.validDates.to   = new Date(toD);
+    if (toD) obj.validDates.to = new Date(toD);
   } else if ('validDates' in obj && !obj.validDates) {
     delete obj.validDates;
   }
@@ -87,7 +88,6 @@ function normalizeOfferPayload(obj = {}) {
    ──────────────────────────────────────────────────────────── */
 async function notifyOfferNow(offer) {
   try {
-    // Delegation an gehärtete Geo-Push-Logik (Sanity-Puffer, Project-Scope, ActiveNow, usw.)
     const now = new Date();
     return await sendPushToNearbyTokensForOffer(offer, { now });
   } catch (e) {
@@ -114,6 +114,12 @@ router.get('/test-offers', async (_req, res) => {
 
 /* ────────────────────────────────────────────────────────────
    Optimierte LISTE: GET /api/offers
+   - supports:
+     - lat,lng (+ optional maxDistanceM) → $geoNear
+     - interests (CSV oder mehrfach) → grobe Kategorie/Subkategorie-Suche
+     - withProvider=1 → Provider-Population (Distance bleibt erhalten)
+     - activeNow=1 → DB-Vorfilter (validDates-Zeitfenster) + finale Logik via isOfferActiveNow
+     - fields=a,b,c → Projektion
    ──────────────────────────────────────────────────────────── */
 router.get('/', async (req, res) => {
   const t0 = performance.now();
@@ -125,12 +131,22 @@ router.get('/', async (req, res) => {
       if (!term) continue;
       const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       ors.push({ subcategory: { $regex: safe, $options: 'i' } });
-      ors.push({ category:   { $regex: safe, $options: 'i' } });
+      ors.push({ category: { $regex: safe, $options: 'i' } });
     }
     return ors.length ? { $or: ors } : null;
   }
 
-  function buildPipeline({ hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit }) {
+  function buildActiveDatesMatch(now) {
+    // (validDates.from missing or <= now) AND (validDates.to missing or >= now)
+    return {
+      $and: [
+        { $or: [{ 'validDates.from': { $exists: false } }, { 'validDates.from': { $lte: now } }] },
+        { $or: [{ 'validDates.to': { $exists: false } }, { 'validDates.to': { $gte: now } }] },
+      ],
+    };
+  }
+
+  function buildPipeline({ hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit, activeDatesPrefilter }) {
     const pipeline = [];
 
     if (hasGeo) {
@@ -139,7 +155,7 @@ router.get('/', async (req, res) => {
           near: { type: 'Point', coordinates: [lng, lat] },
           distanceField: 'distance',
           spherical: true,
-        }
+        },
       };
       if (Number.isFinite(maxDistanceM) && maxDistanceM > 0) {
         geo.$geoNear.maxDistance = maxDistanceM;
@@ -147,25 +163,36 @@ router.get('/', async (req, res) => {
       pipeline.push(geo);
     }
 
+    if (activeDatesPrefilter) {
+      pipeline.push({ $match: activeDatesPrefilter });
+    }
+
     const interestsClause = buildInterestsOrClause(interestsLC);
     if (interestsClause) pipeline.push({ $match: interestsClause });
 
-    if (projection) {
-      pipeline.push({ $project: projection });
-      if (hasGeo && !projection.distance) {
-        pipeline[pipeline.length - 1].$project.distance = 1;
-      }
-    }
+    // Immer nur sinnvolle Felder ziehen
+    const baseProject = projection || {
+      _id: 1,
+      name: 1,
+      category: 1,
+      subcategory: 1,
+      radius: 1,
+      location: 1,
+      validTimes: 1,
+      validDays: 1,
+      validDates: 1,
+      provider: 1,
+    };
+
+    // distance nicht verlieren
+    if (hasGeo) baseProject.distance = 1;
+    pipeline.push({ $project: baseProject });
 
     pipeline.push({
       $facet: {
         totalDocs: [{ $count: 'count' }],
-        docs: [
-          { $sort: hasGeo ? { distance: 1 } : { _id: -1 } },
-          { $skip: skip },
-          { $limit: limit }
-        ]
-      }
+        docs: [{ $sort: hasGeo ? { distance: 1 } : { _id: -1 } }, { $skip: skip }, { $limit: limit }],
+      },
     });
 
     return pipeline;
@@ -182,7 +209,7 @@ router.get('/', async (req, res) => {
     const skip = (page - 1) * limit;
 
     const interestsRaw = toArray(req.query.interests);
-    const interestsLC = interestsRaw.map(s => String(s).toLowerCase()).filter(Boolean);
+    const interestsLC = interestsRaw.map((s) => String(s).toLowerCase()).filter(Boolean);
 
     const activeNow = req.query.activeNow === '1' || req.query.activeNow === 'true';
     const withProvider = req.query.withProvider === '1' || req.query.withProvider === 'true';
@@ -190,37 +217,65 @@ router.get('/', async (req, res) => {
     const projection = parseProjection(req.query.fields);
     const providerSelect = 'name address category description contact location user';
 
+    // Prefilter nur für validDates (erspart Overfetching), finale Logik später
+    const now = new Date();
+    const activeDatesPrefilter = activeNow ? buildActiveDatesMatch(now) : null;
+
     let pipeline = buildPipeline({
-      hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit
+      hasGeo,
+      lat,
+      lng,
+      maxDistanceM,
+      interestsLC,
+      projection,
+      skip,
+      limit,
+      activeDatesPrefilter,
     });
 
     let agg = await Offer.aggregate(pipeline).allowDiskUse(true);
     let facet = agg[0] || { totalDocs: [], docs: [] };
     let docs = facet.docs || [];
-    let total = (facet.totalDocs[0]?.count) || 0;
+    let total = facet.totalDocs[0]?.count || 0;
 
+    // Falls mit Geo und MaxDistance zu restriktiv → ohne maxDistance erneut, um min. Ergebnisse zu liefern
     if (hasGeo && total === 0) {
       const pipelineNoMax = buildPipeline({
-        hasGeo, lat, lng, maxDistanceM: null, interestsLC, projection, skip, limit
+        hasGeo,
+        lat,
+        lng,
+        maxDistanceM: null,
+        interestsLC,
+        projection,
+        skip,
+        limit,
+        activeDatesPrefilter,
       });
       agg = await Offer.aggregate(pipelineNoMax).allowDiskUse(true);
       facet = agg[0] || { totalDocs: [], docs: [] };
       docs = facet.docs || [];
-      total = (facet.totalDocs[0]?.count) || 0;
+      total = facet.totalDocs[0]?.count || 0;
     }
 
+    // Provider nachladen, aber distance beibehalten
     if (withProvider && docs.length) {
-      const ids = docs.map(d => d._id);
+      const ids = docs.map((d) => d._id);
       const populated = await Offer.find({ _id: { $in: ids } }, projection || {})
         .populate({ path: 'provider', select: providerSelect })
         .lean();
-      const byId = new Map(populated.map(d => [String(d._id), d]));
-      docs = docs.map(d => byId.get(String(d._id)) || d);
+
+      const byId = new Map(populated.map((d) => [String(d._id), d]));
+      docs = docs.map((d) => {
+        const full = byId.get(String(d._id));
+        return full ? { ...full, ...(d.distance != null ? { distance: d.distance } : {}) } : d;
+      });
     }
 
-    if (activeNow) {
-      // zentrale Logik verwenden (Europe/Vienna)
-      docs = docs.filter(o => isOfferActiveNow(o, 'Europe/Vienna'));
+    // Finale activeNow-Filterung (validDays/validTimes/Timezone)
+    if (activeNow && docs.length) {
+      docs = docs.filter((o) => isOfferActiveNow(o, 'Europe/Vienna', now));
+      // total auf die tatsächlich ausgelieferte Menge anpassen (wir berichten die Seite, nicht die Gesamtzahl)
+      total = docs.length + skip; // Best effort; verhindert "0 Ergebnisse" mit hasMore=true
     }
 
     const tookMs = Math.round(performance.now() - t0);
@@ -230,7 +285,7 @@ router.get('/', async (req, res) => {
       total,
       hasMore: skip + docs.length < total,
       tookMs,
-      data: docs
+      data: docs,
     });
   } catch (err) {
     console.error('GET /api/offers failed:', err);
@@ -243,13 +298,7 @@ router.get('/', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 router.post('/nearby', async (req, res) => {
   try {
-    const {
-      lat,
-      lng,
-      interests,
-      maxDistance = 5000,
-      limit = 30
-    } = req.body;
+    const { lat, lng, interests, maxDistance = 5000, limit = 30 } = req.body;
 
     const latitude = Number(lat);
     const longitude = Number(lng);
@@ -258,9 +307,7 @@ router.post('/nearby', async (req, res) => {
       return res.status(400).json({ error: 'Ungültige Parameter' });
     }
 
-    const norm = interests
-      .map(i => String(i || '').toLowerCase().trim())
-      .filter(Boolean);
+    const norm = interests.map((i) => String(i || '').toLowerCase().trim()).filter(Boolean);
 
     const docs = await Offer.aggregate([
       {
@@ -268,8 +315,8 @@ router.post('/nearby', async (req, res) => {
           near: { type: 'Point', coordinates: [longitude, latitude] },
           distanceField: 'distanceMeters',
           maxDistance: Number(maxDistance),
-          spherical: true
-        }
+          spherical: true,
+        },
       },
       { $match: { radius: { $gt: 0 }, subcategory: { $exists: true, $ne: null } } },
       { $addFields: { sub_lc: { $toLower: '$subcategory' } } },
@@ -283,11 +330,11 @@ router.post('/nearby', async (req, res) => {
           location: 1,
           radius: 1,
           images: { $slice: ['$images', 3] },
-          distanceMeters: { $round: ['$distanceMeters', 0] }
-        }
+          distanceMeters: { $round: ['$distanceMeters', 0] },
+        },
       },
       { $sort: { distanceMeters: 1 } },
-      { $limit: Number(limit) }
+      { $limit: Number(limit) },
     ]);
 
     res.json(docs);
@@ -299,12 +346,7 @@ router.post('/nearby', async (req, res) => {
 
 router.post('/nearby-noauth', async (req, res) => {
   try {
-    const {
-      lat,
-      lng,
-      maxDistance = 5000,
-      limit = 30
-    } = req.body;
+    const { lat, lng, maxDistance = 5000, limit = 30 } = req.body;
 
     const latitude = Number(lat);
     const longitude = Number(lng);
@@ -319,8 +361,8 @@ router.post('/nearby-noauth', async (req, res) => {
           near: { type: 'Point', coordinates: [longitude, latitude] },
           distanceField: 'distanceMeters',
           maxDistance: Number(maxDistance),
-          spherical: true
-        }
+          spherical: true,
+        },
       },
       { $match: { radius: { $gt: 0 } } },
       {
@@ -332,11 +374,11 @@ router.post('/nearby-noauth', async (req, res) => {
           location: 1,
           radius: 1,
           images: { $slice: ['$images', 3] },
-          distanceMeters: { $round: ['$distanceMeters', 0] }
-        }
+          distanceMeters: { $round: ['$distanceMeters', 0] },
+        },
       },
       { $sort: { distanceMeters: 1 } },
-      { $limit: Number(limit) }
+      { $limit: Number(limit) },
     ]);
 
     res.json(docs);
@@ -368,8 +410,8 @@ router.get('/nearby-geofence', async (req, res) => {
             near: { type: 'Point', coordinates: [lng, lat] },
             distanceField: 'distanceMeters',
             spherical: true,
-            maxDistance: maxDistance
-          }
+            maxDistance: maxDistance,
+          },
         },
         {
           $project: {
@@ -377,26 +419,26 @@ router.get('/nearby-geofence', async (req, res) => {
             radiusMeters: '$radius',
             distanceMeters: 1,
             longitude: { $arrayElemAt: ['$location.coordinates', 0] },
-            latitude:  { $arrayElemAt: ['$location.coordinates', 1] }
-          }
+            latitude: { $arrayElemAt: ['$location.coordinates', 1] },
+          },
         },
         {
           $match: {
             radiusMeters: { $gt: 0 },
             latitude: { $type: 'number' },
-            longitude: { $type: 'number' }
-          }
+            longitude: { $type: 'number' },
+          },
         },
         { $sort: { distanceMeters: 1 } },
-        { $limit: limit }
+        { $limit: limit },
       ]);
 
-      const geofences = rows.map(r => ({
+      const geofences = rows.map((r) => ({
         offerId: String(r._id),
         latitude: r.latitude,
         longitude: r.longitude,
         radiusMeters: r.radiusMeters,
-        distanceMeters: Math.round(r.distanceMeters ?? 0)
+        distanceMeters: Math.round(r.distanceMeters ?? 0),
       }));
 
       return res.json({ success: true, geofences, count: geofences.length });
@@ -407,8 +449,8 @@ router.get('/nearby-geofence', async (req, res) => {
       const userLoc = { lat, lng };
 
       const filtered = allOffers
-        .filter(o => Array.isArray(o?.location?.coordinates) && o.location.coordinates.length === 2 && o.radius > 0)
-        .map(o => {
+        .filter((o) => Array.isArray(o?.location?.coordinates) && o.location.coordinates.length === 2 && o.radius > 0)
+        .map((o) => {
           const [olng, olat] = o.location.coordinates;
           const distance = haversine(userLoc, { lat: olat, lng: olng });
           return {
@@ -416,10 +458,10 @@ router.get('/nearby-geofence', async (req, res) => {
             latitude: olat,
             longitude: olng,
             radiusMeters: o.radius,
-            distanceMeters: distance
+            distanceMeters: distance,
           };
         })
-        .filter(r => r.distanceMeters <= maxDistance)
+        .filter((r) => r.distanceMeters <= maxDistance)
         .sort((a, b) => a.distanceMeters - b.distanceMeters)
         .slice(0, limit);
 
@@ -443,7 +485,11 @@ router.post('/', async (req, res) => {
 
     // Sofort-Push wenn aktuell aktiv
     try {
-      if (isOfferActiveNow(saved, 'Europe/Vienna') && Array.isArray(saved?.location?.coordinates) && (saved?.radius || 0) > 0) {
+      if (
+        isOfferActiveNow(saved, 'Europe/Vienna') &&
+        Array.isArray(saved?.location?.coordinates) &&
+        (saved?.radius || 0) > 0
+      ) {
         const notify = await notifyOfferNow(saved);
         console.log('[offers.create] notify summary:', notify);
         return res.status(201).json({ ok: true, offer: saved, notify });
@@ -516,7 +562,11 @@ router.put('/:id', async (req, res) => {
 
     // Bei Updates: Push triggern, wenn aktuell aktiv
     try {
-      if (isOfferActiveNow(updatedOffer, 'Europe/Vienna') && Array.isArray(updatedOffer?.location?.coordinates) && (updatedOffer?.radius || 0) > 0) {
+      if (
+        isOfferActiveNow(updatedOffer, 'Europe/Vienna') &&
+        Array.isArray(updatedOffer?.location?.coordinates) &&
+        (updatedOffer?.radius || 0) > 0
+      ) {
         const notify = await notifyOfferNow(updatedOffer);
         console.log('[offers.update] notify summary:', notify);
         return res.json({ ok: true, offer: updatedOffer, notify });

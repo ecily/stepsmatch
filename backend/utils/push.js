@@ -1,3 +1,4 @@
+// backend/utils/push.js
 // ESM, Node 22.x
 import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
@@ -30,26 +31,45 @@ const GRACE_MS = (() => {
 // Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests deinem Expo-Projekt sicher zugeordnet sind.
 const expo = accessToken ? new Expo({ accessToken }) : new Expo();
 
+/* ────────────────────────────────────────────────────────────
+   Helfer
+   ──────────────────────────────────────────────────────────── */
+
+function uniq(arr = []) {
+  return Array.from(new Set(arr));
+}
+function normTokens(raw = []) {
+  // trimme & filtere Leerstrings
+  return uniq(
+    (raw || [])
+      .map((t) => (typeof t === 'string' ? t.trim() : t))
+      .filter((t) => typeof t === 'string' && t.length > 0)
+  );
+}
+
 /**
  * Prüft Tokens gegen DB & Projekt-Scope.
  * - Muss Expo-Format haben
  * - Muss in DB existieren
  * - Darf nicht disabled sein
- * - Bei ENFORCE_PROJECT_SCOPE && PROJECT_ID: doc.projectId muss matchen
+ * - Bei ENFORCE_PROJECT_SCOPE && PROJECT_ID: doc.projectId muss matchen (falls gesetzt)
  */
 async function scopeAndValidateTokens(rawTokens = []) {
   const dropped = { invalidFormat: [], unknown: [], disabled: [], mismatch: [] };
-  if (!rawTokens.length) return { scoped: [], dropped };
+  const input = normTokens(rawTokens);
+  if (!input.length) return { scoped: [], dropped };
 
   // Nur Expo-Format weiter betrachten (spart DB-Query)
-  const expoLike = rawTokens.filter((t) => Expo.isExpoPushToken(t));
-  const docs = await PushToken.find({ token: { $in: expoLike } })
-    .select('token projectId disabled')
-    .lean();
+  const expoLike = input.filter((t) => Expo.isExpoPushToken(t));
+  const docs = expoLike.length
+    ? await PushToken.find({ token: { $in: expoLike } })
+        .select('token projectId disabled')
+        .lean()
+    : [];
   const byToken = new Map(docs.map((d) => [d.token, d]));
 
   const scoped = [];
-  for (const t of rawTokens) {
+  for (const t of input) {
     if (!Expo.isExpoPushToken(t)) {
       dropped.invalidFormat.push(t);
       continue;
@@ -75,7 +95,7 @@ async function scopeAndValidateTokens(rawTokens = []) {
     dropped.invalidFormat.length + dropped.unknown.length + dropped.disabled.length + dropped.mismatch.length;
   if (totalDropped > 0) {
     console.warn('[push] token filter', {
-      in: rawTokens.length,
+      in: input.length,
       out: scoped.length,
       dropped: {
         invalidFormat: dropped.invalidFormat.length,
@@ -87,6 +107,10 @@ async function scopeAndValidateTokens(rawTokens = []) {
   }
   return { scoped, dropped };
 }
+
+/* ────────────────────────────────────────────────────────────
+   Senden
+   ──────────────────────────────────────────────────────────── */
 
 /**
  * Sendet Push an das Expo-Gateway (mit Chunking).
@@ -104,7 +128,7 @@ export async function sendPush({
 }) {
   // Vor dem Senden strikt gegen DB/Scope prüfen
   const { scoped } = await scopeAndValidateTokens(tokens || []);
-  const valid = scoped;
+  const valid = normTokens(scoped);
 
   if (!valid.length) {
     return { sent: 0, tickets: [], errors: ['no-valid-tokens'], okCount: 0, ticketIds: [], idToToken: {} };
@@ -151,7 +175,10 @@ export async function sendPush({
 
 /** Receipts abholen (+ kompakte Summary) */
 export async function checkReceipts(ticketIds = []) {
-  const chunks = expo.chunkPushNotificationReceiptIds(ticketIds);
+  const ids = (ticketIds || []).filter(Boolean);
+  if (!ids.length) return { receipts: {}, errors: [], summary: { ok: 0, errors: {} } };
+
+  const chunks = expo.chunkPushNotificationReceiptIds(ids);
   const receipts = [];
   const errors = [];
 
@@ -200,6 +227,10 @@ function isFreshDoc(doc) {
   const newest = Math.max(...ts);
   return now - newest <= GRACE_MS;
 }
+
+/* ────────────────────────────────────────────────────────────
+   Komfort: send + receipts + Grace + Auto-Retry auf neuestes Gerätetoken
+   ──────────────────────────────────────────────────────────── */
 
 /**
  * Komfort: sendet, verarbeitet Receipts und:
@@ -308,7 +339,7 @@ export async function sendPushAndCheckReceipts({
         } else if (code === 'MessageTooBig' || code === 'MessageRateExceeded') {
           // bekannte Fehler, aber kein Token-Problem
         } else {
-          // Unbekannt → zur Info
+          // Unbekannt → zur Info (wir markieren Token nicht als disabled)
           const tok = sent.idToToken[ticketId];
           if (tok) result.invalid.push(tok);
         }
@@ -331,20 +362,17 @@ export async function sendPushAndCheckReceipts({
           priority,
         });
 
-        // optional: kurze Receipt-Wartezeit
+        // optional: kurze Receipt-Wartezeit & Summen mergen
         if (retrySend.ticketIds?.length) {
           const retryReceipts = await checkReceipts(retrySend.ticketIds);
-          // zähle ok
           const okAfterRetry = retryReceipts.summary?.ok || 0;
           result.retry.succeeded = okAfterRetry;
-          // Mische (nur Summary, um Log kompakt zu halten)
           result.receipts.summary.ok += okAfterRetry;
           for (const [k, v] of Object.entries(retryReceipts.summary?.errors || {})) {
             result.receipts.summary.errors[k] = (result.receipts.summary.errors[k] || 0) + v;
           }
         }
       } catch (e) {
-        // Retry-Fehler bleiben im Log sichtbar
         console.error('[push] retry send error', e);
       }
     }
@@ -353,7 +381,10 @@ export async function sendPushAndCheckReceipts({
   return result;
 }
 
-// Kompatibilität / Aliase
+/* ────────────────────────────────────────────────────────────
+   Kompatibilität / Aliase
+   ──────────────────────────────────────────────────────────── */
+
 export async function sendOffersPushSafe(args) {
   try {
     return await sendPush(args);

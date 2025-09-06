@@ -51,7 +51,7 @@ const INTERVAL_MS = envMs('PUSH_POLLER_INTERVAL_MS', 60_000);
 const NEW_OFFER_WINDOW_MS = envMs('PUSH_NEW_OFFER_WINDOW_MS', 15 * 60_000);
 
 // 🛰️ Freshness-Fenster für Standort
-const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 2 * 60_000);
+const LAST_LOCATION_MAX_AGE_MS = envMs('PUSH_LAST_LOCATION_MAX_AGE_MS', 10 * 60_000);
 
 // Fallback-Radius, falls Offer keinen Radius hat
 const MAX_DISTANCE_M_DEFAULT = Number(process.env.PUSH_MAX_DISTANCE_M ?? 1500);
@@ -88,7 +88,7 @@ let timer = null;
 
 /* ───────── Leader-Lock & Dedup-Lock (Mongo) ───────── */
 // Collection-Namen
-const LEADER_COLL   = 'offer_poller_leader';
+const LEADER_COLL    = 'offer_poller_leader';
 const PUSHLOCKS_COLL = 'offer_poller_pushlocks';
 
 // Lease-Zeit für Leader (etwas > Intervall)
@@ -192,8 +192,12 @@ export function startOfferPoller() {
       const leader = await acquireLeader();
       if (!leader.ok) return;
 
+      // Kandidaten: nur Offers mit Geo & Radius > 0 und (neu/aktualisiert im Fenster oder im Datumsfenster gültig)
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
       const candidateOffers = await Offer.find({
+        radius: { $gt: 0 },
+        'location.coordinates.0': { $type: 'number' },
+        'location.coordinates.1': { $type: 'number' },
         $or: [
           { createdAt: { $gte: since } },
           { updatedAt: { $gte: since } },
@@ -227,7 +231,12 @@ export function startOfferPoller() {
         .select('_id token platform interests lastLocation projectId deviceId updatedAt lastSeenAt lastHeartbeatAt lastLocationAccuracy')
         .lean();
 
-      if (!activeOffers.length || !tokensFresh.length) return;
+      if (!activeOffers.length || !tokensFresh.length) {
+        if (DEBUG) {
+          console.log(`[offerPoller][debug] skip cycle — activeOffers=${activeOffers.length} tokensFresh=${tokensFresh.length}`);
+        }
+        return;
+      }
 
       for (const offer of activeOffers) {
         try {

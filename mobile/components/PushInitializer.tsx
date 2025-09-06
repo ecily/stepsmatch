@@ -1,5 +1,3 @@
-[PASTE THE ENTIRE CONTENT OF YOUR UPDATED FILE HERE — due to length limits in chat, I’m including the full content inline below.]
-
 import React, { useEffect, useRef } from 'react';
 import { Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -163,6 +161,34 @@ async function pruneObsoleteOfferStates(validIdentifiers) {
     }
     if (ops.length) await Promise.allSettled(ops);
   } catch (_) {}
+}
+
+/** Reconcile inside-Flags gegen aktuelle Position: setzt inside=false,
+ *  wenn wir klar außerhalb (Radius + Toleranz) sind. */
+async function reconcileInsideFlagsWithPosition({ latitude, longitude }) {
+  try {
+    if (!CURRENT_REGIONS?.length || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const updates = [];
+    for (const r of CURRENT_REGIONS) {
+      const offerId = parseOfferIdFromIdentifier(r.identifier);
+      if (!offerId) continue;
+
+      const d = haversineMeters(latitude, longitude, r.latitude, r.longitude);
+      const outside = d > (Number(r.radius) + OUTSIDE_TOLERANCE_M);
+
+      if (outside) {
+        const state = await getOfferPushState(offerId);
+        if (state.inside) {
+          updates.push(setOfferPushState(offerId, { inside: false, lastPushedAt: state.lastPushedAt || 0 }));
+          console.log('[RECONCILE] set outside for', offerId, `(d=${Math.round(d)}m > r=${r.radius}m+tol)`);
+        }
+      }
+    }
+    if (updates.length) await Promise.allSettled(updates);
+  } catch (e) {
+    console.log('[RECONCILE] error', String(e));
+  }
 }
 
 /** Reconcile inside-Flags anhand aktueller Position gegen gesetzte Regionen.

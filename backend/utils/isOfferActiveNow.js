@@ -1,12 +1,14 @@
 // backend/utils/isOfferActiveNow.js
 
 /**
- * Aktiv jetzt? – strikt im Kalender "Europe/Vienna".
+ * Aktiv jetzt? – strikt im Kalender "Europe/Vienna" (oder über Parameter timeZone).
  * Unterstützt:
- *  - validDays / weekdays: ["Montag","Di","Wednesday","Thu", 0..6]   (Mo=0 … So=6)
- *  - validTimes: { from: "HH:mm", to: "HH:mm" }  (akzeptiert auch start/end) inkl. Nachtfenster (22:00–02:00)
+ *  - validDays / weekdays: ["Montag","Di","Wednesday","Thu", 0..6, "0".."6", 1..7, "1".."7"]
+ *      Mapping intern: Mo=0 … So=6. Werte 1..7 werden auf 0..6 normalisiert (1=>Mo=0, …, 7=>So=6).
+ *  - validTimes: { from: "HH:mm", to: "HH:mm" } (akzeptiert auch start/end), inkl. Nachtfenster (22:00–02:00)
+ *      Gleichheit from==to wird als "24h offen" interpretiert.
  *  - validDates:
- *      - { from, to }  (inklusive, lokale Kalendertage)
+ *      - { from, to } (inklusive, lokale Kalendertage)
  *      - { date } oder { on }  (Einzeltag)
  *    Fallbacks am Root: offer.validOn / offer.date
  */
@@ -36,11 +38,12 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   };
 
   const parseHHMM = (s) => {
-    if (!s) return null;
+    if (s == null) return null;
     const m = String(s).trim().match(/^(\d{1,2}):(\d{2})$/);
     if (!m) return null;
     const h = +m[1], mi = +m[2];
-    return (h>=0 && h<=23 && mi>=0 && mi<=59) ? h*60+mi : null;
+    if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+    return h * 60 + mi;
   };
 
   const parseYMDString = (s) => {
@@ -72,9 +75,28 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
     : (Array.isArray(offer.weekdays) ? offer.weekdays : []);
 
   if (dayList.length > 0) {
-    const allowed = dayList
-      .map((x) => (typeof x === 'number' ? x : WD.get(String(x).toLowerCase())))
-      .filter((v) => v != null);
+    const toIdx = (x) => {
+      if (typeof x === 'number' && Number.isInteger(x)) {
+        // 0..6 direkt, 1..7 (Mo=1..So=7) auf 0..6 mappen
+        if (x >= 0 && x <= 6) return x;
+        if (x >= 1 && x <= 7) return (x - 1);
+        return null;
+      }
+      if (typeof x === 'string') {
+        const t = x.trim().toLowerCase();
+        // numerische Strings erlauben
+        if (/^\d+$/.test(t)) {
+          const n = Number(t);
+          if (n >= 0 && n <= 6) return n;
+          if (n >= 1 && n <= 7) return (n - 1);
+          return null;
+        }
+        // Namen/Abkürzungen
+        return WD.get(t) ?? null;
+      }
+      return null;
+    };
+    const allowed = dayList.map(toIdx).filter(v => v != null);
     if (allowed.length > 0 && (weekdayIdx == null || !allowed.includes(weekdayIdx))) return false;
   }
 
@@ -86,17 +108,19 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   if (fromStr || toStr) {
     const sMin = parseHHMM(fromStr ?? '00:00');
     const eMin = parseHHMM(toStr   ?? '23:59');
-    if (sMin != null && eMin != null && sMin !== eMin) {
-      if (sMin < eMin) {
+    if (sMin != null && eMin != null) {
+      if (sMin === eMin) {
+        // 24h offen → immer erlaubt
+      } else if (sMin < eMin) {
         if (!(minutes >= sMin && minutes <= eMin)) return false;
       } else {
-        // über Mitternacht
+        // über Mitternacht (z.B. 22:00–02:00)
         if (!(minutes >= sMin || minutes <= eMin)) return false;
       }
     }
   }
 
-  // 3) Datumsfenster inkl. Einzeltag
+  // 3) Datumsfenster inkl. Einzeltag (inklusive Grenzen)
   const vd = (offer.validDates && typeof offer.validDates === 'object') ? offer.validDates : {};
   const single = vd.date ?? vd.on ?? offer.validOn ?? offer.date;
   const fromRaw = vd.from ?? vd.start ?? (single ?? null);

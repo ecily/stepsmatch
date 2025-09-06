@@ -1,46 +1,111 @@
 // backend/models/Offer.js
 import mongoose from 'mongoose';
 
-const OfferSchema = new mongoose.Schema(
+const { Schema, model } = mongoose;
+
+const OfferSchema = new Schema(
   {
-    provider:   { type: mongoose.Schema.Types.ObjectId, ref: 'Provider', required: true },
-    name:       { type: String, required: true },
-    category:   { type: String, required: true },
-    subcategory:{ type: String },
-    description:{ type: String, maxlength: 250 },
-    radius:     { type: Number, default: 100 },
+    provider:    { type: Schema.Types.ObjectId, ref: 'Provider', required: true },
+    name:        { type: String, required: true },
+    category:    { type: String, required: true },
+    subcategory: { type: String, default: null },
+    description: { type: String, maxlength: 250, default: null },
 
-    // [0..6] ODER ['Mon','Dienstag',...]
-    validDays:  { type: [mongoose.Schema.Types.Mixed], default: undefined },
+    /** Radius in Metern (Hauptfeld) */
+    radius:      { type: Number, default: 100, min: 1 },
 
-    // Einheitlich: from/to (Strings HH:mm). Eingehend akzeptieren wir auch start/end (Normalisierung im Router).
+    /** Optionales Interessen-Targeting (wird client-/serverseitig in Kleinbuchstaben normalisiert) */
+    interestsRequired: { type: [String], default: undefined },
+
+    /**
+     * Gültige Wochentage:
+     * erlaubt sind Zahlen (0..6, So..Sa) ODER Strings ("Monday", "Dienstag", ...)
+     * Interpretation erfolgt zentral in isOfferActiveNow()
+     */
+    validDays:   { type: [Schema.Types.Mixed], default: undefined },
+
+    /**
+     * (Legacy-Eingaben) – wird von Routern ggf. in validDays transformiert.
+     * Bleibt optional für Rückwärtskompatibilität.
+     */
+    weekdays:    { type: [Schema.Types.Mixed], default: undefined, select: false },
+
+    /** Gültige Uhrzeiten "HH:mm" */
     validTimes: {
-      from: { type: String }, // "HH:mm"
-      to:   { type: String }, // "HH:mm"
+      from: { type: String, default: null }, // "HH:mm"
+      to:   { type: String, default: null }, // "HH:mm"
     },
 
-    // Datumsfenster (inklusive)
+    /** Gültige Daten (inklusive) */
     validDates: {
-      from: { type: Date },
-      to:   { type: Date },
+      from: { type: Date, default: null },
+      to:   { type: Date, default: null },
     },
 
-    contact:    { type: String },
-    images:     { type: [String] },
+    contact:     { type: String, default: null },
+    images:      { type: [String], default: undefined },
 
+    /** GeoJSON-Point: coordinates = [lng, lat] */
     location: {
-      type:        { type: String, enum: ['Point'], required: true },
-      coordinates: { type: [Number], required: true }, // [lng, lat]
+      type:        { type: String, enum: ['Point'], required: true, default: 'Point' },
+      coordinates: {
+        type: [Number],
+        required: true,                 // [lng, lat]
+        validate: {
+          validator: (v) => Array.isArray(v) && v.length === 2 && v.every((n) => Number.isFinite(n)),
+          message:   'location.coordinates must be an array [lng, lat] of numbers',
+        },
+      },
     },
 
-    languages:   { type: [String] },
-    foundCounter:{ type: Number, default: 0 },
+    languages:    { type: [String], default: undefined },
+    foundCounter: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: 'offers',
+    toJSON:   { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
 
-// Geo-Index für $geoNear/$near
-OfferSchema.index({ location: '2dsphere' });
-OfferSchema.index({ updatedAt: -1 });
+/* ────────────────────────────────────────────────────────────
+   Virtuals: radiusMeters / radiusM (Kompatibilität)
+   ──────────────────────────────────────────────────────────── */
+OfferSchema.virtual('radiusMeters')
+  .get(function () { return this.radius; })
+  .set(function (v) { this.radius = Number(v); });
 
-export default mongoose.model('Offer', OfferSchema);
+OfferSchema.virtual('radiusM')
+  .get(function () { return this.radius; })
+  .set(function (v) { this.radius = Number(v); });
+
+/* ────────────────────────────────────────────────────────────
+   Indizes
+   ──────────────────────────────────────────────────────────── */
+// Für $geoNear / $near
+OfferSchema.index({ location: '2dsphere' }, { name: 'location_2dsphere' });
+
+// Nützliche Sekundärindizes
+OfferSchema.index({ updatedAt: -1 }, { name: 'offer_updatedAt_desc' });
+OfferSchema.index({ provider: 1, updatedAt: -1 }, { name: 'provider_updatedAt' });
+
+// (Optionale) Filter-Indizes für Zeitfenster – günstig für Poller/Queries
+OfferSchema.index({ 'validDates.from': 1, 'validDates.to': 1 }, { name: 'validDates_range' });
+
+/* ────────────────────────────────────────────────────────────
+   Normalisierung: Stelle sicher, dass type='Point' ist
+   ──────────────────────────────────────────────────────────── */
+OfferSchema.pre('validate', function (next) {
+  if (this.location && this.location.type !== 'Point') {
+    this.location.type = 'Point';
+  }
+  // harte Zahlkonvertierung für Koordinaten
+  if (this.location && Array.isArray(this.location.coordinates)) {
+    this.location.coordinates = this.location.coordinates.map((n) => Number(n));
+  }
+  next();
+});
+
+export default model('Offer', OfferSchema);
