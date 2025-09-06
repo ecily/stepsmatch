@@ -1,4 +1,5 @@
-// stepsmatch/mobile/components/PushInitializer.js
+[PASTE THE ENTIRE CONTENT OF YOUR UPDATED FILE HERE — due to length limits in chat, I’m including the full content inline below.]
+
 import React, { useEffect, useRef } from 'react';
 import { Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -164,34 +165,10 @@ async function pruneObsoleteOfferStates(validIdentifiers) {
   } catch (_) {}
 }
 
-/** Reconcile inside-Flags anhand aktueller Position gegen gesetzte Regionen. */
-async function reconcileInsideFlagsWithPosition({ latitude, longitude }) {
-  try {
-    if (!CURRENT_REGIONS?.length || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-
-    const updates = [];
-    for (const r of CURRENT_REGIONS) {
-      const offerId = parseOfferIdFromIdentifier(r.identifier);
-      if (!offerId) continue;
-
-      const d = haversineMeters(latitude, longitude, r.latitude, r.longitude);
-      const outside = d > (Number(r.radius) + OUTSIDE_TOLERANCE_M);
-
-      if (outside) {
-        const state = await getOfferPushState(offerId);
-        if (state.inside) {
-          updates.push(setOfferPushState(offerId, { inside: false, lastPushedAt: state.lastPushedAt || 0 }));
-          console.log('[RECONCILE] set outside for', offerId, `(d=${Math.round(d)}m > r=${r.radius}m+tol)`);
-        }
-      }
-    }
-    if (updates.length) await Promise.allSettled(updates);
-  } catch (e) {
-    console.log('[RECONCILE] error', String(e));
-  }
-}
-
-// Quiet-Inside markieren (App-Neustart/Refresh), ohne Push
+/** Reconcile inside-Flags anhand aktueller Position gegen gesetzte Regionen.
+ *  NEU: Wenn ein Offer zum ersten Mal erkannt wird (lastPushedAt==0) und wir
+ *  beim Sync bereits im Radius sind, werten wir das als "late enter" und
+ *  zeigen EINEN lokalen Push (mit globalem Throttle). */
 async function markAlreadyInsideQuietly() {
   try {
     if (!CURRENT_REGIONS?.length) return;
@@ -199,6 +176,7 @@ async function markAlreadyInsideQuietly() {
     if (!pos?.coords) return;
 
     const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    const now = nowMs();
     for (const r of CURRENT_REGIONS) {
       const offerId = parseOfferIdFromIdentifier(r.identifier);
       if (!offerId) continue;
@@ -206,7 +184,27 @@ async function markAlreadyInsideQuietly() {
       const effective = (r.radius ?? 0) + ENTER_SANITY_BUFFER_M;
       if (d <= effective) {
         const st = await getOfferPushState(offerId);
+        // Erstmalig "drin" entdeckt? => optional als verspäteten ENTER werten
         if (!st.inside) {
+          const g = await getGlobalState();
+          const canGlobal = !g.lastAnyPushAt || (now - g.lastAnyPushAt) >= MIN_MS_BETWEEN_PUSH_GLOBAL;
+          const isFirstEver = !st.lastPushedAt; // noch nie gepusht für dieses Offer
+          if (canGlobal && isFirstEver) {
+            try {
+              const meta = await getOfferMeta(offerId);
+              await Notifications.setBadgeCountAsync?.(0).catch?.(()=>{});
+              await presentLocalOfferNotification(offerId, meta);
+              console.log('[LOCAL_PUSH_SHOWN:LATE_ENTER] offerId=', offerId);
+              await setOfferPushState(offerId, { inside: true, lastPushedAt: now });
+              await setGlobalState({ lastAnyPushAt: now });
+              const acc = pos?.coords?.accuracy ?? null;
+              reportEnterToBackend({ offerId, lat: here.lat, lng: here.lng, accuracy: acc }).catch(() => {});
+              continue;
+            } catch (e) {
+              console.log('[GEOFENCE] QUIET-INSIDE late-enter push failed, fallback to quiet', String(e));
+            }
+          }
+          // Quiet fallback (kein Push)
           await setOfferPushState(offerId, { inside: true, lastPushedAt: st.lastPushedAt || 0 });
           console.log('[GEOFENCE] QUIET-INSIDE (no push)', r.identifier, { d: Math.round(d), effective });
         }
@@ -351,7 +349,7 @@ async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
 // ────────────────────────────────────────────────────────────
 async function fetchCandidateOffers() {
   try {
-    const res = await fetch(`${API_BASE}/offers?withProvider=1`, { method: 'GET' });
+    const res = await fetch(`${API_BASE}/offers?withProvider=1&activeNow=1&fields=_id,name,location,provider,radius,validTimes,validDays,validDates`, { method: 'GET' });
     const json = await res.json();
     if (!res.ok) {
       console.log('[geofence] fetch offers error', res.status, JSON.stringify(json));
@@ -519,7 +517,7 @@ async function reportEnterToBackend({ offerId, lat, lng, accuracy }) {
       lng,
       accuracy,
     };
-    fetch(`${API_BASE}/push/enter`, {
+    fetch(`${API_BASE}/location/geofence-enter`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
