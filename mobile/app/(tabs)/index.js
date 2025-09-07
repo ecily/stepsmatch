@@ -1,3 +1,4 @@
+// stepsmatch/mobile/app/(tabs)/index.js
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { sendHeartbeat } from '../../components/PushInitializer'; // ✅ zentraler Heartbeat
 import {
@@ -21,8 +22,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-import colors from '../../theme/colors';
+// ❌ entfernt: import colors from '../../theme/colors';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ zentraler Helper (Europe/Vienna)
+
+// ✅ neu: zentrales Theme + UI-Komponenten
+import { useTheme } from '../../theme/ThemeProvider';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+
+// ✅ neu: Interessen-Utils zentral
+import { csvToSet, matchesInterests } from '../../utils/interests';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -79,57 +88,50 @@ function isNear(metersLike) {
   return m != null && m <= 500;
 }
 
-/* ───────────── Filter-Helfer ───────────── */
-
-const normalizeToken = (s) =>
-  String(s || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-function csvToSet(csv) {
-  if (!csv) return new Set();
-  return new Set(csv.split(',').map(normalizeToken).filter(Boolean));
-}
-
-function matchesInterests(offer, interestSet) {
-  if (!interestSet || interestSet.size === 0) return true;
-  const cat = normalizeToken(offer?.category);
-  const sub = normalizeToken(offer?.subcategory);
-  const name = normalizeToken(offer?.name);
-  for (const t of interestSet) {
-    if (!t) continue;
-    if (
-      (cat && (cat === t || cat.includes(t))) ||
-      (sub && (sub === t || sub.includes(t))) ||
-      (name && name.includes(t))
-    ) {
-      return true;
+/* ─────────── Geo-Helpers (robust) ─────────── */
+// Liest lat/lng aus Offer oder Provider (unterstützt mehrere Feldnamen/Strukturen)
+function pickOfferLatLng(o) {
+  try {
+    // 1) Offer.location.coordinates = [lng, lat]
+    if (o?.location?.coordinates && Array.isArray(o.location.coordinates) && o.location.coordinates.length === 2) {
+      const [lng, lat] = o.location.coordinates;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
     }
+    // 2) Provider.location.coordinates = [lng, lat]
+    if (o?.provider?.location?.coordinates && Array.isArray(o.provider.location.coordinates) && o.provider.location.coordinates.length === 2) {
+      const [lng, lat] = o.provider.location.coordinates;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
+    }
+    // 3) Direkte Felder
+    const lat = toNumber(o?.lat ?? o?.latitude ?? o?.provider?.lat ?? o?.provider?.latitude);
+    const lng = toNumber(o?.lng ?? o?.lon ?? o?.longitude ?? o?.provider?.lng ?? o?.provider?.lon ?? o?.provider?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+    return null;
+  } catch {
+    return null;
   }
-  return false;
 }
 
-function pickOfferLatLng(item) {
-  const coords =
-    item?.location?.coordinates ||
-    item?.provider?.location?.coordinates ||
-    null;
-  if (Array.isArray(coords) && coords.length >= 2) {
-    const [lng, lat] = coords;
-    const latN = Number(lat), lngN = Number(lng);
-    if (Number.isFinite(latN) && Number.isFinite(lngN)) return { lat: latN, lng: lngN };
+// Ermittelt Radius in Metern (Fallback 150m, damit UI nie „leer“ bleibt, wenn Geo vorhanden)
+function pickRadiusMeters(o) {
+  const candidates = [
+    o?.radiusMeters,
+    o?.radius_m,
+    o?.radiusM,
+    o?.radius,
+    o?.range,
+    o?.distanceRadius,
+    o?.geoRadiusM,
+    o?.provider?.radiusMeters,
+    o?.provider?.radius_m,
+    o?.provider?.radiusM,
+    o?.provider?.radius,
+  ].map(toNumber);
+  for (const v of candidates) {
+    if (Number.isFinite(v) && v > 0) return v;
   }
-  return null;
-}
-
-function pickRadiusMeters(item) {
-  const r1 = toNumber(item?.radius);
-  if (r1 != null && isFinite(r1) && r1 >= 0) return r1;
-  const r2 = toNumber(item?.provider?.radius);
-  if (r2 != null && isFinite(r2) && r2 >= 0) return r2;
-  return null;
+  // defensiver Fallback
+  return 150;
 }
 
 /* ─────────── Datums-/Zeit-Parsing ─────────── */
@@ -242,6 +244,7 @@ function formatRemaining(diffMs) {
 
 export default function HomeTab() {
   const router = useRouter();
+  const t = useTheme();
 
   // Data
   const [offers, setOffers] = useState([]);
@@ -333,7 +336,7 @@ export default function HomeTab() {
 
   /* Gesehen-IDs */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
-  const BASELINE_ON_FIRST_LOAD = false;
+  const BASELINE_ON_FIRST_LOAD = false; // fix: placeholder entfernt
   const MAX_POSTS_PER_RELOAD = 1;
 
   const seenIdsRef = useRef(new Set());
@@ -411,9 +414,9 @@ export default function HomeTab() {
         } catch {}
 
         const params = { withProvider: 1, page: pageToLoad, limit };
-        const t0 = performance.now();
+        const t0 = (global?.performance && performance.now) ? performance.now() : Date.now();
         const res = await api.get('/offers', { params, signal: controller.signal });
-        const t1 = performance.now();
+        const t1 = (global?.performance && performance.now) ? performance.now() : Date.now();
 
         const payload = res?.data ?? {};
         let rows = [];
@@ -576,47 +579,54 @@ export default function HomeTab() {
 
   if (!hasLoadedOnce && initialLoading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
         <ScrollView contentContainerStyle={styles.categoryContainer}>
           <SkeletonSection titleWidth={140} />
           <SkeletonSection titleWidth={120} />
           <SkeletonSection titleWidth={160} />
         </ScrollView>
-        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
+        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
       </View>
     );
   }
 
   if (err && !hasLoadedOnce) {
     return (
-      <View style={styles.containerCenter}>
-        <Text style={styles.error}>{err}</Text>
-        <TouchableOpacity
-          onPress={() => fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' })}
-          style={[styles.card, { marginTop: 16, paddingVertical: 12, width: 220, alignItems: 'center' }]}
-          activeOpacity={0.9}
-        >
-          <Text style={{ color: colors.primary, fontWeight: '700' }}>Erneut versuchen</Text>
-        </TouchableOpacity>
-        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
+      <View style={[styles.containerCenter, { backgroundColor: t.colors.background }]}>
+        <Text style={[styles.error, { color: t.colors.danger }]}>{err}</Text>
+        <View style={{ marginTop: 16, width: 220, alignItems: 'center' }}>
+          <Button
+            title="Erneut versuchen"
+            variant="primary"
+            size="md"
+            onPress={() => fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' })}
+          />
+        </View>
+        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: t.colors.background }]}>
       <ScrollView
         contentContainerStyle={styles.categoryContainer}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {lastUpdated && <Text style={styles.updatedHint}>Aktualisiert: {lastUpdated.toLocaleTimeString()}</Text>}
+        {lastUpdated && (
+          <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
+            Aktualisiert: {lastUpdated.toLocaleTimeString()}
+          </Text>
+        )}
 
         {groupedEntries.length === 0 ? (
-          <Text style={styles.empty}>Zurzeit leider keine passenden Angebote in deiner Nähe!</Text>
+          <Text style={[styles.empty, { color: t.colors.inkLow }]}>
+            Zurzeit leider keine passenden Angebote in deiner Nähe!
+          </Text>
         ) : (
           groupedEntries.map(([category, catOffers]) => (
             <View key={category} style={styles.categoryBlock}>
-              <Text style={styles.categoryTitle}>{category}</Text>
+              <Text style={[styles.categoryTitle, { color: t.colors.inkHigh }]}>{category}</Text>
               <FlatList
                 data={catOffers}
                 keyExtractor={(it) => it._id}
@@ -625,6 +635,7 @@ export default function HomeTab() {
                     item={item}
                     index={index}
                     userLoc={userLoc}
+                    theme={t}
                     onPress={() => {
                       try {
                         const geo = pickOfferLatLng(item);
@@ -659,28 +670,30 @@ export default function HomeTab() {
         {hasMore && (
           <View style={{ alignItems: 'center', marginTop: 4 }}>
             {loadingMore ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={t.colors.primary} />
             ) : (
-              <TouchableOpacity
-                style={styles.loadMoreBtn}
-                onPress={() => fetchFnRef.current?.({ pageToLoad: page + 1, mode: 'more' })}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.loadMoreText}>Mehr laden</Text>
-              </TouchableOpacity>
+              <View style={{ width: 180 }}>
+                <Button
+                  title="Mehr laden"
+                  variant="secondary"
+                  size="md"
+                  onPress={() => fetchFnRef.current?.({ pageToLoad: page + 1, mode: 'more' })}
+                />
+              </View>
             )}
           </View>
         )}
       </ScrollView>
 
-      {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} /> : null}
+      {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
     </View>
   );
 }
 
 /* ───────────── Card ───────────── */
 
-function AnimatedOfferCard({ item, index, onPress, userLoc }) {
+function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
+  const t = theme || useTheme();
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(6)).current;
 
@@ -710,40 +723,47 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
   while (imgs.length < 3) imgs.push(null);
 
   return (
-    <Animated.View style={[styles.card, { opacity, transform: [{ translateY }], overflow: 'hidden' }]}>
+    <Animated.View
+      style={[
+        styles.card,
+        {
+          opacity,
+          transform: [{ translateY }],
+          overflow: 'hidden',
+          backgroundColor: t.colors.card,
+          shadowOpacity: t.mode === 'dark' ? 0.25 : 0.08,
+        },
+      ]}
+    >
       <TouchableOpacity style={{ flex: 1 }} onPress={onPress} activeOpacity={0.9}>
         <View style={styles.badgeRow}>
-          {isActiveNowFlag && (
-            <View style={[styles.badge, styles.badgeNow]}>
-              <Text style={styles.badgeText}>Jetzt gültig</Text>
-            </View>
-          )}
-          <View style={[styles.badge, styles.badgeRest]}>
-            <Text style={[styles.badgeText, { color: '#7c2d12' }]}>{remainingLabel}</Text>
-          </View>
-          <View style={[styles.badge, styles.badgeDistance]}>
-            <Text style={[styles.badgeText, { color: '#0f172a' }]}>{distanceText ?? '—'}</Text>
-          </View>
-          {near && (
-            <View style={[styles.badge, styles.badgeNear]}>
-              <Text style={styles.badgeText}>In der Nähe</Text>
-            </View>
-          )}
+          {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={{ marginRight: 6, marginBottom: 6 }} />}
+          <Badge label={remainingLabel} tone="warning" style={{ marginRight: 6, marginBottom: 6 }} />
+          <Badge label={distanceText ?? '—'} tone="info" style={{ marginRight: 6, marginBottom: 6 }} />
+          {near && <Badge label="In der Nähe" tone="success" style={{ marginRight: 6, marginBottom: 6 }} />}
           {!!item.category && (
-            <View style={[styles.badge, styles.badgeCategory]}>
-              <Text style={[styles.badgeText, { color: '#374151' }]} numberOfLines={1}>
-                {item.subcategory ? `${item.category} · ${item.subcategory}` : item.category}
-              </Text>
-            </View>
+            <Badge
+              label={item.subcategory ? `${item.category} · ${item.subcategory}` : item.category}
+              tone="neutral"
+              style={{ marginRight: 6, marginBottom: 6 }}
+            />
           )}
         </View>
 
-        {hurry && <Text style={styles.hurryText}>Beeilung! Läuft bald aus!</Text>}
+        {hurry && (
+          <Text style={[styles.hurryText, { color: t.colors.warning }]}>
+            Beeilung! Läuft bald aus!
+          </Text>
+        )}
 
-        <Text style={styles.title} numberOfLines={2}>{item.name}</Text>
+        <Text style={[styles.title, { color: t.colors.primary }]} numberOfLines={2}>
+          {item.name}
+        </Text>
 
         {!!item.description && (
-          <Text style={styles.desc} numberOfLines={3}>{item.description}</Text>
+          <Text style={[styles.desc, { color: t.colors.ink }] } numberOfLines={3}>
+            {item.description}
+          </Text>
         )}
 
         <View style={styles.imagesRow}>
@@ -762,10 +782,23 @@ function AnimatedOfferCard({ item, index, onPress, userLoc }) {
 
 /* ───────────── Dev-Banner & Skeletons & Styles ───────────── */
 
-function DevBanner({ msg, onClose }) {
+function DevBanner({ msg, onClose, theme }) {
+  const t = theme || useTheme();
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onClose} style={styles.devBannerWrap}>
-      <Text style={styles.devBannerText} numberOfLines={3}>{msg}</Text>
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onClose}
+      style={[
+        styles.devBannerWrap,
+        {
+          backgroundColor: t.colors.elevated,
+          borderColor: t.colors.divider,
+        },
+      ]}
+    >
+      <Text style={[styles.devBannerText, { color: t.colors.inkHigh }]} numberOfLines={3}>
+        {msg}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -809,19 +842,19 @@ const IMAGE_WIDTH = 70;
 const IMAGE_HEIGHT = 54;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' }, // wird dynamisch über Theme überschrieben
   categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
   containerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   categoryBlock: { marginBottom: 8 },
-  categoryTitle: { fontSize: 20, fontWeight: '700', color: '#1f2937', marginBottom: 10 },
+  categoryTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10 },
 
   horizontalList: { paddingLeft: 2, paddingRight: 2 },
 
-  updatedHint: { color: '#6b7280', fontSize: 12, marginBottom: 8 },
+  updatedHint: { fontSize: 12, marginBottom: 8 },
 
   card: {
-    backgroundColor: '#f7f8fb',
+    backgroundColor: '#f7f8fb', // wird pro Card via Theme überschrieben
     borderRadius: 16,
     padding: 16,
     marginRight: 14,
@@ -829,7 +862,7 @@ const styles = StyleSheet.create({
     minHeight: CARD_MIN_HEIGHT,
     elevation: 2,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.08, // in Dark-Mode oben dynamisch angepasst
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 5,
     justifyContent: 'flex-start',
@@ -838,19 +871,10 @@ const styles = StyleSheet.create({
 
   badgeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' },
 
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginRight: 6, marginBottom: 6 },
-  badgeNear: { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
-  badgeNow: { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' },
-  badgeCategory: { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' },
-  badgeDistance: { backgroundColor: '#e5f0ff', borderColor: '#bfdbfe' },
-  badgeRest: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' },
+  hurryText: { fontSize: 12, marginBottom: 4, fontWeight: '600' },
 
-  badgeText: { fontSize: 12, fontWeight: '700', color: '#0f172a' },
-
-  hurryText: { fontSize: 12, color: '#b45309', marginBottom: 4, fontWeight: '600' },
-
-  title: { fontSize: 18, fontWeight: '800', color: colors.primary, marginBottom: 6, lineHeight: 22 },
-  desc: { fontSize: 14, color: '#4b5563', marginBottom: 10, lineHeight: 19 },
+  title: { fontSize: 18, fontWeight: '800', marginBottom: 6, lineHeight: 22 },
+  desc: { fontSize: 14, marginBottom: 10, lineHeight: 19 },
 
   imagesRow: {
     flexDirection: 'row',
@@ -883,33 +907,21 @@ const styles = StyleSheet.create({
     marginRight: IMAGE_MARGIN,
   },
 
-  loadMoreBtn: {
-    marginTop: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#eef2ff',
-  },
-  loadMoreText: { color: colors.primary, fontWeight: '700' },
-
-  error: { color: 'red', marginTop: 30, textAlign: 'center' },
-  empty: { color: '#999', marginTop: 20, textAlign: 'center', fontSize: 16 },
+  error: { marginTop: 30, textAlign: 'center' },
+  empty: { marginTop: 20, textAlign: 'center', fontSize: 16 },
 
   devBannerWrap: {
     position: 'absolute',
     left: 12,
     right: 12,
     bottom: 16,
-    backgroundColor: '#0f172a',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#64748b',
     elevation: 6,
   },
   devBannerText: {
-    color: '#e2e8f0',
     fontSize: 12,
     fontWeight: '700',
   },

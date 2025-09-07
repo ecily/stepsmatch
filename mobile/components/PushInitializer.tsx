@@ -8,6 +8,8 @@ import * as SecureStore from 'expo-secure-store';
 import * as Random from 'expo-random';
 import Constants from 'expo-constants';
 import { isOfferActiveNow } from '../utils/isOfferActiveNow'; // ✅ ValidTimes (Europe/Vienna)
+// ✅ NEU: Interessen-Utils zentral
+import { csvToSet, matchesInterests } from '../utils/interests';
 
 // ────────────────────────────────────────────────────────────
 // NEW: Notification handler (Foreground sichtbar)
@@ -43,6 +45,11 @@ const ENTER_SANITY_BUFFER_M = 12;                              // kleiner Sicher
 const MIN_MS_BETWEEN_PUSH_SAME_OFFER = 2 * 60 * 1000;          // 2 min per Offer
 const MIN_MS_BETWEEN_PUSH_GLOBAL     = 20 * 1000;              // 20 s global
 
+// Grouping (Android Notification Group) + Anti-Spam
+const GROUP_COOLDOWN_MS   = 2 * 60 * 1000;   // 2 Min pro groupId
+const SUMMARY_WINDOW_MS   = 60 * 1000;       // 60s: in diesem Fenster fassen wir zusammen
+const GROUP_STATE_KEY_PR  = 'offerGroupState.'; // offerGroupState.<groupId>
+
 // Storage Keys
 const TOKEN_KEY = 'expoPushToken.v2';
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
@@ -56,8 +63,17 @@ const RESOLVED_PROJECT_ID =
   (Constants?.easConfig && Constants.easConfig.projectId) ||
   '08559a29-b307-47e9-a130-d3b31f73b4ed';
 
+// Markenfarbe (für LED) & Vibrationsmuster
+const BRAND_BLUE = '#0d4ea6';
+const STRONG_PATTERN = [0, 450, 180, 900, 300, 1200]; // kräftig & markant
+
 // Laufzeit-Cache der aktuell gesetzten Geofence-Regionen
 let CURRENT_REGIONS = []; // [{ identifier, latitude, longitude, radius }, ...]
+
+// ✅ NEU: leichter Cache für Interessen
+let INTEREST_SET_CACHE = /** @type {Set<string> | null} */ (null);
+let INTERESTS_LAST_LOAD_AT = 0;
+const INTERESTS_TTL_MS = 60 * 1000; // 60s reicht
 
 // ────────────────────────────────────────────────────────────
 // Utilities
@@ -99,6 +115,39 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
 }
 function nowMs() { return Date.now(); }
 
+// ✅ NEU: Interessen laden (cached)
+async function getInterestSet() {
+  const now = nowMs();
+  if (INTEREST_SET_CACHE && (now - INTERESTS_LAST_LOAD_AT) < INTERESTS_TTL_MS) {
+    return INTEREST_SET_CACHE;
+  }
+  try {
+    const raw = await AsyncStorage.getItem('userInterests');
+    const arr = raw ? JSON.parse(raw) : [];
+    const csv = Array.isArray(arr) && arr.length ? arr.join(',') : '';
+    INTEREST_SET_CACHE = csvToSet(csv);
+    INTERESTS_LAST_LOAD_AT = now;
+    return INTEREST_SET_CACHE;
+  } catch {
+    INTEREST_SET_CACHE = new Set();
+    INTERESTS_LAST_LOAD_AT = now;
+    return INTEREST_SET_CACHE;
+  }
+}
+
+// ✅ NEU: Offer minimal für Interessenprüfung laden
+async function fetchOfferForInterests(offerId) {
+  try {
+    const res = await fetch(`${API_BASE}/offers/${offerId}?withProvider=1`, { method: 'GET' });
+    if (!res.ok) return null;
+    const offer = await res.json();
+    // Erwartete Felder (robust): category, subcategory, name
+    return offer || null;
+  } catch {
+    return null;
+  }
+}
+
 // Offer Push State (inside/lastPushedAt)
 async function getOfferPushState(offerId) {
   try {
@@ -124,6 +173,24 @@ async function setGlobalState(patch) {
   const next = { ...prev, ...patch };
   try { await AsyncStorage.setItem(GLOBAL_STATE_KEY, JSON.stringify(next)); } catch {}
   return next;
+}
+
+// Group State (Pro Provider)
+async function getGroupState(groupId) {
+  try {
+    const raw = await AsyncStorage.getItem(GROUP_STATE_KEY_PR + groupId);
+    return raw ? JSON.parse(raw) : { lastPushedAt: 0, lastSummaryAt: 0, events: [] };
+  } catch { return { lastPushedAt: 0, lastSummaryAt: 0, events: [] }; }
+}
+async function setGroupState(groupId, patch) {
+  const prev = await getGroupState(groupId);
+  const next = { ...prev, ...patch };
+  try { await AsyncStorage.setItem(GROUP_STATE_KEY_PR + groupId, JSON.stringify(next)); } catch {}
+  return next;
+}
+function makeGroupIdFromMeta(meta) {
+  if (meta?.providerId) return `provider:${meta.providerId}`;
+  return 'misc';
 }
 
 // Meta Cache für schnelle Notification-Texte
@@ -194,7 +261,7 @@ async function reconcileInsideFlagsWithPosition({ latitude, longitude }) {
 /** Reconcile inside-Flags anhand aktueller Position gegen gesetzte Regionen.
  *  NEU: Wenn ein Offer zum ersten Mal erkannt wird (lastPushedAt==0) und wir
  *  beim Sync bereits im Radius sind, werten wir das als "late enter" und
- *  zeigen EINEN lokalen Push (mit globalem Throttle). */
+ *  zeigen EINEN lokalen Push (mit globalem Throttle) — aber **nur** falls es den Interessen entspricht. */
 async function markAlreadyInsideQuietly() {
   try {
     if (!CURRENT_REGIONS?.length) return;
@@ -215,6 +282,21 @@ async function markAlreadyInsideQuietly() {
           const g = await getGlobalState();
           const canGlobal = !g.lastAnyPushAt || (now - g.lastAnyPushAt) >= MIN_MS_BETWEEN_PUSH_GLOBAL;
           const isFirstEver = !st.lastPushedAt; // noch nie gepusht für dieses Offer
+
+          // ✅ NEU: Interessen prüfen
+          try {
+            const [interestSet, offer] = await Promise.all([
+              getInterestSet(),
+              fetchOfferForInterests(offerId),
+            ]);
+            if (offer && !matchesInterests(offer, interestSet)) {
+              // Kein Push, aber State korrekt setzen
+              await setOfferPushState(offerId, { inside: true, lastPushedAt: st.lastPushedAt || 0 });
+              console.log('[GEOFENCE] QUIET-INSIDE skipped by interests', offerId);
+              continue;
+            }
+          } catch {}
+
           if (canGlobal && isFirstEver) {
             try {
               const meta = await getOfferMeta(offerId);
@@ -242,11 +324,49 @@ async function markAlreadyInsideQuietly() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Accuracy helpers (NEU, sanft & optional)
+// ────────────────────────────────────────────────────────────
+const MIN_GOOD_ACCURACY_M = 25;
+const FRESH_FIX_TIMEOUT_MS = 4000;
+
+async function getFreshBestFixOrNull(timeoutMs = FRESH_FIX_TIMEOUT_MS) {
+  try {
+    const fix = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.BestForNavigation,
+      maximumAge: 0,
+      timeout: timeoutMs,
+    });
+    return fix?.coords ? fix : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureGoodAccuracyCoords(coords) {
+  try {
+    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
+      const fresh = await getFreshBestFixOrNull();
+      return fresh?.coords || null;
+    }
+    if (!Number.isFinite(coords.accuracy) || coords.accuracy > MIN_GOOD_ACCURACY_M) {
+      const fresh = await getFreshBestFixOrNull();
+      if (fresh?.coords && (fresh.coords.accuracy < (coords.accuracy ?? 1e9))) {
+        return fresh.coords;
+      }
+    }
+    return coords;
+  } catch {
+    return coords || null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // Notification Channels & Category
 // ────────────────────────────────────────────────────────────
 async function ensureChannels() {
   if (Platform.OS !== 'android') return;
   try {
+    // Default-App-Kanal (für generische Hinweise)
     await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
       name: 'StepsMatch',
       importance: Notifications.AndroidImportance.HIGH,
@@ -254,25 +374,43 @@ async function ensureChannels() {
       vibrationPattern: [0, 150, 120, 150],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       bypassDnd: false,
+      showBadge: true,
+      description: 'Allgemeine Benachrichtigungen von StepsMatch',
     });
 
-    const STRONG_PATTERN = [0, 400, 200, 800, 300, 1000];
-    await Notifications.setNotificationChannelAsync('offers', {
+    // Angebote – **neuer** Kanal
+    await Notifications.setNotificationChannelAsync('offers-v2', {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'default',
+      sound: 'arrival',
       vibrationPattern: STRONG_PATTERN,
+      enableVibrate: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: true,
+      enableLights: true,
+      lightColor: BRAND_BLUE,
+      bypassDnd: false,
       showBadge: true,
+      description: 'Sofort-Push bei passenden Angeboten in deiner Nähe',
     });
 
-    await Notifications.setNotificationCategoryAsync('offer-go', [
-      { identifier: 'go', buttonTitle: 'GO', options: { opensAppToForeground: true } },
-      { identifier: 'dismiss', buttonTitle: 'DISMISS', options: { isDestructive: true } },
+    // Legacy
+    await Notifications.setNotificationChannelAsync('offers', {
+      name: 'Offers (legacy)',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 150, 120, 150],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      showBadge: true,
+      description: 'Vorheriger Offer-Kanal (Kompatibilität)',
+    });
+
+    // Kategorien
+    await Notifications.setNotificationCategoryAsync('offer-go-v2', [
+      { identifier: 'go',     buttonTitle: 'GO',      options: { opensAppToForeground: true } },
+      { identifier: 'later',  buttonTitle: 'SPÄTER',  options: { isDestructive: false } },
     ]);
 
-    // ⚠️ Wichtig: BG-Kanal NICHT MIN – sonst wird der Service eher gekillt.
+    // BG-Kanal dezent
     await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
       name: 'StepsMatch – Standort aktiv',
       importance: Notifications.AndroidImportance.DEFAULT,
@@ -280,10 +418,12 @@ async function ensureChannels() {
       vibrationPattern: [0],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       bypassDnd: false,
+      showBadge: false,
+      description: 'Hintergrunddienst zur Standortaktualisierung',
     });
 
-    console.log('[push] channels ready: offers, stepsmatch-default-v2, com.ecily.mobile:stepsmatch-bg-location-task');
-    console.log('[push] category ready: offer-go');
+    console.log('[push] channels ready: offers-v2, stepsmatch-default-v2, bg-channel (legacy offers kept)');
+    console.log('[push] category ready: offer-go-v2');
   } catch (e) {
     console.warn('[notif] ensureChannels failed:', e?.message || e);
   }
@@ -446,6 +586,7 @@ async function refreshGeofencesAroundUser(force = false) {
       setOfferMeta(offer._id, {
         title: offer?.title || offer?.name || 'Angebot in deiner Nähe',
         providerName: offer?.provider?.name || '',
+        providerId: offer?.provider?._id || '',   // ⬅️ NEU: für Gruppierung
         radius: r,
       }).catch(() => {});
       return {
@@ -459,7 +600,7 @@ async function refreshGeofencesAroundUser(force = false) {
     });
 
     if (!regions.length) {
-      console.log('[geofence] no active nearby offers -> stop if running');
+      console.log('[geofence] no active nearby offers -> stop if running]');
       const started = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
       if (started) {
         try {
@@ -508,23 +649,132 @@ async function refreshGeofencesAroundUser(force = false) {
 // ────────────────────────────────────────────────────────────
 // Local Notification helper (SDK ≥ 51 kompatibel)
 // ────────────────────────────────────────────────────────────
-async function presentLocalOfferNotification(offerId, meta) {
-  const title =
-    meta?.title && meta?.providerName
-      ? `${meta.title} – ${meta.providerName}`
-      : (meta?.title || 'Angebot in deiner Nähe');
+async function computeDistanceBadge(offerId) {
+  try {
+    const region = CURRENT_REGIONS.find(r => r.identifier === `offer:${offerId}`);
+    const pos = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 });
+    if (!region || !pos?.coords) return null;
+    const m = haversineMeters(pos.coords.latitude, pos.coords.longitude, region.latitude, region.longitude);
+    if (!Number.isFinite(m)) return null;
+    return m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
+  } catch { return null; }
+}
 
+async function fetchProviderDetails(offerId) {
+  try {
+    const res = await fetch(`${API_BASE}/offers/${offerId}?withProvider=1`, { method: 'GET' });
+    if (!res.ok) return {};
+    const offer = await res.json();
+    const providerName = offer?.provider?.name || undefined;
+    const address =
+      offer?.provider?.address?.formatted ||
+      [offer?.provider?.address?.street, offer?.provider?.address?.city].filter(Boolean).join(', ') ||
+      offer?.provider?.address ||
+      undefined;
+    const title = offer?.title || offer?.name;
+    return { providerName, address, title };
+  } catch { return {}; }
+}
+
+// ── Gruppierte Summary (nur Android nutzt groupId/groupSummary)
+async function maybeSendGroupSummary({ groupId, providerName, count }) {
+  try {
+    const title = providerName ? `${providerName}: ${count} Angebote in deiner Nähe`
+                               : `${count} Angebote in deiner Nähe`;
+    const body  = 'Tippe, um alle zu sehen.';
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { kind: 'group-summary', groupId, count, t: nowMs() },
+        sound: true,
+        android: {
+          channelId: 'offers-v2',
+          color: BRAND_BLUE,
+          link: `mobile://offers?group=${encodeURIComponent(groupId)}`,
+          groupId,
+          groupSummary: true,
+        },
+      },
+      trigger: null,
+    });
+  } catch {}
+}
+
+async function presentLocalOfferNotification(offerId, meta) {
+  // Header
+  const header = 'Schau, was wir für dich gefunden haben!';
+
+  // Title/Provider/Adresse anreichern (optional, ohne Logik zu verändern)
+  let providerName = meta?.providerName || '';
+  let offerTitle   = meta?.title || 'Angebot in deiner Nähe';
+  let address      = '';
+  try {
+    const extra = await fetchProviderDetails(offerId);
+    providerName = extra.providerName || providerName || '';
+    offerTitle   = extra.title || offerTitle;
+    address      = extra.address || '';
+  } catch {}
+
+  // Badges
+  const distanceBadge = await computeDistanceBadge(offerId);
+  const validityBadge = 'noch gültig';
+
+  const lines = [
+    offerTitle,
+    [
+      distanceBadge ? `• Entfernung: ${distanceBadge}` : null,
+      `• gültig: ${validityBadge}`,
+    ].filter(Boolean).join('   '),
+    [providerName, address].filter(Boolean).join(' – ')
+  ].filter(Boolean);
+
+  const body = lines.join('\n');
+
+  // Gruppierung & Anti-Spam (Android)
+  const groupId = makeGroupIdFromMeta(meta);
+  const now = nowMs();
+  const gs  = await getGroupState(groupId);
+  const underCooldown = gs.lastPushedAt && (now - gs.lastPushedAt) < GROUP_COOLDOWN_MS;
+
+  // Eventliste im Zeitfenster pflegen
+  const pruned = (gs.events || []).filter(t => (now - t) <= SUMMARY_WINDOW_MS);
+  pruned.push(now);
+
+  // Einzel-Notification
   await Notifications.scheduleNotificationAsync({
     content: {
-      title,
-      body: 'Du bist jetzt im Radius. Tippe „GO“ für Details & Route.',
-      data: { offerId, source: 'geofence-local', t: nowMs() },
+      title: header,
+      body,
+      data: { offerId, source: 'geofence-local', t: now },
       sound: true,
-      categoryIdentifier: 'offer-go',
-      android: { channelId: 'offers' },
+      categoryIdentifier: 'offer-go-v2',
+      android: {
+        channelId: 'offers-v2',
+        color: BRAND_BLUE,
+        link: `mobile://offers/${offerId}`,
+        groupId,
+        groupSummary: false,
+      },
     },
-    trigger: null, // → sofort
+    trigger: null,
   });
+
+  // Summary-Logik
+  const shouldSummarize =
+    (pruned.length >= 2) ||
+    (underCooldown && (!gs.lastSummaryAt || (now - gs.lastSummaryAt) > SUMMARY_WINDOW_MS));
+
+  if (shouldSummarize) {
+    await maybeSendGroupSummary({
+      groupId,
+      providerName,
+      count: pruned.length,
+    });
+    await setGroupState(groupId, { lastPushedAt: now, lastSummaryAt: now, events: pruned });
+  } else {
+    await setGroupState(groupId, { lastPushedAt: now, events: pruned });
+  }
 }
 
 // Backend-Report (fire-and-forget)
@@ -609,7 +859,7 @@ export async function sendHeartbeat(arg) {
       const pos = await Location.getLastKnownPositionAsync({});
       if (!pos?.coords) {
         try {
-          const fresh = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const fresh = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, maximumAge: 0, timeout: FRESH_FIX_TIMEOUT_MS });
           if (fresh?.coords) {
             return _sendHeartbeatWithCoords({
               latitude: fresh.coords.latitude,
@@ -645,7 +895,7 @@ export async function sendHeartbeat(arg) {
   }
 }
 
-// ⬇️ NEU: Aggressives BG-Location-Profil + lastFixAt Tracking
+// ⬇️ NEU: Aggressives BG-Location-Profil + lastFixAt Tracking (+ Warm-Up)
 async function startAggressiveBgLocation() {
   await ensureChannels();
 
@@ -655,7 +905,7 @@ async function startAggressiveBgLocation() {
   }
 
   await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
-    accuracy: Location.Accuracy.High,     // ggf. BestForNavigation testen
+    accuracy: Location.Accuracy.BestForNavigation, // ⬅️ vorher High
     timeInterval: 30 * 1000,             // 30s
     distanceInterval: 0,                  // bewegungsgetriggert
     deferredUpdatesInterval: 0,
@@ -670,6 +920,19 @@ async function startAggressiveBgLocation() {
       killServiceOnDestroy: false,
     },
   });
+
+  // Warm-Up: einmalig frischen BestForNavigation-Fix anfordern
+  try {
+    const warm = await getFreshBestFixOrNull(5000);
+    if (warm?.coords) {
+      await AsyncStorage.setItem('lastFixAt', String(Date.now()));
+      await _sendHeartbeatWithCoords({
+        latitude: warm.coords.latitude,
+        longitude: warm.coords.longitude,
+        accuracy: warm.coords.accuracy,
+      });
+    }
+  } catch {}
 
   await AsyncStorage.setItem('lastFixAt', String(Date.now()));
   console.log('[BGLOC] startLocationUpdatesAsync → armed (aggressive)');
@@ -706,10 +969,20 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const { locations } = data || {};
     if (!locations?.length) return;
     console.log('[BGLOC] locations batch size =', locations.length);
-    const { latitude, longitude, accuracy } = locations[0]?.coords || {};
+    let { latitude, longitude, accuracy } = locations[0]?.coords || {};
 
     // Track letzter Fix für Watchdog
     try { await AsyncStorage.setItem('lastFixAt', String(Date.now())); } catch {}
+
+    // NEU: Schlechten Fix sanft nachbessern
+    try {
+      const improved = await ensureGoodAccuracyCoords({ latitude, longitude, accuracy });
+      if (improved) {
+        latitude = improved.latitude;
+        longitude = improved.longitude;
+        accuracy = improved.accuracy;
+      }
+    } catch {}
 
     if (latitude && longitude) {
       await _sendHeartbeatWithCoords({ latitude, longitude, accuracy });
@@ -740,22 +1013,33 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   const offerId = m[1];
 
   try {
-    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 });
-    const lat = lastKnown?.coords?.latitude ?? null;
-    const lng = lastKnown?.coords?.longitude ?? null;
-    const accuracy = lastKnown?.coords?.accuracy ?? null;
+    let lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 });
+    let lat = lastKnown?.coords?.latitude ?? null;
+    let lng = lastKnown?.coords?.longitude ?? null;
+    let accuracy = lastKnown?.coords?.accuracy ?? null;
 
     if (eventType === Location.GeofencingEventType.Enter) {
-      // Sanity-Check gegen False-Positive ENTER
-      if (lat != null && lng != null && Number.isFinite(region?.latitude) && Number.isFinite(region?.longitude)) {
-        const d = haversineMeters(lat, lng, region.latitude, region.longitude);
-        const effective = (region.radius ?? 0) + ENTER_SANITY_BUFFER_M;
-        if (d > effective) {
-          console.log('[GEOFENCE] ENTER ignored (SANITY:OUTSIDE)', { d: Math.round(d), effective });
-          return;
+      // Sanity-Check gegen False-Positive ENTER (NEU: ggf. Fix nachbessern)
+      if (Number.isFinite(region?.latitude) && Number.isFinite(region?.longitude)) {
+        try {
+          const improved = await ensureGoodAccuracyCoords(lastKnown?.coords || null);
+        if (improved) {
+            lat = improved.latitude;
+            lng = improved.longitude;
+            accuracy = improved.accuracy;
+          }
+        } catch {}
+
+        if (lat != null && lng != null) {
+          const d = haversineMeters(lat, lng, region.latitude, region.longitude);
+          const effective = (region.radius ?? 0) + ENTER_SANITY_BUFFER_M;
+          if (d > effective) {
+            console.log('[GEOFENCE] ENTER ignored (SANITY:OUTSIDE)', { d: Math.round(d), effective, acc: accuracy });
+            return;
+          }
+        } else {
+          console.log('[GEOFENCE] ENTER with no position (proceeding)');
         }
-      } else {
-        console.log('[GEOFENCE] ENTER with no lastKnownPosition (proceeding)');
       }
 
       const state = await getOfferPushState(offerId);
@@ -778,12 +1062,13 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
         return;
       }
 
-      // Offer wirklich aktiv?
+      // Offer wirklich aktiv? (+Details verfügbar)
       let active = true;
+      let offerForChecks = null;
       try {
         const res = await fetch(`${API_BASE}/offers/${offerId}?withProvider=1`, { method: 'GET' });
-        const offer = await res.json();
-        active = res.ok ? !!isOfferActiveNow(offer, EUROPE_VIENNA) : true;
+        offerForChecks = await res.json();
+        active = res.ok ? !!isOfferActiveNow(offerForChecks, EUROPE_VIENNA) : true;
       } catch (_) {}
 
       if (!active) {
@@ -791,6 +1076,16 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
         await setOfferPushState(offerId, { inside: true, lastPushedAt: state.lastPushedAt || 0 });
         return;
       }
+
+      // ✅ NEU: Interessen-Filter
+      try {
+        const interestSet = await getInterestSet();
+        if (offerForChecks && !matchesInterests(offerForChecks, interestSet)) {
+          console.log('[LOCAL_PUSH] skipped by interests', offerId);
+          await setOfferPushState(offerId, { inside: true, lastPushedAt: state.lastPushedAt || 0 });
+          return;
+        }
+      } catch {}
 
       // ✅ Sofort-Push lokal (SDK-konform)
       const meta = await getOfferMeta(offerId);
@@ -849,7 +1144,7 @@ export async function sendRoundtripTest({ offerId = 'ROUNDTRIP_TEST' } = {}) {
         title: 'StepsMatch – Roundtrip',
         body: ok ? 'Backend-Push ausgelöst.' : `Backend nicht erreichbar (status=${lastStatus}).`,
         data: { kind: 'roundtrip', ok },
-        android: { channelId: 'offers' },
+        android: { channelId: 'offers-v2' },
       },
       trigger: null,
     });
@@ -861,7 +1156,7 @@ export async function sendRoundtripTest({ offerId = 'ROUNDTRIP_TEST' } = {}) {
         title: 'StepsMatch – Roundtrip',
         body: 'Fehler beim Auslösen. Lokale Bestätigung angezeigt.',
         data: { kind: 'roundtrip', ok: false, error: String(e) },
-        android: { channelId: 'offers' },
+        android: { channelId: 'offers-v2' },
       },
       trigger: null,
     });
@@ -920,9 +1215,29 @@ async function initPush() {
     console.log('[push] received', JSON.stringify({
       title: c.title,
       body: c.body,
-      channelId: c.android?.channelId || c.channelId || 'offers',
+      channelId: c.android?.channelId || c.channelId || 'offers-v2',
       data,
     }));
+  });
+
+  // Antwort-Listener: GO/SPAETER
+  Notifications.addNotificationResponseReceivedListener(async (response) => {
+    try {
+      const action = response?.actionIdentifier;
+      const data = response?.notification?.request?.content?.data || {};
+      const offerId = data?.offerId;
+      if (!offerId) return;
+
+      if (action === 'later') {
+        // "SPÄTER": als gelesen markieren → erneute Benachrichtigung erst nach EXIT & Re-ENTER (Logik bleibt)
+        const prev = await getOfferPushState(offerId);
+        await setOfferPushState(offerId, { inside: true, lastPushedAt: nowMs() || prev.lastPushedAt || 0 });
+        console.log('[push] action: LATER -> mark read', offerId);
+      }
+      // "go": öffnet App (opensAppToForeground:true), weitere Navigation bleibt wie bisher app-seitig
+    } catch (e) {
+      console.log('[push] response listener error', String(e));
+    }
   });
 
   console.log('[push] listeners installed');
@@ -957,7 +1272,7 @@ export default function PushInitializer() {
       try {
         const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
         if (!started) {
-          console.log('[BGLOC] watchdog appstate → (re)start');
+          console.log('[BGLOC] watchdog appstate → (re)start)');
           await startAggressiveBgLocation();
         }
       } catch {}

@@ -1,3 +1,4 @@
+// stepsmatch/mobile/app/(tabs)/_layout.js
 import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Text, View } from 'react-native';
@@ -136,7 +137,7 @@ export default function TabLayout() {
         tabBarIcon: ({ focused, color, size }) => {
           let icon = 'ellipse-outline';
           if (route.name === 'index') icon = focused ? 'home' : 'home-outline';
-          if (route.name === 'NavigationMap') icon = focused ? 'map' : 'map-outline';       // ⬅️ umgestellt
+          if (route.name === 'NavigationMap') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'ProfileScreen') icon = focused ? 'person' : 'person-outline';
           if (route.name === 'diagnostics') icon = focused ? 'bug' : 'bug-outline';
           return <Ionicons name={icon} size={size} color={color} />;
@@ -146,7 +147,10 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       {/* OffersScreen bleibt versteckt */}
       <Tabs.Screen name="OffersScreen" options={{ href: null }} />
-      <Tabs.Screen name="NavigationMap" options={{ title: 'Navigation' }} />   {/* ⬅️ zeigt jetzt auf die neue Map-Übersicht */}
+      {/* ⬇️ WICHTIG: alten Navigation-Route explizit ausblenden, falls Datei existiert */}
+      <Tabs.Screen name="Navigation" options={{ href: null }} />
+      {/* aktive Navigation */}
+      <Tabs.Screen name="NavigationMap" options={{ title: 'Navigation' }} />
       <Tabs.Screen name="ProfileScreen" options={{ title: 'Profil' }} />
       {/* ⬇️ Temporärer Tab für Live-Tests */}
       <Tabs.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />

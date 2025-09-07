@@ -42,6 +42,10 @@
         "notificationTitle": "StepsMatch läuft im Hintergrund",
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden.",
         "notificationChannelId": "com.ecily.mobile:stepsmatch-bg-location-task"
+      },
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#0d4ea6"
       }
     },
     "web": {

@@ -31,6 +31,9 @@ const OFFER_NOTIFY_RESET_ON_UPDATE = !['0', 'false', 'off'].includes(
   String(process.env.OFFER_NOTIFY_RESET_ON_UPDATE ?? '1').toLowerCase()
 );
 
+// Verbose Diagnose-Logs (Default: ON). Setze GEOPUSH_DEBUG=0 zum Abschalten.
+const GEOPUSH_DEBUG = String(process.env.GEOPUSH_DEBUG ?? '1') !== '0';
+
 /* ────────────────────────────────────────────────────────────
    Helpers
    ──────────────────────────────────────────────────────────── */
@@ -59,6 +62,27 @@ function interestsMatch(offer, token) {
   return req.some((r) => have.has(r));
 }
 
+// sichere, gekürzte Stringify für Logs
+function sjson(obj, max = 400) {
+  try {
+    const str = JSON.stringify(obj);
+    return str.length > max ? str.slice(0, max) + '…' : str;
+  } catch {
+    return '[unserializable]';
+  }
+}
+
+function logDiag(offer, phase, detail = {}) {
+  if (!GEOPUSH_DEBUG) return;
+  const base = {
+    phase,
+    offerId: String(offer?._id || ''),
+    radius: Number(offer?.radius ?? offer?.radiusMeters ?? 0),
+  };
+  // Einzeilige, klar lesbare Debug-Zeile
+  console.log(`[geoPush.diag] ${phase} ${sjson({ ...base, ...detail }, 1200)}`);
+}
+
 /* ────────────────────────────────────────────────────────────
    Sofort-Push an Tokens in Radius (mit Freshness, Accuracy-Puffer,
    OfferVisibility-Dedupe und robusten Expo-Receipts).
@@ -68,16 +92,23 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     // 0) Sanity: Geo & Radius & Zeitfenster
     const coords = offer?.location?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) {
+      logDiag(offer, 'early-exit', { reason: 'offer-has-no-geo' });
       return { ok: false, reason: 'offer-has-no-geo' };
     }
     const [lng, lat] = coords.map(Number);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      logDiag(offer, 'early-exit', { reason: 'offer-geo-invalid', coords });
       return { ok: false, reason: 'offer-geo-invalid' };
     }
     const baseRadiusM = Number(offer.radius ?? offer.radiusMeters ?? 0);
-    if (!(baseRadiusM > 0)) return { ok: false, reason: 'offer-has-no-radius' };
+    if (!(baseRadiusM > 0)) {
+      logDiag(offer, 'early-exit', { reason: 'offer-has-no-radius' });
+      return { ok: false, reason: 'offer-has-no-radius' };
+    }
 
-    if (!isOfferActiveNow(offer, 'Europe/Vienna', now)) {
+    const active = isOfferActiveNow(offer, 'Europe/Vienna', now);
+    if (!active) {
+      logDiag(offer, 'early-exit', { reason: 'offer-not-active', now: now.toISOString() });
       return { ok: false, reason: 'offer-not-active' };
     }
 
@@ -95,10 +126,19 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     if (PROJECT_ID) tokenQuery.projectId = PROJECT_ID;
 
     const freshTokens = await PushToken.find(tokenQuery)
-      .select('_id token platform interests lastLocation projectId deviceId lastLocationAccuracy')
+      .select('_id token platform interests lastLocation projectId deviceId lastLocationAccuracy lastHeartbeatAt updatedAt')
       .lean();
 
+    logDiag(offer, 'fresh-tokens', {
+      freshCount: freshTokens.length,
+      projectScoped: Boolean(PROJECT_ID),
+      freshSince: freshSince.toISOString(),
+      searchBuffer: SEARCH_BUFFER,
+      accCap: ACCURACY_TOKEN_CAP,
+    });
+
     if (!freshTokens.length) {
+      logDiag(offer, 'result', { reason: 'no-fresh-tokens' });
       return { ok: true, total: 0, tried: 0, sent: 0, skipped: 0, reason: 'no-fresh-tokens' };
     }
 
@@ -116,17 +156,44 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       .select('_id token platform interests lastLocation lastLocationAccuracy')
       .lean();
 
+    logDiag(offer, 'near-preselect', {
+      nearCount: nearDocs.length,
+      searchRadiusM,
+      baseRadiusM,
+    });
+
     if (!nearDocs.length) {
+      logDiag(offer, 'result', { reason: 'no-near-tokens' });
       return { ok: true, total: 0, tried: 0, sent: 0, skipped: 0, reason: 'no-near-tokens' };
     }
 
     // 3) Interests-Filter
+    const reqInterests = normalizeInterests(offer?.interestsRequired);
     let matched = nearDocs.filter((t) => interestsMatch(offer, t));
+    logDiag(offer, 'interests-filter', {
+      required: reqInterests,
+      before: nearDocs.length,
+      after: matched.length,
+    });
+
     if (!matched.length) {
-      return { ok: true, total: nearDocs.length, tried: 0, sent: 0, skipped: nearDocs.length, reason: 'interests-no-match' };
+      logDiag(offer, 'result', {
+        reason: 'interests-no-match',
+        required: reqInterests,
+        nearCount: nearDocs.length,
+      });
+      return {
+        ok: true,
+        total: nearDocs.length,
+        tried: 0,
+        sent: 0,
+        skipped: nearDocs.length,
+        reason: 'interests-no-match',
+      };
     }
 
     // 4) Nachfilter (exakte Haversine + per-Token Accuracy-Cap)
+    const diagDistances = GEOPUSH_DEBUG ? [] : null;
     matched = matched.filter((t) => {
       const [tlng, tlat] = (t?.lastLocation?.coordinates || []);
       if (!Number.isFinite(tlng) || !Number.isFinite(tlat)) return false;
@@ -134,11 +201,32 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       const capAcc = Number.isFinite(acc) && acc > 0 ? Math.min(acc, ACCURACY_TOKEN_CAP) : 0;
       const effForToken = baseRadiusM + capAcc;
       const d = haversineMeters(lng, lat, tlng, tlat);
+      if (diagDistances && diagDistances.length < 8) {
+        diagDistances.push({ d: Math.round(d), acc: Math.round(acc || 0), capAcc, eff: Math.round(effForToken) });
+      }
       return d <= effForToken;
     });
 
+    logDiag(offer, 'distance-filter', {
+      after: matched.length,
+      samples: diagDistances || undefined, // bis zu 8 Stichproben
+    });
+
     if (!matched.length) {
-      return { ok: true, total: nearDocs.length, tried: 0, sent: 0, skipped: nearDocs.length, reason: 'outside-after-accuracy' };
+      logDiag(offer, 'result', {
+        reason: 'outside-after-accuracy',
+        baseRadiusM,
+        accCap: ACCURACY_TOKEN_CAP,
+        samples: diagDistances || undefined,
+      });
+      return {
+        ok: true,
+        total: nearDocs.length,
+        tried: 0,
+        sent: 0,
+        skipped: nearDocs.length,
+        reason: 'outside-after-accuracy',
+      };
     }
 
     // 5) OfferVisibility-Dedupe
@@ -160,14 +248,37 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     const already = new Set(vis.map((v) => String(v.deviceToken)));
     const toNotifyDocs = matched.filter((t) => !already.has(String(t._id)));
 
+    logDiag(offer, 'dedupe', {
+      matched: matched.length,
+      blockedByVis: already.size,
+      toNotify: toNotifyDocs.length,
+      cutoff: cutoff.toISOString(),
+    });
+
     if (!toNotifyDocs.length) {
-      return { ok: true, total: matched.length, tried: 0, sent: 0, skipped: matched.length, reason: 'dedup' };
+      logDiag(offer, 'result', { reason: 'dedup', matched: matched.length });
+      return {
+        ok: true,
+        total: matched.length,
+        tried: 0,
+        sent: 0,
+        skipped: matched.length,
+        reason: 'dedup',
+      };
     }
 
     // 6) Push senden (robust)
     const tokens = toNotifyDocs.map((t) => t.token).filter(Boolean);
     if (!tokens.length) {
-      return { ok: true, total: toNotifyDocs.length, tried: 0, sent: 0, skipped: toNotifyDocs.length, reason: 'no-pushable-tokens' };
+      logDiag(offer, 'result', { reason: 'no-pushable-tokens', toNotify: toNotifyDocs.length });
+      return {
+        ok: true,
+        total: toNotifyDocs.length,
+        tried: 0,
+        sent: 0,
+        skipped: toNotifyDocs.length,
+        reason: 'no-pushable-tokens',
+      };
     }
 
     const title = offer.name || 'Angebot in deiner Nähe';
@@ -178,6 +289,13 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       route: `/offers/${offer._id}`,
       source: 'offer-update',
     };
+
+    logDiag(offer, 'push-send', {
+      tried: tokens.length,
+      channelId: PUSH_CHANNEL_ID,
+      priority: PUSH_PRIORITY,
+      sound: PUSH_SOUND,
+    });
 
     const diag = await sendPushAndCheckReceipts({
       tokens,
@@ -239,6 +357,15 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       }`
     );
 
+    logDiag(offer, 'result', {
+      reason: sentTokens.length ? 'sent' : 'sent-0',
+      total: matched.length,
+      tried: tokens.length,
+      sentOk: sentTokens.length,
+      disabledCount,
+      receipts: summary,
+    });
+
     return {
       ok: true,
       total: matched.length,
@@ -249,6 +376,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     };
   } catch (e) {
     console.error('[geoPush] error:', e?.message || e, e?.stack || '');
+    logDiag(offer, 'error', { message: e?.message || String(e) });
     return { ok: false, error: String(e?.message || e) };
   }
 }

@@ -10,43 +10,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import colors from '../../theme/colors';
-import fetchRoute from '../../services/directions'; // ✅ default import (nicht { fetchRoute })
-import mapStyleStepsmatchLight from '../../theme/mapStyleDark'; // <- so belassen
-import { MaterialIcons } from '@expo/vector-icons'; // Accessible-Icon
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ Aktiv-Check (Europe/Vienna)
-import Constants from 'expo-constants'; // ✅ Directions-Key aus app.config.js (extra)
+import fetchRoute from '../../services/directions'; // default import
+import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
+import { MaterialIcons } from '@expo/vector-icons';
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
+import Constants from 'expo-constants';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const OID24 = /^[0-9a-fA-F]{24}$/;
 
-/* ─────────── Directions-Key: robust auflösen ─────────── */
+/* ─────────── Directions-Key robust ─────────── */
 function resolveDirectionsKey() {
-  // 1) Bevorzugt: app.config.* -> extra.directionsKey
   const kExtra =
     Constants?.expoConfig?.extra?.directionsKey ??
-    Constants?.manifest?.extra?.directionsKey ?? // Fallback für ältere Manifests
+    Constants?.manifest?.extra?.directionsKey ??
     null;
-
-  // 2) .env public: EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY (wird zur Build-Zeit ersetzt)
-  //    In Hermes ist process.env tree-shaken – defensiv abfragen:
   const kEnv =
-    (typeof process !== 'undefined' &&
-      process?.env?.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY) ||
+    (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY) ||
     null;
-
   const key = String(kExtra ?? kEnv ?? '').trim();
-
-  // Diagnose-Logging (maskiert)
-  const origin =
-    kExtra ? 'extra.directionsKey' :
-    kEnv   ? 'env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY' :
-             'none';
+  const origin = kExtra ? 'extra.directionsKey' : kEnv ? 'env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY' : 'none';
   const len = key.length;
   const masked = len >= 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : '(leer)';
   console.log('[NavigationScreen] directionsKey source=', origin, 'len=', len, 'mask=', masked);
-
   return key;
 }
-
 const DIRECTIONS_KEY = resolveDirectionsKey();
 const DIRECTIONS_KEY_LEN = DIRECTIONS_KEY.length;
 
@@ -167,8 +155,6 @@ const ARRIVAL_VIBRATION_PATTERN = [0, 220, 80, 260, 80, 300];
 
 /* Turn-Hints */
 const TURN_MIN_ANGLE_DEG = 30;
-const TURN_HINT_DIST_1 = 30;
-const TURN_HINT_DIST_2 = 10;
 
 /* Storage Keys */
 const STORE_ROUTE = 'stepsmatch:lastRoute';
@@ -189,22 +175,16 @@ export default function NavigationScreen() {
   const [loading, setLoading] = useState(true);
   const [remaining, setRemaining] = useState(null);
   const [mapType, setMapType] = useState('standard');
-
   const [follow, setFollow] = useState(true);
   const [isTilt3D, setIsTilt3D] = useState(true);
-
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState(null);
   const [arrived, setArrived] = useState(false);
-
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [reroutePending, setReroutePending] = useState(false);
   const [offRouteDist, setOffRouteDist] = useState(null);
-
   const [sheetH, setSheetH] = useState(0);
-
-  // Extras
   const [avoidStairs, setAvoidStairs] = useState(false);
   const [showOffRouteToast, setShowOffRouteToast] = useState(false);
 
@@ -221,26 +201,10 @@ export default function NavigationScreen() {
   const lastRerouteTsRef = useRef(0);
   const sheetY = useRef(new Animated.Value(0)).current;
   const destPulse = useRef(new Animated.Value(1)).current;
-
-  // Turn-hint control
-  const nextTurnRef = useRef(null);
-  const turnHintFlagsRef = useRef({ d30: false, d10: false });
-
-  // DeviceMotion
-  const dmSubRef = useRef(null);
-  const lastSpeedRef = useRef(0);
-  const headingBiasUntilRef = useRef(0);
+  const deviceMotionHeadingRef = useRef(null);
 
   // HUD-Pull-Down
   const hudPullY = useRef(new Animated.Value(0)).current;
-  const addrOpacity = useMemo(
-    () => hudPullY.interpolate({ inputRange: [0, 20, 120], outputRange: [0, 0.4, 1], extrapolate: 'clamp' }),
-    [hudPullY]
-  );
-  const hudTranslateY = useMemo(
-    () => hudPullY.interpolate({ inputRange: [0, 140], outputRange: [0, 140], extrapolate: 'clamp' }),
-    [hudPullY]
-  );
 
   /* ── 3) Derived ── */
   const offerPos = useMemo(() => {
@@ -262,7 +226,6 @@ export default function NavigationScreen() {
     return [];
   }, [routeCoords, userLocation, offerPos]);
 
-  // Adresse – robust
   const providerAddress = useMemo(() => {
     const fromOffer =
       (offer && typeof offer.provider === 'object' && offer.provider?.address) ||
@@ -271,7 +234,6 @@ export default function NavigationScreen() {
     return fromOffer || fromDoc || 'Adresse nicht verfügbar';
   }, [offer, providerDoc]);
 
-  // ✅ Aktivitäts-Flag streng in Europe/Vienna
   const activeNow = useMemo(() => {
     if (!offer) return false;
     const ok = isOfferActiveNow(offer, 'Europe/Vienna');
@@ -279,7 +241,7 @@ export default function NavigationScreen() {
     return ok;
   }, [offer]);
 
-  /* ── 4) Animations/Helpers ── */
+  /* ─────────── Animations/Helpers ─────────── */
   const openSheet = useCallback(() => {
     Animated.timing(sheetY, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [sheetY]);
@@ -289,7 +251,14 @@ export default function NavigationScreen() {
       .start(() => { setArrived(false); if (cb) cb(); });
   }, [sheetY, sheetH]);
 
-  const deviceMotionHeadingRef = useRef(null);
+  const addrOpacity = useMemo(
+    () => hudPullY.interpolate({ inputRange: [0, 20, 120], outputRange: [0, 0.4, 1], extrapolate: 'clamp' }),
+    [hudPullY]
+  );
+  const hudTranslateY = useMemo(
+    () => hudPullY.interpolate({ inputRange: [0, 140], outputRange: [0, 140], extrapolate: 'clamp' }),
+    [hudPullY]
+  );
 
   const animateTo = useCallback((pos, maybeUpdateHeading = false) => {
     const now = Date.now();
@@ -300,7 +269,6 @@ export default function NavigationScreen() {
     if (moved < POSITION_UPDATE_MIN_DIST) return;
 
     const speed = last ? (moved / ((now - lastAnimRef.current) / 1000 || 1)) : 0;
-    lastSpeedRef.current = speed;
 
     let nextHeading = heading;
     if (maybeUpdateHeading && lastHeadingUpdatePosRef.current) {
@@ -316,7 +284,7 @@ export default function NavigationScreen() {
       }
     }
 
-    if (Date.now() < headingBiasUntilRef.current && deviceMotionHeadingRef.current != null) {
+    if (Date.now() < (deviceMotionHeadingRef.current ? Date.now() + 0 : 0) && deviceMotionHeadingRef.current != null) {
       const dm = deviceMotionHeadingRef.current;
       nextHeading = smoothHeading(nextHeading, dm, 0.18);
       setHeading(nextHeading);
@@ -336,7 +304,7 @@ export default function NavigationScreen() {
     } catch {}
   }, [follow, heading, isTilt3D]);
 
-  /* ── 5) PanResponder ── */
+  /* ─────────── PanResponder ─────────── */
   const pan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5,
     onPanResponderMove: (_, g) => { const next = Math.max(0, g.dy); sheetY.setValue(next); },
@@ -352,20 +320,22 @@ export default function NavigationScreen() {
   }), [hudPullY]);
 
   /* ─────────── DeviceMotion ─────────── */
+  const headingBiasUntilRef = useRef(0);
+  const lastSpeedRef = useRef(0);
+
   useEffect(() => {
-    (async () => {
-      try {
-        dmSubRef.current = DeviceMotion.addListener((data) => {
-          const { rotation } = data || {};
-          if (!rotation) return;
-          const yawDeg = ((rotation.alpha || 0) * 180) / Math.PI;
-          const norm = ((yawDeg % 360) + 360) % 360;
-          deviceMotionHeadingRef.current = norm;
-        });
-        DeviceMotion.setUpdateInterval(200);
-      } catch {}
-    })();
-    return () => { try { dmSubRef.current?.remove(); } catch {} dmSubRef.current = null; };
+    let sub;
+    try {
+      sub = DeviceMotion.addListener((data) => {
+        const { rotation } = data || {};
+        if (!rotation) return;
+        const yawDeg = ((rotation.alpha || 0) * 180) / Math.PI;
+        const norm = ((yawDeg % 360) + 360) % 360;
+        deviceMotionHeadingRef.current = norm;
+      });
+      DeviceMotion.setUpdateInterval(200);
+    } catch {}
+    return () => { try { sub?.remove?.(); } catch {} };
   }, []);
 
   /* ─────────── Effects ─────────── */
@@ -373,7 +343,7 @@ export default function NavigationScreen() {
   // Zielpos als Ref spiegeln
   useEffect(() => { offerPosRef.current = offerPos; }, [offerPos]);
 
-  // Sounds vorbereiten (Arrival – optional)
+  // Sounds (Arrival)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -410,17 +380,24 @@ export default function NavigationScreen() {
     })();
   }, []);
 
-  // Initial: Angebot, Location, Watcher (+ Provider mitladen)
+  // Initial: Angebot, Location, Watcher (+ Provider)
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoading(true);
 
-        // Versuch 1: Offer inkl. Provider
+        // ✅ Guard: ungültige ID → kein Fetch (verhindert /offers/undefined)
+        if (!OID24.test(String(id || ''))) {
+          setOffer(null);
+          setLoading(false);
+          return;
+        }
+
+        // Offer inkl. Provider versuchen
         let res;
         try {
-          res = await axios.get(`${API_URL}/offers/${id}`, { params: { withProvider: 1 } }); // NEW
+          res = await axios.get(`${API_URL}/offers/${id}`, { params: { withProvider: 1 } });
         } catch {
           // Fallback: ohne Param
           res = await axios.get(`${API_URL}/offers/${id}`);
@@ -429,9 +406,9 @@ export default function NavigationScreen() {
         if (!mounted) return;
         const offerData = res.data;
         setOffer(offerData);
-        await AsyncStorage.setItem(STORE_OFFER, JSON.stringify(offerData)); // Offline-Cache
+        await AsyncStorage.setItem(STORE_OFFER, JSON.stringify(offerData));
 
-        // Provider laden, falls nötig
+        // Provider Detail laden, falls nötig
         try {
           if (offerData?.provider && typeof offerData.provider === 'string') {
             const pRes = await axios.get(`${API_URL}/providers/${offerData.provider}`);
@@ -441,11 +418,9 @@ export default function NavigationScreen() {
           } else {
             setProviderDoc(null);
           }
-        } catch {
-          // Ignorieren – Adresse bleibt ggf. leer
-        }
+        } catch {}
 
-        // Location
+        // Location permission
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
 
@@ -483,7 +458,6 @@ export default function NavigationScreen() {
           }
         );
       } catch {
-        // Offline-Fallback
         try {
           const cachedOffer = await AsyncStorage.getItem(STORE_OFFER);
           if (cachedOffer) setOffer(JSON.parse(cachedOffer));
@@ -500,7 +474,7 @@ export default function NavigationScreen() {
     };
   }, [id, animateTo]);
 
-  // Distanz + Turn-Hints alle 1s
+  // Distanz + leichte Turn-Hints
   useEffect(() => {
     const t = setInterval(() => {
       const pos = lastPosRef.current;
@@ -508,17 +482,6 @@ export default function NavigationScreen() {
       if (pos && dest) {
         const m = distanceMeters(pos, dest);
         if (m !== null) setRemaining(m);
-      }
-
-      if (pos && remainingRoute.length >= 3) {
-        const turn = findNextTurn(pos, remainingRoute, TURN_MIN_ANGLE_DEG);
-        nextTurnRef.current = turn;
-        if (turn?.dist != null) {
-          triggerTurnHints(turn.dist, turnHintFlagsRef);
-        }
-      } else {
-        nextTurnRef.current = null;
-        turnHintFlagsRef.current = { d30: false, d10: false };
       }
     }, REMAINING_TICK_MS);
     return () => clearInterval(t);
@@ -557,7 +520,7 @@ export default function NavigationScreen() {
       const coords = await fetchRoute(
         origin,
         dest,
-        DIRECTIONS_KEY,                 // ← robust aufgelöst
+        DIRECTIONS_KEY,
         'walking',
         { avoidStairs: !!avoidStairs, timeoutMs: 10000 }
       );
@@ -574,22 +537,18 @@ export default function NavigationScreen() {
     } catch (e) {
       const msg = String(e?.message || e || '');
       let pretty = msg;
-
-      // ✅ Häufige Fälle klarer benennen
       if (/REQUEST_DENIED/i.test(msg) || /api key/i.test(msg)) {
-        // Hinweis exakt zu eurer Policy:
-        pretty = 'Google Directions: REQUEST_DENIED – Bitte sicherstellen: separater Directions-Webservice-Key **ohne** „Android apps“/HTTP-Referrer-Restriktion. Nur API-Restriktion (Directions, Distance Matrix, Maps JS etc.) aktivieren.';
+        pretty = 'Google Directions: REQUEST_DENIED – separater Directions-Key (ohne Android/HTTP-Referrer-Restriktion).';
       } else if (/OVER_QUERY_LIMIT/i.test(msg)) {
         pretty = 'Google Directions: OVER_QUERY_LIMIT – Quota/Billing prüfen.';
       } else if (/NOT_FOUND/i.test(msg)) {
         pretty = 'Google Directions: NOT_FOUND – Koordinaten prüfen.';
       }
-
       const cached = await AsyncStorage.getItem(STORE_ROUTE);
       if (cached) {
         const arr = JSON.parse(cached);
         setRouteCoords(arr);
-        setRouteError(pretty + ' – Offline: verwende zwischengespeicherte Route.');
+        setRouteError(pretty + ' – Offline: zwischengespeicherte Route.');
       } else {
         setRouteError(pretty);
         setRouteCoords([]);
@@ -603,7 +562,7 @@ export default function NavigationScreen() {
     else { setRouteCoords([]); setRouteError(!DIRECTIONS_KEY ? 'Kein Directions-Key' : null); }
   }, [offerPos, userLocation, loadRouteFrom]);
 
-  // Off-Route Monitor (+ Toast)
+  // Off-Route Monitor
   useEffect(() => {
     const t = setInterval(async () => {
       const pos = lastPosRef.current;
@@ -651,7 +610,7 @@ export default function NavigationScreen() {
       sheetY.setValue(sheetH);
       openSheet();
     }
-  }, [arrived, sheetH, openSheet]);
+  }, [arrived, sheetH, openSheet, sheetY]);
 
   /* ─────────── UI Actions ─────────── */
   function getEtaText() {
@@ -768,14 +727,13 @@ export default function NavigationScreen() {
         )}
       </MapView>
 
-      {/* HUD oben – „ziehbar“ mit Adresse */}
+      {/* HUD oben */}
       <Animated.View {...hudPan.panHandlers} style={[styles.hudTop, { transform: [{ translateY: hudTranslateY }] }]}>
         <View style={styles.hudRow}>
           <Text style={styles.hudTitle} numberOfLines={1}>
             {offer?.name || 'Navigation'}
           </Text>
           <View style={styles.pillsRow}>
-            {/* ✅ Mini-Status-Pill für Aktivität (Europe/Vienna) */}
             <Text style={[styles.hudPill, activeNow ? styles.pillOk : styles.pillWarn]}>
               {activeNow ? 'Aktiv' : 'Derzeit nicht aktiv'}
             </Text>
@@ -818,7 +776,6 @@ export default function NavigationScreen() {
         <TouchableOpacity onPress={actionToggleMapType} style={styles.fab} activeOpacity={0.9}>
           <Text style={styles.fabText}>{mapType === 'standard' ? 'SAT' : 'MAP'}</Text>
         </TouchableOpacity>
-        {/* Accessible-Icon nur hier */}
         <TouchableOpacity onPress={actionToggleAvoidStairs} style={styles.fab} activeOpacity={0.9}>
           <MaterialIcons name="accessible" size={22} color="#fff" />
         </TouchableOpacity>
@@ -867,41 +824,7 @@ export default function NavigationScreen() {
   );
 }
 
-/* ─────────── Turn-Hint Utils ─────────── */
-function segmentBearing(a, b) { return bearingDegrees(a, b); }
-function findNextTurn(fromPos, remRoute, minAngleDeg = 30) {
-  if (!remRoute || remRoute.length < 3) return null;
-  let cum = 0;
-  for (let i = 0; i < remRoute.length - 2; i++) {
-    const p0 = i === 0 ? fromPos : remRoute[i];
-    const p1 = remRoute[i + 1];
-    const p2 = remRoute[i + 2];
-    const d01 = distanceMeters(p0, p1) ?? 0;
-    const b01 = segmentBearing(p0, p1);
-    const b12 = segmentBearing(p1, p2);
-    const angle = Math.abs(angleDeltaDeg(b01, b12));
-    const distToCorner = cum + d01;
-    if (angle >= minAngleDeg) return { index: i + 1, dist: distToCorner, angle };
-    cum += d01;
-    if (cum > 120) break;
-  }
-  return null;
-}
-async function triggerTurnHints(dist, flagsRef) {
-  try {
-    if (!flagsRef.current.d30 && dist <= 30 && dist > 10) {
-      flagsRef.current.d30 = true;
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      return;
-    }
-    if (!flagsRef.current.d10 && dist <= 10) {
-      flagsRef.current.d10 = true;
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-  } catch {}
-}
-
-/* ─────────── Konfetti (stabile Version) ─────────── */
+/* ─────────── Konfetti ─────────── */
 function ConfettiOverlay() {
   const count = 12;
   const drops = React.useMemo(() => Array.from({ length: count }, () => new Animated.Value(-20)), []);

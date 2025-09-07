@@ -4,6 +4,8 @@ import { Platform } from 'react-native';
 import { Slot, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import PushInitializer from '../components/PushInitializer';
+import ThemeProvider from '../theme/ThemeProvider';
+import LocationAlwaysGate from '../components/permissions/LocationAlwaysGate';
 
 // Globaler Handler (nur 1x)
 if (!globalThis.__stepsmatchPushHandlerSet) {
@@ -123,9 +125,10 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <>
+    <ThemeProvider>
       <PushInitializer />
+      <LocationAlwaysGate />
       <Slot />
-    </>
+    </ThemeProvider>
   );
 }
