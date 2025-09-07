@@ -27,7 +27,7 @@ const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK    = 'stepsmatch-geofence-task';
 
 const HEARTBEAT_MIN_SECONDS = 45;         // Debounce für Heartbeats
-const TIME_INTERVAL_MS = 60 * 1000;       // ~60s Fallback, Geofence liefert Sofort-Push
+const TIME_INTERVAL_MS = 60 * 1000;       // fallback (wird durch aggressives Profil übersteuert)
 
 const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 const EUROPE_VIENNA = 'Europe/Vienna';
@@ -272,12 +272,13 @@ async function ensureChannels() {
       { identifier: 'dismiss', buttonTitle: 'DISMISS', options: { isDestructive: true } },
     ]);
 
+    // ⚠️ Wichtig: BG-Kanal NICHT MIN – sonst wird der Service eher gekillt.
     await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
-      name: 'StepsMatch – Hintergrund',
-      importance: Notifications.AndroidImportance.MIN,
+      name: 'StepsMatch – Standort aktiv',
+      importance: Notifications.AndroidImportance.DEFAULT,
       sound: null,
-      vibrationPattern: [],
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
+      vibrationPattern: [0],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       bypassDnd: false,
     });
 
@@ -359,7 +360,7 @@ async function registerTokenWithBackend({ expoToken, deviceId, lastLocation }) {
     if (res.ok) {
       REGISTERED_READY = true;
       try {
-        await kickstartBackgroundLocation();
+        await startAggressiveBgLocation();   // ⬅️ ersetzt kickstart-Defaults
         await refreshGeofencesAroundUser(true);
       } catch (e) {
         console.warn('[BGLOC] auto-start or geofence-sync after register failed', String(e));
@@ -644,31 +645,43 @@ export async function sendHeartbeat(arg) {
   }
 }
 
+// ⬇️ NEU: Aggressives BG-Location-Profil + lastFixAt Tracking
+async function startAggressiveBgLocation() {
+  await ensureChannels();
+
+  const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+  if (started) {
+    try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {}
+  }
+
+  await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
+    accuracy: Location.Accuracy.High,     // ggf. BestForNavigation testen
+    timeInterval: 30 * 1000,             // 30s
+    distanceInterval: 0,                  // bewegungsgetriggert
+    deferredUpdatesInterval: 0,
+    deferredUpdatesDistance: 0,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: false,
+    mayShowUserSettingsDialog: true,      // erlaubt Settings-Dialog bei Bedarf
+    foregroundService: {
+      notificationTitle: 'StepsMatch ist aktiv',
+      notificationBody: 'Standort wird im Hintergrund aktualisiert.',
+      notificationChannelId: 'com.ecily.mobile:stepsmatch-bg-location-task',
+      killServiceOnDestroy: false,
+    },
+  });
+
+  await AsyncStorage.setItem('lastFixAt', String(Date.now()));
+  console.log('[BGLOC] startLocationUpdatesAsync → armed (aggressive)');
+}
+
 export async function kickstartBackgroundLocation() {
   try {
     const fg = await Location.requestForegroundPermissionsAsync();
     const bg = await Location.requestBackgroundPermissionsAsync();
     console.log('[BGLOC] permissions', { fg: fg?.status, bg: bg?.status });
 
-    const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
-    if (!started) {
-      await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
-        accuracy: Location.Accuracy.High,
-        timeInterval: TIME_INTERVAL_MS,
-        distanceInterval: 10,
-        foregroundService: {
-          notificationTitle: 'StepsMatch',
-          notificationBody: 'Hintergrund-Ortungsdienst aktiv',
-          notificationColor: '#2c6bed',
-          notificationChannelId: 'com.ecily.mobile:stepsmatch-bg-location-task',
-        },
-        pausesUpdatesAutomatically: false,
-        showsBackgroundLocationIndicator: false,
-      });
-      console.log('[BGLOC] Background updates started.');
-    } else {
-      console.log('[BGLOC] Background updates already started.');
-    }
+    await startAggressiveBgLocation();
 
     const loc = await Location.getLastKnownPositionAsync({});
     if (loc?.coords) {
@@ -694,6 +707,10 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     if (!locations?.length) return;
     console.log('[BGLOC] locations batch size =', locations.length);
     const { latitude, longitude, accuracy } = locations[0]?.coords || {};
+
+    // Track letzter Fix für Watchdog
+    try { await AsyncStorage.setItem('lastFixAt', String(Date.now())); } catch {}
+
     if (latitude && longitude) {
       await _sendHeartbeatWithCoords({ latitude, longitude, accuracy });
 
@@ -852,6 +869,28 @@ export async function sendRoundtripTest({ offerId = 'ROUNDTRIP_TEST' } = {}) {
 }
 
 // ───────────── Init & Component ─────────────
+
+// NEU: Watchdog – prüft alle 30s, ob letzter Fix >120s alt → re-arm
+function useLocationWatchdog() {
+  const timerRef = useRef(null);
+  useEffect(() => {
+    const TICK_MS = 30 * 1000;
+    const STALE_MS = 120 * 1000;
+    async function tick() {
+      try {
+        const lastFixAt = Number(await AsyncStorage.getItem('lastFixAt') || 0);
+        const age = Date.now() - lastFixAt;
+        if (!lastFixAt || age > STALE_MS) {
+          console.log('[BGLOC] watchdog restart (age=', age, 'ms)');
+          await startAggressiveBgLocation();
+        }
+      } catch {}
+    }
+    timerRef.current = setInterval(tick, TICK_MS);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+}
+
 async function initPush() {
   await ensureChannels();
   const granted = await askNotificationPermission();
@@ -914,11 +953,20 @@ export default function PushInitializer() {
           }
         } catch {}
       }
+      // Bei jedem Statewechsel sicherstellen, dass BG-Location läuft
+      try {
+        const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+        if (!started) {
+          console.log('[BGLOC] watchdog appstate → (re)start');
+          await startAggressiveBgLocation();
+        }
+      } catch {}
       appState.current = next;
     });
 
     return () => sub?.remove?.();
   }, []);
 
+  useLocationWatchdog();
   return null;
 }
