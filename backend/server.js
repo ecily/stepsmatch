@@ -83,7 +83,14 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  // ⬇️ Wichtig: Custom-Header für Tester-Gate zulassen
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-Tester-Key',
+    'x-tester-key',
+  ],
   exposedHeaders: ['Content-Length'],
   optionsSuccessStatus: 204,
 };
