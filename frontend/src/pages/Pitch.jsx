@@ -4,7 +4,7 @@ import { Helmet } from "@dr.pogodin/react-helmet";
 import { motion } from "motion/react";
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg"; // für Footer
-import heroBg from "../assets/hero-bg-pitch2.jpg"; // ⬅️ korrigiert: .jpg
+import heroBg from "../assets/hero-bg-pitch2.jpg"; // ⬅️ .jpg
 import navMockup from "../assets/navigation-preview.png"; // Mockup-Bild
 
 const fadeUp = (delay = 0) => ({
@@ -60,28 +60,35 @@ export default function Pitch() {
                 Live-Kontext • Standortbasiert • Zero-Search
               </span>
               <h1 className="mt-4 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white">
-                Angebote, die dich finden —<span className="text-blue-300"> genau im richtigen Moment.</span>
+                StepsMatch — <span className="opacity-90">finden. nicht suchen.</span>
               </h1>
               <p className="mt-4 text-lg md:text-xl text-white/90">
-                StepsMatch macht Suchen überflüssig. Wir verbinden Ort, Zeitfenster und Interessen —
-                und senden ein einziges relevantes Signal, wenn es wirklich zählt.
+                Angebote finden Menschen im richtigen Moment — wir verbinden Ort, Zeitfenster und
+                Interessen und senden <b>genau ein relevantes Signal</b>, wenn es wirklich zählt.
               </p>
 
+              {/* Primäre CTAs für Invest/Team/Beachhead */}
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  to="/admin/offers"
+                <a
+                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Early%20Investment%20/ %20Team%20Intro"
                   className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg hover:bg-gray-100 transition"
                 >
-                  Live-Tech-Demo öffnen
+                  Early Investor: Intro-Call
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                     <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
                   </svg>
-                </Link>
-                <Link
-                  to="/register"
+                </a>
+                <a
+                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Mitgruender:in%20(Engineering/Growth)"
                   className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
                 >
-                  Anbieter: Jetzt starten
+                  Mitgründen (MERN / Growth)
+                </a>
+                <Link
+                  to="/admin/offers"
+                  className="inline-flex items-center gap-2 rounded-full bg-blue-600/90 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
+                >
+                  Live-Tech-Demo öffnen
                 </Link>
               </div>
 
@@ -119,9 +126,9 @@ export default function Pitch() {
           <motion.div className="lg:col-span-1" {...fadeUp(0.05)}>
             <h2 className="text-2xl md:text-3xl font-extrabold">Warum jetzt?</h2>
             <p className="mt-3 text-gray-700">
-              Menschen sind mobil, Feeds sind voll — Aufmerksamkeit im falschen Moment ist wertlos.
-              Lokale Anbieter brauchen Sichtbarkeit genau dann, wenn Laufkundschaft wirklich
-              vorbeikommt. <em>Zero-Search</em> ist die logische nächste UX-Stufe.
+              Aufmerksamkeit zur falschen Zeit ist wertlos. Lokale Anbieter brauchen Sichtbarkeit
+              <b> genau dann</b>, wenn Laufkundschaft wirklich vorbeikommt. <em>Zero-Search</em> ist die
+              logische nächste UX-Stufe.
             </p>
           </motion.div>
 
@@ -129,7 +136,7 @@ export default function Pitch() {
             <h3 className="text-lg font-semibold">Problem</h3>
             <ul className="mt-3 space-y-2 text-gray-700">
               <li>• Streuverluste & „Werbemüdigkeit“ in klassischen Kanälen.</li>
-              <li>• Suchaufwand bei Nutzer:innen — falscher Zeitpunkt, falscher Ort.</li>
+              <li>• Nutzer:innen müssen aktiv suchen — meist im falschen Moment.</li>
               <li>• Lokale Angebote sind flüchtig (Mittagstisch, Reststücke, Slots).</li>
             </ul>
           </motion.div>
@@ -138,9 +145,52 @@ export default function Pitch() {
             <h3 className="text-lg font-semibold">Lösung</h3>
             <ul className="mt-3 space-y-2 text-gray-700">
               <li>• Ereignis-getriebene Signale (Enter/Exit/Heartbeat) statt Dauer-Tracking.</li>
-              <li>• Matching aus Ort × Zeitfenster × Interessen ⇒ ein relevantes Signal.</li>
-              <li>• Zero-Search UX: „finden, nicht suchen“ — ohne Werbung, 100 % Nutzen.</li>
+              <li>• Matching aus Ort × Zeitfenster × Interessen ⇒ <b>ein</b> relevantes Signal.</li>
+              <li>• „finden. nicht suchen.“ — 100 % Nutzen, 0 % Spam.</li>
             </ul>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* BEACHHEAD GRAZ */}
+      <section className="bg-blue-50 py-14 md:py-20">
+        <div className="max-w-7xl mx-auto px-6">
+          <motion.h2 className="text-2xl md:text-3xl font-extrabold" {...fadeUp(0.05)}>
+            Beachhead: Graz · Studierende · Ausgehen
+          </motion.h2>
+          <motion.p className="mt-3 text-gray-700 max-w-3xl" {...fadeUp(0.1)}>
+            Wir starten bewusst schmal: <b>Gastronomie & Nightlife rund um Campus-Hotspots</b>.
+            Hier ist Relevanz maximal zeitkritisch (Happy Hour, Restplätze, Live-Events).
+          </motion.p>
+          <div className="mt-8 grid md:grid-cols-3 gap-6">
+            {[
+              { h: "🎯 Ziel", p: "Top-30 Locations, 5 Campus-Cluster, Multiplikatoren & Promoter." },
+              { h: "📈 KPI", p: "≥30 % Offer-Open-Rate, ≥10 % Navigation-Starts, messbare Footfall-Lifts." },
+              { h: "⚙️ To-Dos", p: "Street-Activation, Partner-Deals, Onboarding-Sprints für Anbieter." },
+            ].map((b, i) => (
+              <motion.div
+                key={i}
+                className="rounded-2xl border border-blue-200 bg-white p-6 shadow-sm"
+                {...fadeUp(0.1 + i * 0.05)}
+              >
+                <div className="font-semibold text-blue-800">{b.h}</div>
+                <div className="mt-2 text-gray-700">{b.p}</div>
+              </motion.div>
+            ))}
+          </div>
+          <motion.div className="mt-8 flex flex-wrap gap-3" {...fadeUp(0.25)}>
+            <a
+              href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Beachhead%20Graz%20Support"
+              className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
+            >
+              Beachhead mitaufbauen
+            </a>
+            <Link
+              to="/admin/offers"
+              className="rounded-full border border-blue-200 bg-white px-5 py-3 text-blue-800 font-semibold hover:bg-blue-50 transition"
+            >
+              Live-Tech-Demo (Karte)
+            </Link>
           </motion.div>
         </div>
       </section>
@@ -275,6 +325,36 @@ export default function Pitch() {
         </div>
       </section>
 
+      {/* SKALIERUNGSVISION */}
+      <section className="bg-white py-14 md:py-20">
+        <div className="max-w-7xl mx-auto px-6">
+          <motion.h2 className="text-2xl md:text-3xl font-extrabold" {...fadeUp(0.05)}>
+            Von Graz in die Welt — „finden. nicht suchen.“ für alles
+          </motion.h2>
+          <motion.p className="mt-3 text-gray-700 max-w-3xl" {...fadeUp(0.1)}>
+            Was heute Nightlife & Gastronomie ist, skaliert in <b>Retail, Mobility, Kultur,
+            Gesundheits-Slots</b> und mehr. StepsMatch ist das <b>Signal-Layer</b> für die reale
+            Welt — ein <b>Google-Ersatz für lokale Momente</b>, in denen Suchen zu langsam ist.
+          </motion.p>
+          <div className="mt-8 grid md:grid-cols-3 gap-6">
+            {[
+              { h: "Retail", p: "Reststücke, Blitz-Rabatte, Verfügbarkeiten in der Nähe." },
+              { h: "Mobility", p: "Bike-Sharing, Micro-Transit, Parkplatz-Fenster." },
+              { h: "Kultur & Freizeit", p: "Last-Minute-Tickets, freie Slots, Pop-up-Events." },
+            ].map((b, i) => (
+              <motion.div
+                key={i}
+                className="rounded-2xl border border-gray-200 bg-gray-50 p-6"
+                {...fadeUp(0.12 + i * 0.05)}
+              >
+                <div className="font-semibold text-gray-900">{b.h}</div>
+                <div className="mt-2 text-gray-700">{b.p}</div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ROADMAP • TEAM • HIRING */}
       <section className="bg-white py-14 md:py-20">
         <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-3 gap-10">
@@ -282,7 +362,7 @@ export default function Pitch() {
             <h3 className="text-lg font-semibold">Roadmap (Kurzfrist)</h3>
             <ul className="mt-3 space-y-2 text-gray-700">
               <li>• Pilot-City (Onboarding 50+ Anbieter), KPI-Readiness.</li>
-              <li>• App-Public Beta (iOS/Android), Optimierung Signal-Relevanz.</li>
+              <li>• App-Public Beta (Android), Optimierung Signal-Relevanz.</li>
               <li>• Provider-Insights & einfache Kampagnen-Templates.</li>
             </ul>
           </motion.div>
@@ -292,7 +372,7 @@ export default function Pitch() {
             <ul className="mt-3 space-y-2 text-gray-700">
               <li>• <strong>Full-Stack MERN</strong> (Node/Express, MongoDB, React/React Native).</li>
               <li>• <strong>Mobile</strong> (React Native) — Background/Location-APIs, Push.</li>
-              <li>• <strong>Growth/Marketing</strong> — City Rollout, Partnerships, Messaging.</li>
+              <li>• <strong>Growth/Marketing & Sales</strong> — Beachhead Graz, Partnerships.</li>
               <li>• Plus: <strong>Brand/UX</strong> für Zero-Search-Erlebnis.</li>
             </ul>
           </motion.div>
@@ -308,43 +388,45 @@ export default function Pitch() {
         </div>
       </section>
 
-      {/* ASK • KONTAKT / CTA */}
+      {/* ASK • KONKRETES COMMITMENT */}
       <section className="bg-blue-900 py-12 md:py-16 text-white">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid lg:grid-cols-3 gap-8 items-center">
             <motion.div className="lg:col-span-2" {...fadeIn(0.05)}>
-              <h2 className="text-2xl md:text-3xl font-extrabold">Unser „Ask“</h2>
+              <h2 className="text-2xl md:text-3xl font-extrabold">Unser „Ask“ — klar & offen</h2>
               <p className="mt-3 text-blue-100">
-                Wir öffnen unsere <strong>Pre-Seed-Runde</strong> und suchen parallel <strong>Mitgründer:innen / frühe Team-Leads</strong> in Engineering & Growth. Wir bieten: klares Produkt-Narrativ, Live-Tech, fokussierten Rollout und Ownership ab Tag 1.
+                Wir suchen <strong>Commitment</strong>, um ein starkes Team zu bauen und den
+                <strong> Beachhead in Graz</strong> zu gewinnen. <b>Ich gebe Anteile ab</b>, um
+                Entwickler:innen (MERN & Mobile), Marketings/ Sales und lokale Champions an Bord zu holen.
               </p>
               <ul className="mt-4 space-y-2 text-blue-100">
-                <li>• Kapital für Pilot-City, Beta-App & GTM (Ticketgröße flexibel).</li>
-                <li>• Ressourcen für Full-Stack MERN, Mobile (RN) & Growth.</li>
-                <li>• Netzwerk in Städte-/Gastro-/Event-Ökosysteme.</li>
+                <li>• <b>Funding (Pre-Seed):</b> Ticketgrößen flexibel, milestone-basiert.</li>
+                <li>• <b>Engineering:</b> MERN-Senior:innen & Mobile (RN) für schnelle Iteration.</li>
+                <li>• <b>Growth & Sales:</b> City-Rollout, Partnerships, Street-Activation.</li>
               </ul>
             </motion.div>
 
             <motion.div className="space-y-3" {...fadeUp(0.1)}>
-              <Link
-                to="/admin/offers"
+              <a
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Early%20Investment%20/ %20Team%20Intro"
                 className="block rounded-full bg-white px-6 py-3 text-blue-900 font-semibold text-center shadow hover:bg-gray-100 transition"
               >
-                Live-Tech-Demo
-              </Link>
-              <Link
-                to="/register"
+                Early Investment · Intro
+              </a>
+              <a
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Mitgruender:in%20(Engineering/Growth)"
                 className="block rounded-full border border-white/30 bg-white/10 px-6 py-3 font-semibold text-center text-white hover:bg-white/15 transition"
               >
-                Anbieter onboarden
-              </Link>
+                Mitgründen (Engineering/Growth)
+              </a>
               <a
-                href="mailto:andreas.franz@ecily.com"
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Beachhead%20Graz"
                 className="block rounded-full bg-blue-700 px-6 py-3 text-white font-semibold text-center shadow hover:bg-blue-800 transition"
               >
-                Intro-Call anfragen
+                Beachhead Graz: Ich helfe mit
               </a>
               <p className="text-xs text-blue-200 text-center">
-                Keine Zeit? Schick uns 3 Stichworte – wir melden uns mit einem Vorschlag.
+                Keine Zeit? Schick 3 Stichworte — wir melden uns mit einem Vorschlag.
               </p>
             </motion.div>
           </div>
