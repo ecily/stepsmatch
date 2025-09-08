@@ -9,6 +9,7 @@ import { DeviceMotion } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../../theme/colors';
 import fetchRoute from '../../services/directions'; // default import
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
@@ -165,6 +166,7 @@ export default function NavigationScreen() {
   const { id: rawId } = useLocalSearchParams();
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   /* ── 1) State ── */
   const [offer, setOffer] = useState(null);
@@ -404,7 +406,7 @@ export default function NavigationScreen() {
         }
 
         if (!mounted) return;
-        const offerData = res.data;
+        const offerData = res?.data?.offer ?? res?.data ?? null;
         setOffer(offerData);
         await AsyncStorage.setItem(STORE_OFFER, JSON.stringify(offerData));
 
@@ -654,7 +656,14 @@ export default function NavigationScreen() {
     return (
       <View style={styles.center}>
         <Text style={{ color: '#999' }}>Angebot nicht gefunden</Text>
-        <TouchableOpacity onPress={() => router.replace(`/offers/${id}`)} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => router.replace(`/offers/${id}`)}
+          style={styles.backBtn}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Zurück zu den Angebotsdetails"
+          testID="nav_back_missing_offer"
+        >
           <Text style={styles.backText}>Zurück</Text>
         </TouchableOpacity>
       </View>
@@ -694,13 +703,15 @@ export default function NavigationScreen() {
         onPanDrag={onUserPan}
         onMapReady={() => console.log('Map ready')}
         onError={(e) => console.log('Nav map error', e?.nativeEvent)}
+        accessibilityLabel="Karte zur Navigation"
+        testID="nav_map"
       >
         {/* Ziel-Marker */}
         {offerPos && (
           <Marker coordinate={offerPos} title={offer?.name || 'Ziel'} opacity={activeNow ? 1 : 0.5}>
             <Animated.View style={{ alignItems: 'center', transform: [{ scale: destPulse }] }}>
-              <View style={styles.pinCore} />
-              <View style={styles.pinDot} />
+              <View style={[styles.pinCore, { backgroundColor: colors.primary, borderColor: '#fff', shadowColor: colors.primary }]} />
+              <View style={[styles.pinDot, { backgroundColor: colors.primary }]} />
             </Animated.View>
           </Marker>
         )}
@@ -711,24 +722,35 @@ export default function NavigationScreen() {
             center={userLocation}
             radius={Math.max(8, Math.min(userAccuracy, 60))}
             strokeWidth={0}
-            fillColor="rgba(0,120,255,0.12)"
+            fillColor="rgba(13,78,166,0.12)" // BRAND_BLUE 12%
             zIndex={1}
           />
         )}
 
-        {/* Leichte Route als Polyline */}
+        {/* Route */}
         {remainingRoute.length >= 2 && (
           <Polyline
             coordinates={remainingRoute}
             strokeWidth={6}
-            strokeColor="rgba(0,122,255,0.92)"
+            strokeColor="rgba(13,78,166,0.95)" // BRAND_BLUE
             zIndex={2}
           />
         )}
       </MapView>
 
-      {/* HUD oben */}
-      <Animated.View {...hudPan.panHandlers} style={[styles.hudTop, { transform: [{ translateY: hudTranslateY }] }]}>
+      {/* HUD oben (Safe-Area aware) */}
+      <Animated.View
+        {...hudPan.panHandlers}
+        style={[
+          styles.hudTop,
+          { transform: [{ translateY: hudTranslateY }], top: insets.top + 8 }
+        ]}
+        pointerEvents="box-none"
+        testID="nav_hud_top"
+        accessible
+        accessibilityRole="summary"
+        accessibilityLabel={`Navigation zu ${offer?.name || 'Angebot'}`}
+      >
         <View style={styles.hudRow}>
           <Text style={styles.hudTitle} numberOfLines={1}>
             {offer?.name || 'Navigation'}
@@ -765,56 +787,115 @@ export default function NavigationScreen() {
         {routeError && <Text style={styles.hudWarnSmall}>Hinweis: {String(routeError).replace('Error: ', '')}</Text>}
       </Animated.View>
 
-      {/* FAB-Cluster */}
-      <View style={styles.fabCluster}>
-        <TouchableOpacity onPress={actionFollow} style={styles.fab} activeOpacity={0.9}>
+      {/* FAB-Cluster (Safe-Area aware) */}
+      <View style={[styles.fabCluster, { bottom: (insets.bottom || 0) + 112 }]} pointerEvents="box-none">
+        <TouchableOpacity
+          onPress={actionFollow}
+          style={styles.fab}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel={follow ? 'Auf Position zentrieren' : 'Kartenverfolgung aktivieren'}
+          testID="nav_follow_fab"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.fabText}>{follow ? '◎' : '⟲'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={actionToggleTilt} style={styles.fab} activeOpacity={0.9}>
+        <TouchableOpacity
+          onPress={actionToggleTilt}
+          style={styles.fab}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel={isTilt3D ? '3D-Ansicht deaktivieren' : '3D-Ansicht aktivieren'}
+          testID="nav_tilt_fab"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.fabText}>{isTilt3D ? '3D' : '2D'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={actionToggleMapType} style={styles.fab} activeOpacity={0.9}>
+        <TouchableOpacity
+          onPress={actionToggleMapType}
+          style={styles.fab}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel={mapType === 'standard' ? 'Satellitenkarte anzeigen' : 'Standardkarte anzeigen'}
+          testID="nav_maptype_fab"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.fabText}>{mapType === 'standard' ? 'SAT' : 'MAP'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={actionToggleAvoidStairs} style={styles.fab} activeOpacity={0.9}>
+        <TouchableOpacity
+          onPress={actionToggleAvoidStairs}
+          style={styles.fab}
+          activeOpacity={0.9}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: !!avoidStairs }}
+          accessibilityLabel="Stufenfreie Route bevorzugen"
+          testID="nav_avoid_stairs_fab"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <MaterialIcons name="accessible" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {/* HUD unten */}
-      <View style={styles.hudBottom}>
-        <TouchableOpacity onPress={() => router.replace(`/offers/${id}`)} style={styles.btn}>
-          <Text style={styles.btnText}>Zurück zu Details</Text>
+      {/* HUD unten (Safe-Area aware) */}
+      <View style={[styles.hudBottom, { bottom: (insets.bottom || 0) + 16 }]}>
+        <TouchableOpacity
+          onPress={() => router.replace(`/offers/${id}`)}
+          style={[styles.btn, { backgroundColor: colors.primary }]}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Zurück zu den Angebotsdetails"
+          testID="nav_back_to_details"
+        >
+          <Text style={[styles.btnText, { color: '#fff' }]}>Zurück zu Details</Text>
         </TouchableOpacity>
       </View>
 
       {/* Off-Route Toast */}
       {showOffRouteToast && (
-        <View style={styles.toastWrap} pointerEvents="none">
+        <View style={[styles.toastWrap, { bottom: (insets.bottom || 0) + 76 }]} pointerEvents="none">
           <View style={styles.toast}>
             <Text style={styles.toastText}>Kleiner Umweg – ich passe die Route an ✨</Text>
           </View>
         </View>
       )}
 
-      {/* Arrival Bottom-Sheet */}
+      {/* Arrival Bottom-Sheet (Safe-Area aware) */}
       {arrived && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none" testID="nav_arrival_overlay">
           <ConfettiOverlay />
           <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
           <Animated.View
             {...pan.panHandlers}
-            style={[styles.sheetWrap, { transform: [{ translateY: sheetY }] }]}
+            style={[styles.sheetWrap, { transform: [{ translateY: sheetY }], bottom: (insets.bottom || 0) + 16 }]}
             onLayout={(e) => setSheetH(e.nativeEvent.layout.height)}
+            accessibilityViewIsModal
+            accessible
+            accessibilityRole="dialog"
+            accessibilityLabel="Ziel erreicht"
+            testID="nav_arrival_sheet"
           >
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>🎯 Ziel erreicht</Text>
             <Text style={styles.sheetSub}>Du bist am Angebot angekommen.</Text>
             <View style={{ height: 12 }} />
-            <TouchableOpacity onPress={() => closeSheet(() => router.replace(`/offers/${id}`))} style={[styles.sheetBtn, styles.sheetBtnPrimary]}>
+            <TouchableOpacity
+              onPress={() => closeSheet(() => router.replace(`/offers/${id}`))}
+              style={[styles.sheetBtn, styles.sheetBtnPrimary]}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Zurück zu den Angebotsdetails"
+              testID="nav_arrival_back"
+            >
               <Text style={styles.sheetBtnText}>Zurück zu Details</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => closeSheet()} style={[styles.sheetBtn, { marginTop: 8 }]}>
+            <TouchableOpacity
+              onPress={() => closeSheet()}
+              style={[styles.sheetBtn, { marginTop: 8 }]}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Weiter navigieren"
+              testID="nav_arrival_continue"
+            >
               <Text style={styles.sheetBtnText}>Weiter navigieren</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -854,7 +935,7 @@ function ConfettiOverlay() {
   );
 }
 function confettiColor(i) {
-  const palette = ['#4c9fff', '#7dd3fc', '#34d399', '#fbbf24', '#f472b6', '#a78bfa'];
+  const palette = ['#0d4ea6', '#7dd3fc', '#34d399', '#fbbf24', '#f472b6', '#a78bfa']; // BRAND first
   return palette[i % palette.length];
 }
 
@@ -864,7 +945,7 @@ const styles = StyleSheet.create({
 
   hudTop: {
     position: 'absolute',
-    top: 12, left: 12, right: 12,
+    left: 12, right: 12,
     backgroundColor: 'rgba(16,18,22,0.66)',
     borderRadius: 14,
     paddingVertical: 12, paddingHorizontal: 14,
@@ -898,18 +979,17 @@ const styles = StyleSheet.create({
   pillNeutral: { backgroundColor: 'rgba(255,255,255,0.18)' },
   pillFollowOff: { backgroundColor: 'rgba(255, 180, 0, 0.25)' },
 
-  hudBottom: { position: 'absolute', bottom: 16, left: 0, right: 0, alignItems: 'center' },
+  hudBottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   btn: {
-    backgroundColor: '#0F1115', opacity: 0.92,
     paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)'
   },
-  btnText: { color: '#fff', fontWeight: '700' },
+  btnText: { fontWeight: '700' },
 
-  fabCluster: { position: 'absolute', right: 16, bottom: 112, alignItems: 'center', gap: 10 },
+  fabCluster: { position: 'absolute', right: 16, alignItems: 'center', gap: 10 },
   fab: {
     backgroundColor: '#0F1115', opacity: 0.95,
-    width: 50, height: 50, borderRadius: 25,
+    width: 52, height: 52, borderRadius: 26,
     alignItems: 'center', justifyContent: 'center',
     elevation: 6,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
@@ -920,12 +1000,12 @@ const styles = StyleSheet.create({
 
   sheetWrap: {
     position: 'absolute',
-    left: 12, right: 12, bottom: 16,
-    backgroundColor: '#0f1a0f',
+    left: 12, right: 12,
+    backgroundColor: '#0f1522',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1e7a1e'
+    borderColor: '#0d4ea6'
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -933,24 +1013,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.28)',
     marginBottom: 10,
   },
-  sheetTitle: { color: '#d5ffd5', fontSize: 16, fontWeight: 'bold' },
-  sheetSub: { color: '#bfe8bf', fontSize: 13, marginTop: 4 },
-  sheetBtn: { backgroundColor: '#111', opacity: 0.95, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  sheetBtnPrimary: { backgroundColor: '#1c6f1c' },
+  sheetTitle: { color: '#E9F1FF', fontSize: 16, fontWeight: 'bold' },
+  sheetSub: { color: '#c9d8f5', fontSize: 13, marginTop: 4 },
+  sheetBtn: {
+    backgroundColor: '#111', opacity: 0.95,
+    paddingHorizontal: 18, paddingVertical: 12,
+    borderRadius: 12, alignItems: 'center'
+  },
+  sheetBtnPrimary: { backgroundColor: '#0d4ea6' },
   sheetBtnText: { color: '#fff', fontWeight: 'bold' },
 
   pinCore: {
     width: 22, height: 22, borderRadius: 11,
-    backgroundColor: '#0d8bff',
+    backgroundColor: '#0d4ea6',
     borderWidth: 2, borderColor: 'white',
-    shadowColor: '#0d8bff', shadowOpacity: 0.55, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
+    shadowColor: '#0d4ea6', shadowOpacity: 0.55, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
     elevation: 6,
   },
-  pinDot: { marginTop: 4, width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(13,139,255,0.85)' },
+  pinDot: { marginTop: 4, width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(13,78,166,0.85)' },
 
   dot: {
     width: 7, height: 7, borderRadius: 3.5,
-    backgroundColor: 'rgba(0,122,255,0.92)',
+    backgroundColor: 'rgba(13,78,166,0.92)',
     borderWidth: 1, borderColor: '#fff',
     shadowColor: '#000',
     shadowOpacity: 0.15,
@@ -958,7 +1042,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
   },
 
-  toastWrap: { position: 'absolute', bottom: 76, left: 0, right: 0, alignItems: 'center' },
+  toastWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   toast: {
     backgroundColor: 'rgba(16,18,22,0.9)',
     borderRadius: 12,

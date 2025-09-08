@@ -1,6 +1,5 @@
-// stepsmatch/mobile/app/(tabs)/index.js
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { sendHeartbeat } from '../../components/PushInitializer'; // ✅ zentraler Heartbeat
+import { sendHeartbeat } from '../../components/PushInitializer';
 import {
   View,
   Text,
@@ -16,21 +15,21 @@ import {
   Easing,
   Platform,
   InteractionManager,
+  SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-// ❌ entfernt: import colors from '../../theme/colors';
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ zentraler Helper (Europe/Vienna)
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 
-// ✅ neu: zentrales Theme + UI-Komponenten
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import { EmptyState } from '../../components/EmptyState';
+import { DistanceBadge } from '../../components/DistanceBadge';
 
-// ✅ neu: Interessen-Utils zentral
 import { csvToSet, matchesInterests } from '../../utils/interests';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
@@ -89,20 +88,16 @@ function isNear(metersLike) {
 }
 
 /* ─────────── Geo-Helpers (robust) ─────────── */
-// Liest lat/lng aus Offer oder Provider (unterstützt mehrere Feldnamen/Strukturen)
 function pickOfferLatLng(o) {
   try {
-    // 1) Offer.location.coordinates = [lng, lat]
     if (o?.location?.coordinates && Array.isArray(o.location.coordinates) && o.location.coordinates.length === 2) {
       const [lng, lat] = o.location.coordinates;
       if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
     }
-    // 2) Provider.location.coordinates = [lng, lat]
     if (o?.provider?.location?.coordinates && Array.isArray(o.provider.location.coordinates) && o.provider.location.coordinates.length === 2) {
       const [lng, lat] = o.provider.location.coordinates;
       if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
     }
-    // 3) Direkte Felder
     const lat = toNumber(o?.lat ?? o?.latitude ?? o?.provider?.lat ?? o?.provider?.latitude);
     const lng = toNumber(o?.lng ?? o?.lon ?? o?.longitude ?? o?.provider?.lng ?? o?.provider?.lon ?? o?.provider?.longitude);
     if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
@@ -112,7 +107,6 @@ function pickOfferLatLng(o) {
   }
 }
 
-// Ermittelt Radius in Metern (Fallback 150m, damit UI nie „leer“ bleibt, wenn Geo vorhanden)
 function pickRadiusMeters(o) {
   const candidates = [
     o?.radiusMeters,
@@ -130,7 +124,6 @@ function pickRadiusMeters(o) {
   for (const v of candidates) {
     if (Number.isFinite(v) && v > 0) return v;
   }
-  // defensiver Fallback
   return 150;
 }
 
@@ -161,7 +154,6 @@ function parseDateLike(x, role /* 'from' | 'to' */) {
   return d;
 }
 
-// HH:mm[:ss] → Sekunden seit Mitternacht
 function parseHM(x) {
   if (!x) return null;
   const m = String(x).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -171,7 +163,7 @@ function parseHM(x) {
   return h * 3600 + min * 60 + s;
 }
 
-/* ─────────── Endzeit/Restlaufzeit (nutzt zentralen Aktiv-Check) ─────────── */
+/* ─────────── Endzeit/Restlaufzeit ─────────── */
 function pickOfferEndDate(item) {
   if (!item || typeof item !== 'object') return null;
   const directKeys = [
@@ -249,7 +241,7 @@ export default function HomeTab() {
   // Data
   const [offers, setOffers] = useState([]);
   const [grouped, setGrouped] = useState({});
-  // Paging
+  // Paging  (FIX: entfernte, versehentliche Zeile `the`)
   const [page, setPage] = useState(1);
   const [limit] = useState(200);
   const [hasMore, setHasMore] = useState(false);
@@ -291,7 +283,7 @@ export default function HomeTab() {
       if (offerId) {
         console.log('[NotifNav]', originLabel, '→ /offers/', offerId);
         InteractionManager.runAfterInteractions(() => {
-          router.push({ pathname: '/offers/[id]', params: { id: String(offerId) } });
+          router.push({ pathname: '/(tabs)/offers/[id]', params: { id: String(offerId) } });
         });
         return true;
       }
@@ -309,18 +301,18 @@ export default function HomeTab() {
     }
   }, [router]);
 
-  /* Initial HB: rely on PushInitializer (registriert Token), hier nur Ping */
+  /* Initial HB */
   useEffect(() => {
     (async () => {
       try {
-        await sendHeartbeat(); // ohne Token → nutzt lastKnownPosition & Registration aus PushInitializer
+        await sendHeartbeat();
       } catch (e) {
         if (__DEV__) showDev('Heartbeat nicht gesendet.');
       }
     })();
   }, [showDev]);
 
-  /* 🔁 Push-FG-Refresh: sofort neu laden, wenn "offer"-Push im Vordergrund eintrifft */
+  /* Push-FG-Refresh */
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((n) => {
       try {
@@ -336,7 +328,7 @@ export default function HomeTab() {
 
   /* Gesehen-IDs */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
-  const BASELINE_ON_FIRST_LOAD = false; // fix: placeholder entfernt
+  const BASELINE_ON_FIRST_LOAD = false;
   const MAX_POSTS_PER_RELOAD = 1;
 
   const seenIdsRef = useRef(new Set());
@@ -453,8 +445,7 @@ export default function HomeTab() {
           if (inside) {
             filtered.push(o);
 
-            // „neu gesehen“ → Backend informieren (limitiert pro Reload)
-            if (expoToken && postsThisReload < MAX_POSTS_PER_RELOAD) {
+            if (expoToken && postsThisReload < 1) {
               const id = String(o._id || '');
               const seenSet = seenIdsRef.current;
               const isNew = id && !seenSet.has(id);
@@ -579,114 +570,122 @@ export default function HomeTab() {
 
   if (!hasLoadedOnce && initialLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
-        <ScrollView contentContainerStyle={styles.categoryContainer}>
-          <SkeletonSection titleWidth={140} />
-          <SkeletonSection titleWidth={120} />
-          <SkeletonSection titleWidth={160} />
-        </ScrollView>
-        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
+        <View style={[styles.container, { backgroundColor: t.colors.background }]}>
+          <ScrollView contentContainerStyle={styles.categoryContainer}>
+            <SkeletonSection titleWidth={140} />
+            <SkeletonSection titleWidth={120} />
+            <SkeletonSection titleWidth={160} />
+          </ScrollView>
+          {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (err && !hasLoadedOnce) {
     return (
-      <View style={[styles.containerCenter, { backgroundColor: t.colors.background }]}>
-        <Text style={[styles.error, { color: t.colors.danger }]}>{err}</Text>
-        <View style={{ marginTop: 16, width: 220, alignItems: 'center' }}>
-          <Button
-            title="Erneut versuchen"
-            variant="primary"
-            size="md"
-            onPress={() => fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' })}
-          />
+      <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
+        <View style={[styles.containerCenter, { backgroundColor: t.colors.background }]}>
+          <Text style={[styles.error, { color: t.colors.danger }]}>{err}</Text>
+          <View style={{ marginTop: 16, width: 220, alignItems: 'center' }}>
+            <Button
+              title="Erneut versuchen"
+              variant="primary"
+              size="md"
+              onPress={() => fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' })}
+            />
+          </View>
+          {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
         </View>
-        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: t.colors.background }]}>
-      <ScrollView
-        contentContainerStyle={styles.categoryContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {lastUpdated && (
-          <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
-            Aktualisiert: {lastUpdated.toLocaleTimeString()}
-          </Text>
-        )}
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
+      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
+        <ScrollView
+          contentContainerStyle={styles.categoryContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          {lastUpdated && (
+            <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
+              Aktualisiert: {lastUpdated.toLocaleTimeString()}
+            </Text>
+          )}
 
-        {groupedEntries.length === 0 ? (
-          <Text style={[styles.empty, { color: t.colors.inkLow }]}>
-            Zurzeit leider keine passenden Angebote in deiner Nähe!
-          </Text>
-        ) : (
-          groupedEntries.map(([category, catOffers]) => (
-            <View key={category} style={styles.categoryBlock}>
-              <Text style={[styles.categoryTitle, { color: t.colors.inkHigh }]}>{category}</Text>
-              <FlatList
-                data={catOffers}
-                keyExtractor={(it) => it._id}
-                renderItem={({ item, index }) => (
-                  <AnimatedOfferCard
-                    item={item}
-                    index={index}
-                    userLoc={userLoc}
-                    theme={t}
-                    onPress={() => {
-                      try {
-                        const geo = pickOfferLatLng(item);
-                        const distanceMeters =
-                          toNumber(item.distance) ??
-                          (userLoc && geo ? haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng) : null);
-                        const heroImage = (Array.isArray(item.images) && item.images.length > 0) ? item.images[0] : '';
-                        router.push({
-                          pathname: `/offers/${item._id}`,
-                          params: {
-                            id: item._id,
-                            name: item.name || '',
-                            image: heroImage || '',
-                            distance: distanceMeters != null ? String(Math.round(distanceMeters)) : '',
-                          },
-                        });
-                      } catch {
-                        router.push(`/offers/${item._id}`);
-                      }
-                    }}
-                  />
-                )}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-                style={{ marginBottom: 26 }}
-              />
-            </View>
-          ))
-        )}
-
-        {hasMore && (
-          <View style={{ alignItems: 'center', marginTop: 4 }}>
-            {loadingMore ? (
-              <ActivityIndicator size="small" color={t.colors.primary} />
-            ) : (
-              <View style={{ width: 180 }}>
-                <Button
-                  title="Mehr laden"
-                  variant="secondary"
-                  size="md"
-                  onPress={() => fetchFnRef.current?.({ pageToLoad: page + 1, mode: 'more' })}
+          {groupedEntries.length === 0 ? (
+            <EmptyState
+              title="Keine Angebote in deiner Nähe"
+              subtitle="Passe deine Interessen an oder versuche es später erneut."
+              icon="📍"
+            />
+          ) : (
+            groupedEntries.map(([category, catOffers]) => (
+              <View key={category} style={styles.categoryBlock}>
+                <Text style={[styles.categoryTitle, { color: t.colors.inkHigh }]}>{category}</Text>
+                <FlatList
+                  data={catOffers}
+                  keyExtractor={(it) => it._id}
+                  renderItem={({ item, index }) => (
+                    <AnimatedOfferCard
+                      item={item}
+                      index={index}
+                      userLoc={userLoc}
+                      theme={t}
+                      onPress={() => {
+                        try {
+                          const geo = pickOfferLatLng(item);
+                          const distanceMeters =
+                            toNumber(item.distance) ??
+                            (userLoc && geo ? haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng) : null);
+                          const heroImage = (Array.isArray(item.images) && item.images.length > 0) ? item.images[0] : '';
+                          router.push({
+                            pathname: '/(tabs)/offers/[id]',
+                            params: {
+                              id: item._id,
+                              name: item.name || '',
+                              image: heroImage || '',
+                              distance: distanceMeters != null ? String(Math.round(distanceMeters)) : '',
+                            },
+                          });
+                        } catch {
+                          router.push({ pathname: '/(tabs)/offers/[id]', params: { id: item._id } });
+                        }
+                      }}
+                    />
+                  )}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  style={{ marginBottom: 26 }}
                 />
               </View>
-            )}
-          </View>
-        )}
-      </ScrollView>
+            ))
+          )}
 
-      {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
-    </View>
+          {hasMore && (
+            <View style={{ alignItems: 'center', marginTop: 4 }}>
+              {loadingMore ? (
+                <ActivityIndicator size="small" color={t.colors.primary} />
+              ) : (
+                <View style={{ width: 180 }}>
+                  <Button
+                    title="Mehr laden"
+                    variant="secondary"
+                    size="md"
+                    onPress={() => fetchFnRef.current?.({ pageToLoad: page + 1, mode: 'more' })}
+                  />
+                </View>
+              )}
+            </View>
+          )}
+        </ScrollView>
+
+        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -739,7 +738,9 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
         <View style={styles.badgeRow}>
           {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={{ marginRight: 6, marginBottom: 6 }} />}
           <Badge label={remainingLabel} tone="warning" style={{ marginRight: 6, marginBottom: 6 }} />
-          <Badge label={distanceText ?? '—'} tone="info" style={{ marginRight: 6, marginBottom: 6 }} />
+
+          <DistanceBadge meters={distanceMeters} style={{ marginRight: 6, marginBottom: 6 }} />
+
           {near && <Badge label="In der Nähe" tone="success" style={{ marginRight: 6, marginBottom: 6 }} />}
           {!!item.category && (
             <Badge
@@ -761,7 +762,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
         </Text>
 
         {!!item.description && (
-          <Text style={[styles.desc, { color: t.colors.ink }] } numberOfLines={3}>
+          <Text style={[styles.desc, { color: t.colors.ink }]} numberOfLines={3}>
             {item.description}
           </Text>
         )}
@@ -842,7 +843,7 @@ const IMAGE_WIDTH = 70;
 const IMAGE_HEIGHT = 54;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' }, // wird dynamisch über Theme überschrieben
+  container: { flex: 1, backgroundColor: '#fff' },
   categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
   containerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
@@ -854,7 +855,7 @@ const styles = StyleSheet.create({
   updatedHint: { fontSize: 12, marginBottom: 8 },
 
   card: {
-    backgroundColor: '#f7f8fb', // wird pro Card via Theme überschrieben
+    backgroundColor: '#f7f8fb',
     borderRadius: 16,
     padding: 16,
     marginRight: 14,
@@ -862,7 +863,7 @@ const styles = StyleSheet.create({
     minHeight: CARD_MIN_HEIGHT,
     elevation: 2,
     shadowColor: '#000',
-    shadowOpacity: 0.08, // in Dark-Mode oben dynamisch angepasst
+    shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 5,
     justifyContent: 'flex-start',

@@ -2,12 +2,11 @@ import React, { useRef, useEffect } from 'react';
 import { Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import colors from '../../theme/colors';
 import { useRouter } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   // Animations
   const logoScale = useRef(new Animated.Value(0.8)).current;
@@ -84,23 +83,20 @@ export default function WelcomeScreen() {
   }, [logoOpacity, logoScale, headlineOpacity, headlineY, textOpacity, textY, buttonOpacity, buttonY]);
 
   const handleStart = async () => {
-    // kleines, wertiges Feedback
     try { await Haptics.selectionAsync(); } catch {}
     router.replace('/(onboarding)/LocationScreen');
   };
 
   return (
-    <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom || 24 }]}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <Animated.Image
         source={require('../../assets/logo.png')}
         style={[
           styles.logo,
-          {
-            opacity: logoOpacity,
-            transform: [{ scale: logoScale }],
-          },
+          { opacity: logoOpacity, transform: [{ scale: logoScale }] },
         ]}
         resizeMode="contain"
+        accessibilityRole="image"
         accessibilityIgnoresInvertColors
         accessible
         accessibilityLabel="StepsMatch Logo"
@@ -109,11 +105,10 @@ export default function WelcomeScreen() {
       <Animated.Text
         style={[
           styles.headline,
-          {
-            opacity: headlineOpacity,
-            transform: [{ translateY: headlineY }],
-          },
+          { opacity: headlineOpacity, transform: [{ translateY: headlineY }] },
         ]}
+        accessibilityRole="header"
+        allowFontScaling
       >
         finden. nicht suchen.
       </Animated.Text>
@@ -121,13 +116,11 @@ export default function WelcomeScreen() {
       <Animated.Text
         style={[
           styles.subheadline,
-          {
-            opacity: textOpacity,
-            transform: [{ translateY: textY }],
-          },
+          { opacity: textOpacity, transform: [{ translateY: textY }] },
         ]}
+        allowFontScaling
       >
-        Willkommen bei Stepsmatch! Finde Angebote in deiner Nähe, die wirklich zu dir passen.
+        Willkommen bei StepsMatch! Finde Angebote in deiner Nähe, die wirklich zu dir passen.
       </Animated.Text>
 
       <Animated.View
@@ -143,8 +136,10 @@ export default function WelcomeScreen() {
           activeOpacity={0.9}
           accessibilityRole="button"
           accessibilityLabel="Jetzt starten"
+          testID="welcome-start"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.buttonText}>Jetzt starten</Text>
+          <Text style={styles.buttonText} allowFontScaling>Jetzt starten</Text>
         </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>
@@ -152,31 +147,31 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 32, // Safe-Area-freundlich – kein Randkontakt
   },
   logo: {
     width: 120,
     height: 120,
-    marginBottom: 32,
+    marginBottom: 28,
   },
   headline: {
     fontWeight: 'bold',
     fontSize: 30,
-    color: colors.primary,
-    marginBottom: 14,
-    letterSpacing: 0.5,
+    color: colors.primary, // Brand-Blau #0d4ea6
+    marginBottom: 12,
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
   subheadline: {
     fontSize: 17,
     color: colors.text,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
     lineHeight: 24,
   },
   button: {
@@ -184,8 +179,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 44,
+    minHeight: 48, // ≥ 44dp Tap-Target
     shadowColor: colors.primary,
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.18,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 14,
     elevation: 3,

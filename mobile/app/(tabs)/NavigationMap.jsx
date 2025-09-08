@@ -4,6 +4,8 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Linking from 'expo-linking';
 
 import colors from '../../theme/colors';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
@@ -101,6 +103,7 @@ function formatRemaining(diffMs) {
 
 export default function NavigationMap() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [userPos, setUserPos] = useState(null);
   const [loadingPos, setLoadingPos] = useState(true);
@@ -113,15 +116,16 @@ export default function NavigationMap() {
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
   const firstFixDoneRef = useRef(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
-  /* Standort laden + live verfolgen */
+  /* Standort laden + live verfolgen (Logik beibehalten) */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoadingPos(true);
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { setUserPos(null); return; }
+        if (status !== 'granted') { setUserPos(null); setPermissionDenied(true); return; }
 
         const loc = await Location.getCurrentPositionAsync({});
         if (!mounted) return;
@@ -231,132 +235,198 @@ export default function NavigationMap() {
     return { cat, sub };
   }
 
+  const recenter = () => {
+    const c = userPos || FALLBACK_CENTER;
+    try {
+      mapRef.current?.animateToRegion(
+        { latitude: c.latitude, longitude: c.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+        350
+      );
+    } catch {}
+  };
+
+  /* ---------- RENDER ---------- */
+  const showEmpty = !loadingOffers && markerRows.length === 0;
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Freundliche Meldung oben */}
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>Schau, was wir für dich gefunden haben.</Text>
-      </View>
-
-      <MapView
-        ref={mapRef}
-        style={{ flex: 1 }}
-        provider={PROVIDER_GOOGLE}
-        initialRegion={{
-          latitude: (userPos?.latitude ?? FALLBACK_CENTER.latitude),
-          longitude: (userPos?.longitude ?? FALLBACK_CENTER.longitude),
-          latitudeDelta: 0.035,
-          longitudeDelta: 0.035,
-        }}
-        showsUserLocation
-        showsMyLocationButton={false}
-        customMapStyle={mapStyleStepsmatchLight}
-      >
-        {markerRows.map((row) => {
-          const { offer, loc, remainingMs } = row;
-          if (!loc) return null;
-          const id = offer?._id || offer?.id || String(Math.random());
-          const { cat, sub } = categoryText(offer);
-          return (
-            <Marker
-              key={id}
-              coordinate={loc}
-              onPress={() => onMarkerPress(row)}
-              title={offer?.name || 'Angebot'}
-              description={offer?.provider?.name || ''}
-              anchor={{ x: 0.5, y: 1.0 }}
-            >
-              {/* Custom Marker: Pin + immer sichtbare Mini-Badges */}
-              <View style={{ alignItems: 'center' }}>
-                {/* Badge-Bubble */}
-                <View style={styles.badgeBubble}>
-                  <Text style={styles.badgeText} numberOfLines={1}>{cat || '—'}</Text>
-                  {!!sub && <Text style={[styles.badgeText, styles.dotMid]}>•</Text>}
-                  {!!sub && <Text style={styles.badgeText} numberOfLines={1}>{sub}</Text>}
-                  <Text style={[styles.badgeText, styles.dotMid]}>•</Text>
-                  <Text style={[styles.badgeText, styles.remain]} numberOfLines={1}>
-                    {formatRemaining(remainingMs)}
-                  </Text>
-                </View>
-                {/* Simple Pin */}
-                <View style={styles.pin} />
-              </View>
-            </Marker>
-          );
-        })}
-      </MapView>
-
-      {(loadingPos || loadingOffers) && (
-        <View style={styles.loading}>
-          <ActivityIndicator size="small" />
-          <Text style={styles.loadingText}>
-            {loadingPos ? 'Position… ' : ''}{loadingOffers ? 'Angebote…' : ''}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Freundliche Meldung oben (Safe-Area) */}
+        <View style={[styles.banner, { top: insets.top + 8 }]}>
+          <Text style={styles.bannerText}>
+            {showEmpty ? 'Zurzeit keine passenden Orte in deiner Nähe.' : 'Schau, was wir für dich gefunden haben.'}
           </Text>
         </View>
-      )}
 
-      {/* Bottom-Card bei Auswahl */}
-      {selected && (
-        <View style={styles.cardWrap} pointerEvents="box-none">
-          <View style={styles.card}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {selected.offer?.name || 'Angebot'}
+        <MapView
+          ref={mapRef}
+          style={{ flex: 1 }}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: (userPos?.latitude ?? FALLBACK_CENTER.latitude),
+            longitude: (userPos?.longitude ?? FALLBACK_CENTER.longitude),
+            latitudeDelta: 0.035,
+            longitudeDelta: 0.035,
+          }}
+          showsUserLocation
+          showsMyLocationButton={false}
+          customMapStyle={mapStyleStepsmatchLight}
+          accessibilityRole="image"
+          accessibilityLabel="Karte mit Angeboten in deiner Nähe"
+          testID="navmap-map"
+        >
+          {markerRows.map((row) => {
+            const { offer, loc, remainingMs, distanceM } = row;
+            if (!loc) return null;
+            const id = offer?._id || offer?.id || String(Math.random());
+            const { cat, sub } = categoryText(offer);
+            const accLabel = `${offer?.name || 'Angebot'} – ${cat}${sub ? `, ${sub}` : ''}${Number.isFinite(distanceM) ? `, in ${fmtDistance(distanceM)}` : ''}`;
+            return (
+              <Marker
+                key={id}
+                coordinate={loc}
+                onPress={() => onMarkerPress(row)}
+                title={offer?.name || 'Angebot'}
+                description={offer?.provider?.name || ''}
+                anchor={{ x: 0.5, y: 1.0 }}
+                accessibilityLabel={accLabel}
+              >
+                {/* Custom Marker: Pin + immer sichtbare Mini-Badges */}
+                <View style={{ alignItems: 'center' }}>
+                  {/* Badge-Bubble */}
+                  <View style={styles.badgeBubble}>
+                    <Text style={styles.badgeText} numberOfLines={1}>{cat || '—'}</Text>
+                    {!!sub && <Text style={[styles.badgeText, styles.dotMid]}>•</Text>}
+                    {!!sub && <Text style={styles.badgeText} numberOfLines={1}>{sub}</Text>}
+                    <Text style={[styles.badgeText, styles.dotMid]}>•</Text>
+                    <Text style={[styles.badgeText, styles.remain]} numberOfLines={1}>
+                      {formatRemaining(remainingMs)}
+                    </Text>
+                  </View>
+                  {/* Simple Pin */}
+                  <View style={styles.pin} />
+                </View>
+              </Marker>
+            );
+          })}
+        </MapView>
+
+        {(loadingPos || loadingOffers) && (
+          <View style={[styles.loading, { top: insets.top + 12 }]}>
+            <ActivityIndicator size="small" />
+            <Text style={styles.loadingText}>
+              {loadingPos ? 'Position… ' : ''}{loadingOffers ? 'Angebote…' : ''}
             </Text>
+          </View>
+        )}
 
-            <View style={{ height: 8 }} />
+        {/* Hinweis: Standort abgelehnt */}
+        {permissionDenied && !loadingPos && (
+          <View style={[styles.denied, { top: insets.top + 56 }]}>
+            <Text style={styles.deniedText}>
+              Standort ist deaktiviert. Bitte in den Einstellungen erlauben.
+            </Text>
+            <TouchableOpacity
+              onPress={() => Linking.openSettings()}
+              style={styles.deniedBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Einstellungen öffnen"
+              testID="navmap-open-settings"
+            >
+              <Text style={styles.deniedBtnText}>Einstellungen öffnen</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            <View style={styles.row}>
-              <Text style={styles.label}>Kategorie</Text>
-              <Text style={styles.value}>
-                {categoryText(selected.offer).cat} • {categoryText(selected.offer).sub}
+        {/* Bottom-Card bei Auswahl (Safe-Area unten respektieren) */}
+        {selected && (
+          <View style={[styles.cardWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
+            <View style={styles.card} accessibilityRole="summary">
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {selected.offer?.name || 'Angebot'}
               </Text>
-            </View>
 
-            <View style={styles.row}>
-              <Text style={styles.label}>Entfernung</Text>
-              <Text style={styles.value}>
-                {Number.isFinite(selected.distanceM) ? fmtDistance(selected.distanceM) : '—'}
-              </Text>
-            </View>
+              <View style={{ height: 8 }} />
 
-            <View style={styles.row}>
-              <Text style={styles.label}>Gültig bis</Text>
-              <Text style={styles.value}>{validUntilText(selected.offer)}</Text>
-            </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Kategorie</Text>
+                <Text style={styles.value}>
+                  {categoryText(selected.offer).cat} • {categoryText(selected.offer).sub}
+                </Text>
+              </View>
 
-            {!!selected.offer?.description && (
-              <>
-                <View style={{ height: 8 }} />
-                <ScrollView style={{ maxHeight: 84 }}>
-                  <Text style={styles.desc} numberOfLines={4}>
-                    {selected.offer.description}
-                  </Text>
-                </ScrollView>
-              </>
-            )}
+              <View style={styles.row}>
+                <Text style={styles.label}>Entfernung</Text>
+                <Text style={styles.value}>
+                  {Number.isFinite(selected.distanceM) ? fmtDistance(selected.distanceM) : '—'}
+                </Text>
+              </View>
 
-            <View style={{ height: 12 }} />
+              <View style={styles.row}>
+                <Text style={styles.label}>Gültig bis</Text>
+                <Text style={styles.value}>{validUntilText(selected.offer)}</Text>
+              </View>
 
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => setSelected(null)} style={[styles.btn, styles.btnGhost]}>
-                <Text style={styles.btnGhostText}>Schließen</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => onGoNavigate(selected)} style={[styles.btn, styles.btnPrimary]}>
-                <Text style={styles.btnPrimaryText}>GO</Text>
-              </TouchableOpacity>
+              {!!selected.offer?.description && (
+                <>
+                  <View style={{ height: 8 }} />
+                  <ScrollView style={{ maxHeight: 84 }}>
+                    <Text style={styles.desc} numberOfLines={4}>
+                      {selected.offer.description}
+                    </Text>
+                  </ScrollView>
+                </>
+              )}
+
+              <View style={{ height: 12 }} />
+
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  onPress={() => setSelected(null)}
+                  style={[styles.btn, styles.btnGhost]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Schließen"
+                  testID="navmap-close-card"
+                >
+                  <Text style={styles.btnGhostText}>Schließen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => onGoNavigate(selected)}
+                  style={[styles.btn, styles.btnPrimary]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Route starten"
+                  testID="navmap-go"
+                >
+                  <Text style={styles.btnPrimaryText}>GO</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      )}
-    </View>
+        )}
+
+        {/* Floating Recenter (über Tab-Bar) */}
+        <TouchableOpacity
+          onPress={recenter}
+          style={[styles.fab, { bottom: 16 + insets.bottom }]}
+          accessibilityRole="button"
+          accessibilityLabel="Karte auf meinen Standort zentrieren"
+          testID="navmap-recenter"
+          activeOpacity={0.9}
+        >
+          <Text style={styles.fabText}>•</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 
 /* Styles */
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+
   banner: {
     position: 'absolute',
-    top: 8, left: 12, right: 12, zIndex: 10,
+    left: 12, right: 12, zIndex: 10,
     backgroundColor: 'rgba(16,18,22,0.80)',
     borderRadius: 12,
     paddingHorizontal: 12,
@@ -367,7 +437,7 @@ const styles = StyleSheet.create({
 
   loading: {
     position: 'absolute',
-    top: 12, right: 12,
+    right: 12,
     backgroundColor: 'rgba(16,18,22,0.75)',
     borderRadius: 10,
     paddingHorizontal: 10, paddingVertical: 8,
@@ -375,6 +445,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   loadingText: { color: '#cfd7e6', fontSize: 12 },
+
+  denied: {
+    position: 'absolute',
+    left: 12, right: 12,
+    backgroundColor: 'rgba(255,107,107,0.16)',
+    borderColor: 'rgba(255,107,107,0.35)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  deniedText: { color: '#ffd7d7', fontSize: 13, marginBottom: 6 },
+  deniedBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  deniedBtnText: { color: '#fff', fontWeight: '700' },
 
   /* Marker UI */
   badgeBubble: {
@@ -393,7 +483,7 @@ const styles = StyleSheet.create({
   dotMid: { opacity: 0.7 },
   remain: { color: '#9FE870', fontWeight: '800' },
   pin: {
-    width: 16, height: 16, borderRadius: 8,
+    width: 18, height: 18, borderRadius: 9,
     backgroundColor: '#0d8bff',
     borderWidth: 2, borderColor: '#fff',
     shadowColor: '#0d8bff',
@@ -405,7 +495,7 @@ const styles = StyleSheet.create({
   cardWrap: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
-    padding: 12,
+    paddingHorizontal: 12,
   },
   card: {
     backgroundColor: 'rgba(16,18,22,0.96)',
@@ -428,4 +518,17 @@ const styles = StyleSheet.create({
   btnGhostText: { color: '#e8f0ff', fontWeight: '700' },
   btnPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
   btnPrimaryText: { color: '#0b1220', fontWeight: '800' },
+
+  /* Floating Action (Recenter) */
+  fab: {
+    position: 'absolute',
+    right: 16,
+    width: 48, height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.background,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+    elevation: 6,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  fabText: { color: colors.primary, fontSize: 24, lineHeight: 24, fontWeight: '800' },
 });

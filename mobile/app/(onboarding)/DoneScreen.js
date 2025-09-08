@@ -60,39 +60,50 @@ export default function DoneScreen() {
     router.replace('/(tabs)');
   };
 
-  // Tick „zeichnen“ via zwei Balken; wir blenden proportional zur Länge ein
+  // Tick „zeichnen“ via zwei Balken; proportional zur Länge einblenden
   const leftLen = tickStroke.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 1, 1] });
   const rightLen = tickStroke.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 0, 1] });
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}>
-        {/* Außenring */}
-        <View style={styles.ringBg} />
-        {/* Haken: zwei Teile, die nacheinander erscheinen */}
-        <Animated.View style={[styles.tickLeft, { transform: [{ scaleY: leftLen }] }]} />
-        <Animated.View style={[styles.tickRight, { transform: [{ scaleY: rightLen }] }]} />
-      </Animated.View>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.container}>
+        <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} accessibilityRole="image" accessibilityLabel="Erfolg">
+          {/* Außenring */}
+          <View style={styles.ringBg} />
+          {/* Haken: zwei Teile, die nacheinander erscheinen */}
+          <Animated.View style={[styles.tickLeft, { transform: [{ rotate: '-45deg' }, { scaleY: leftLen }] }]} />
+          <Animated.View style={[styles.tickRight, { transform: [{ rotate: '45deg' }, { scaleY: rightLen }] }]} />
+        </Animated.View>
 
-      <Animated.Text style={[styles.title, { opacity: titleOpacity, transform: [{ translateY: titleY }] }]}>
-        Fertig!
-      </Animated.Text>
-
-      <Animated.Text style={[styles.subtitle, { opacity: subOpacity, transform: [{ translateY: subY }] }]}>
-        Deine Einstellungen sind gespeichert. Viel Spaß beim Entdecken in deiner Nähe.
-      </Animated.Text>
-
-      <Animated.View style={{ opacity: btnOpacity, transform: [{ translateY: btnY }], width: '100%' }}>
-        <TouchableOpacity
-          onPress={handleContinue}
-          activeOpacity={0.9}
-          style={styles.cta}
-          accessibilityRole="button"
-          accessibilityLabel="Los geht’s"
+        <Animated.Text
+          style={[styles.title, { opacity: titleOpacity, transform: [{ translateY: titleY }] }]}
+          accessibilityRole="header"
+          allowFontScaling
         >
-          <Text style={styles.ctaText}>Los geht’s</Text>
-        </TouchableOpacity>
-      </Animated.View>
+          Fertig!
+        </Animated.Text>
+
+        <Animated.Text
+          style={[styles.subtitle, { opacity: subOpacity, transform: [{ translateY: subY }] }]}
+          allowFontScaling
+        >
+          Deine Einstellungen sind gespeichert. Viel Spaß beim Entdecken in deiner Nähe.
+        </Animated.Text>
+
+        <Animated.View style={{ opacity: btnOpacity, transform: [{ translateY: btnY }], width: '100%' }}>
+          <TouchableOpacity
+            onPress={handleContinue}
+            activeOpacity={0.9}
+            style={styles.cta}
+            accessibilityRole="button"
+            accessibilityLabel="Los geht’s"
+            testID="done-continue"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.ctaText} allowFontScaling>Los geht’s</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -101,12 +112,16 @@ const SIZE = 140;
 const TICK_THICK = 10;
 
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 32, // Safe-Area freundlich – kein Randkontakt
   },
   ring: {
     width: SIZE,
@@ -124,7 +139,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: 'transparent',
   },
-  // „✔“ aus zwei Linien, die von unten skaliert werden
+  // „✔“ aus zwei Linien; Skalierung über transform scaleY
   tickLeft: {
     position: 'absolute',
     width: TICK_THICK,
@@ -133,8 +148,6 @@ const styles = StyleSheet.create({
     borderRadius: TICK_THICK / 2,
     left: SIZE * 0.34,
     top: SIZE * 0.46,
-    transform: [{ rotate: '-45deg' }, { scaleY: 0 }],
-    transformOrigin: 'bottom',
   },
   tickRight: {
     position: 'absolute',
@@ -144,8 +157,6 @@ const styles = StyleSheet.create({
     borderRadius: TICK_THICK / 2,
     left: SIZE * 0.53,
     top: SIZE * 0.33,
-    transform: [{ rotate: '45deg' }, { scaleY: 0 }],
-    transformOrigin: 'bottom',
   },
   title: {
     fontSize: 28,
@@ -161,12 +172,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 28,
     lineHeight: 24,
+    paddingHorizontal: 8,
   },
   cta: {
     backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 44,
+    minHeight: 48, // ≥ 44dp Tap-Target
     shadowColor: colors.primary,
     shadowOpacity: 0.22,
     shadowOffset: { width: 0, height: 6 },

@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Animated, Easing } from 'react-native';
+import {
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  View,
+} from 'react-native';
 import * as Location from 'expo-location';
 import colors from '../../theme/colors';
 import { useRouter } from 'expo-router';
@@ -11,7 +20,7 @@ export default function LocationScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  // Micro-motions
+  // Micro-motions (beibehalten)
   const headY = useRef(new Animated.Value(12)).current;
   const headOpacity = useRef(new Animated.Value(0)).current;
   const subY = useRef(new Animated.Value(12)).current;
@@ -40,6 +49,7 @@ export default function LocationScreen() {
 
   const goNext = () => router.replace('/(onboarding)/InterestsScreen');
 
+  // ⚠️ Logik unverändert lassen (nur UI verbessert)
   const handleLocationPermission = async () => {
     if (loading) return;
     setLoading(true);
@@ -67,7 +77,7 @@ export default function LocationScreen() {
       setLoading(false);
 
       if (!canAskAgain) {
-        // User hat "Nicht erneut fragen" o.ä. gesetzt → in Einstellungen öffnen
+        // In Einstellungen öffnen
         Alert.alert(
           'Standort deaktiviert',
           'Bitte erlaube den Standortzugriff in den Systemeinstellungen, damit StepsMatch in deiner Nähe passende Angebote finden kann.',
@@ -90,72 +100,111 @@ export default function LocationScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.Text
-        style={[
-          styles.headline,
-          { opacity: headOpacity, transform: [{ translateY: headY }] },
-        ]}
-      >
-        Standort freigeben
-      </Animated.Text>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.container}>
 
-      <Animated.Text
-        style={[
-          styles.subheadline,
-          { opacity: subOpacity, transform: [{ translateY: subY }] },
-        ]}
-      >
-        Damit wir passende Angebote in deiner Nähe finden, brauchen wir Zugriff auf deinen Standort.
-      </Animated.Text>
-
-      <Animated.View
-        style={{ width: '100%', opacity: btnOpacity, transform: [{ translateY: btnY }] }}
-      >
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLocationPermission}
-          activeOpacity={0.9}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="Standort erlauben"
+        {/* Headline */}
+        <Animated.Text
+          style={[
+            styles.headline,
+            { opacity: headOpacity, transform: [{ translateY: headY }] },
+          ]}
+          accessibilityRole="header"
+          allowFontScaling
         >
-          {loading ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <Text style={styles.buttonText}>Standort erlauben</Text>
-          )}
-        </TouchableOpacity>
-      </Animated.View>
+          Standort freigeben
+        </Animated.Text>
 
-      <Animated.View style={{ opacity: laterOpacity, marginTop: 6 }}>
-        <TouchableOpacity
-          style={styles.later}
-          onPress={goNext}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="Später entscheiden"
+        {/* Subheadline */}
+        <Animated.Text
+          style={[
+            styles.subheadline,
+            { opacity: subOpacity, transform: [{ translateY: subY }] },
+          ]}
+          allowFontScaling
         >
-          <Text style={styles.laterText}>Später entscheiden</Text>
-        </TouchableOpacity>
-      </Animated.View>
+          Damit wir passende Angebote in deiner Nähe finden, brauchen wir Zugriff auf deinen Standort.
+        </Animated.Text>
+
+        {/* Benefits */}
+        <View style={styles.benefits} accessible accessibilityLabel="Vorteile der Standortfreigabe">
+          <Benefit text="Sofort informiert bei Ankunft in der Nähe" />
+          <Benefit text="Nur relevante Hinweise – keine Werbung" />
+          <Benefit text="Datenschutz: Standort bleibt bei dir" />
+        </View>
+
+        {/* Primary CTA */}
+        <Animated.View
+          style={{ width: '100%', opacity: btnOpacity, transform: [{ translateY: btnY }] }}
+        >
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLocationPermission}
+            activeOpacity={0.9}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Standort erlauben"
+            testID="btn-location-allow"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {loading ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.buttonText} allowFontScaling>Standort erlauben</Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Secondary CTA */}
+        <Animated.View style={{ opacity: laterOpacity, marginTop: 6 }}>
+          <TouchableOpacity
+            style={styles.later}
+            onPress={goNext}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Später entscheiden"
+            testID="btn-location-later"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.laterText} allowFontScaling>Später entscheiden</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
     </SafeAreaView>
   );
 }
 
+/** Kleine, neutrale Benefit-Zeile */
+function Benefit({ text }: { text: string }) {
+  return (
+    <View style={benefitStyles.row} accessible accessibilityRole="text">
+      <Text style={benefitStyles.bullet} accessibilityElementsHidden>{'•'}</Text>
+      <Text style={benefitStyles.text} allowFontScaling>{text}</Text>
+    </View>
+  );
+}
+
+const R = { s2: 8, s3: 12, s4: 16, s5: 20, s6: 24, s7: 32 };
+
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 24, // Safe-Area freundlich – kein Randkontakt
+    paddingTop: R.s6,
+    paddingBottom: R.s6,
+    backgroundColor: colors.background,
   },
   headline: {
     fontWeight: 'bold',
     fontSize: 26,
-    color: colors.primary,
-    marginBottom: 18,
+    color: colors.primary, // Brand-Blau
+    marginBottom: 12,
     textAlign: 'center',
     letterSpacing: 0.3,
   },
@@ -163,21 +212,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     textAlign: 'center',
-    marginBottom: 38,
+    marginBottom: 18,
     lineHeight: 24,
+  },
+  benefits: {
+    width: '100%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border || '#e5e9ef',
+    backgroundColor: (colors.elevated || '#f7f8fb'),
+    borderRadius: 14,
+    paddingVertical: R.s4,
+    paddingHorizontal: R.s4,
+    marginBottom: R.s6,
   },
   button: {
     backgroundColor: colors.primary,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 44,
+    paddingHorizontal: 24,
+    minHeight: 48, // Tap-Target
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: colors.primary,
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.12,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
+    shadowRadius: 10,
     elevation: 3,
-    marginBottom: 20,
-    alignSelf: 'center',
+    marginBottom: R.s3,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -190,7 +252,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   later: {
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 8,
   },
   laterText: {
@@ -198,5 +260,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 16,
     textDecorationLine: 'underline',
+    textAlign: 'center',
+  },
+});
+
+const benefitStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: R.s3,
+  },
+  bullet: {
+    fontSize: 18,
+    lineHeight: 22,
+    color: colors.primary,
+    marginRight: R.s3,
+  },
+  text: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.text,
   },
 });

@@ -1,4 +1,3 @@
-// stepsmatch/mobile/app/(tabs)/OffersScreen.js
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -10,7 +9,6 @@ import {
   RefreshControl,
   Platform,
   Image,
-  SafeAreaView,
   ScrollView,
   Dimensions,
 } from 'react-native';
@@ -18,8 +16,10 @@ import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow'; // ✅ Aktivitäts-Check (Europe/Vienna)
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
+
+import colors from '../../theme/colors';
 
 const API_BASE_URL =
   (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
@@ -215,23 +215,27 @@ export default function OffersScreen() {
   /* List Items */
   const renderItem = useCallback(({ item }) => {
     const { offer, distanceM, radiusM, activeNow } = item;
+    const accLabel = `${offer?.name || 'Angebot'} – ${fmtDistance(distanceM)} innerhalb Radius`;
     return (
       <TouchableOpacity
         style={styles.card}
-        onPress={() => router.push({ pathname: '/offers/[id]', params: { id: offer._id } })}
+        onPress={() => router.push({ pathname: '/(tabs)/offers/[id]', params: { id: offer._id } })}
         activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel={accLabel}
+        testID={`offer-card-${offer._id}`}
       >
         {offer.images?.[0] ? <Image source={{ uri: offer.images[0] }} style={styles.cardImage} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{offer.name}</Text>
-          <Text style={[styles.badgeMini, activeNow ? styles.badgeOk : styles.badgeWarn]}>
+          <Text style={styles.cardTitle} numberOfLines={1} allowFontScaling>{offer.name}</Text>
+          <Text style={[styles.badgeMini, activeNow ? styles.badgeOk : styles.badgeWarn]} allowFontScaling>
             {activeNow ? 'Aktiv' : 'Derzeit nicht aktiv'}
           </Text>
         </View>
-        {!!offer.description && <Text style={styles.cardDesc} numberOfLines={2}>{offer.description}</Text>}
+        {!!offer.description && <Text style={styles.cardDesc} numberOfLines={2} allowFontScaling>{offer.description}</Text>}
         <View style={styles.bottomRow}>
-          <Text style={styles.distance}>{fmtDistance(distanceM)} innerhalb Radius ✅</Text>
-          <Text style={styles.radius}>Radius: {Number.isFinite(radiusM) ? `${radiusM} m` : '—'}</Text>
+          <Text style={styles.distance} allowFontScaling>{fmtDistance(distanceM)} innerhalb Radius ✅</Text>
+          <Text style={styles.radius} allowFontScaling>Radius: {Number.isFinite(radiusM) ? `${radiusM} m` : '—'}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -306,21 +310,21 @@ export default function OffersScreen() {
   /* Render */
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <SafeAreaView style={styles.safe} edges={['top','bottom']}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.muted}>Angebote werden geladen…</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.muted} allowFontScaling>Angebote werden geladen…</Text>
         </View>
       </SafeAreaView>
     );
   }
   if (error) {
     return (
-      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <SafeAreaView style={styles.safe} edges={['top','bottom']}>
         <View style={styles.center}>
-          <Text style={styles.error}>Fehler: {error}</Text>
-          <TouchableOpacity style={styles.btn} onPress={load}>
-            <Text style={styles.btnText}>Erneut versuchen</Text>
+          <Text style={styles.error} allowFontScaling>Fehler: {error}</Text>
+          <TouchableOpacity style={styles.btn} onPress={load} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Erneut versuchen" testID="offers-retry">
+            <Text style={styles.btnText} allowFontScaling>Erneut versuchen</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -329,7 +333,7 @@ export default function OffersScreen() {
 
   if (offerId && offer) {
     return (
-      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: 0 }]}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         {/* HERO Card */}
         <View style={[styles.card, styles.heroCard, { height: heroHeight }]}>
           {images.length ? (
@@ -357,21 +361,35 @@ export default function OffersScreen() {
 
               {hasMultiple && (
                 <>
-                  <TouchableOpacity style={[styles.heroArrow, styles.heroArrowLeft]} onPress={() => goHero(-1)} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={[styles.heroArrow, styles.heroArrowLeft]}
+                    onPress={() => goHero(-1)}
+                    activeOpacity={0.8}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Vorheriges Bild"
+                  >
                     <Text style={styles.arrowText}>{'‹'}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.heroArrow, styles.heroArrowRight]} onPress={() => goHero(1)} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={[styles.heroArrow, styles.heroArrowRight]}
+                    onPress={() => goHero(1)}
+                    activeOpacity={0.8}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Nächstes Bild"
+                  >
                     <Text style={styles.arrowText}>{'›'}</Text>
                   </TouchableOpacity>
                   <View style={styles.heroHintWrap}>
-                    <Text style={styles.heroHint}>Wischen</Text>
+                    <Text style={styles.heroHint} allowFontScaling>Wischen</Text>
                   </View>
                 </>
               )}
             </>
           ) : (
             <View style={[styles.heroPlaceholder, { flex: 1, borderRadius: 12 }]}>
-              <Text style={styles.heroPlaceholderText}>Sorry. Kein Bild.</Text>
+              <Text style={styles.heroPlaceholderText} allowFontScaling>Sorry. Kein Bild.</Text>
             </View>
           )}
         </View>
@@ -391,23 +409,29 @@ export default function OffersScreen() {
                   latitudeDelta: 0.02,
                   longitudeDelta: 0.02,
                 }}
+                accessibilityRole="image"
+                accessibilityLabel="Karte mit Ziel und aktuellem Standort"
               >
                 {userPosRef.current && <Marker coordinate={userPosRef.current} title="Du" />}
-                {offerLoc && <Marker coordinate={offerLoc} title={offer?.name || 'Ziel'} pinColor="#0077FF" />}
+                {offerLoc && <Marker coordinate={offerLoc} title={offer?.name || 'Ziel'} pinColor={colors.primary} />}
               </MapView>
 
               <View style={styles.mapToggle}>
                 <TouchableOpacity
                   onPress={() => setMapType('standard')}
                   style={[styles.toggleBtn, mapType === 'standard' && styles.toggleBtnActive]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Standardkarte"
                 >
-                  <Text style={[styles.toggleText, mapType === 'standard' && styles.toggleTextActive]}>Map</Text>
+                  <Text style={[styles.toggleText, mapType === 'standard' && styles.toggleTextActive]} allowFontScaling>Map</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setMapType('satellite')}
                   style={[styles.toggleBtn, mapType === 'satellite' && styles.toggleBtnActive]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Satellitenkarte"
                 >
-                  <Text style={[styles.toggleText, mapType === 'satellite' && styles.toggleTextActive]}>Sat</Text>
+                  <Text style={[styles.toggleText, mapType === 'satellite' && styles.toggleTextActive]} allowFontScaling>Sat</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -416,66 +440,80 @@ export default function OffersScreen() {
           {/* Badges Row (inkl. Aktivität) */}
           <View style={[styles.card, { paddingVertical: 12, paddingHorizontal: 12 }]}>
             <View style={styles.badgesRow}>
-              <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText}>{offer.category || 'Kategorie'}</Text></Text>
+              <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText} allowFontScaling>{offer.category || 'Kategorie'}</Text></Text>
               {!!offer.subcategory && (
-                <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText}>{offer.subcategory}</Text></Text>
+                <Text style={[styles.badge, styles.badgeNeutral]}><Text style={styles.badgeText} allowFontScaling>{offer.subcategory}</Text></Text>
               )}
               {Number.isFinite(distanceMDetail) && (
-                <Text style={[styles.badge, styles.badgeBlue]}><Text style={styles.badgeText}>Entf.: {fmtDistance(distanceMDetail)}</Text></Text>
+                <Text style={[styles.badge, styles.badgeBlue]}><Text style={styles.badgeText} allowFontScaling>Entf.: {fmtDistance(distanceMDetail)}</Text></Text>
               )}
-              <Text style={[styles.badge, styles.badgeOrange]}><Text style={styles.badgeText}>Rest: {formatRemaining(remainingMs)}</Text></Text>
+              <Text style={[styles.badge, styles.badgeOrange]}><Text style={styles.badgeText} allowFontScaling>Rest: {formatRemaining(remainingMs)}</Text></Text>
               {activeNowDetail
-                ? <Text style={[styles.badge, styles.badgeOk]}><Text style={styles.badgeText}>Aktiv</Text></Text>
-                : <Text style={[styles.badge, styles.badgeWarn]}><Text style={styles.badgeText}>Derzeit nicht aktiv</Text></Text>}
+                ? <Text style={[styles.badge, styles.badgeOk]}><Text style={styles.badgeText} allowFontScaling>Aktiv</Text></Text>
+                : <Text style={[styles.badge, styles.badgeWarn]}><Text style={styles.badgeText} allowFontScaling>Derzeit nicht aktiv</Text></Text>}
             </View>
           </View>
 
           {/* Offer Card */}
           <View style={styles.infoCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.cardTitleBig}>{offer?.name || paramName || 'Angebot'}</Text>
-              <Text style={[styles.badgeMini, activeNowDetail ? styles.badgeOk : styles.badgeWarn]}>
+              <Text style={styles.cardTitleBig} allowFontScaling>{offer?.name || paramName || 'Angebot'}</Text>
+              <Text style={[styles.badgeMini, activeNowDetail ? styles.badgeOk : styles.badgeWarn]} allowFontScaling>
                 {activeNowDetail ? 'Aktiv' : 'Derzeit nicht aktiv'}
               </Text>
             </View>
-            {!!offer?.description && <Text style={styles.cardBody}>{offer.description}</Text>}
+            {!!offer?.description && <Text style={styles.cardBody} allowFontScaling>{offer.description}</Text>}
           </View>
 
           {/* Provider Card */}
           <View style={styles.infoCard}>
-            <Text style={styles.cardTitleBig}>{provider?.name || offer?.provider?.name || 'Anbieter'}</Text>
+            <Text style={styles.cardTitleBig} allowFontScaling>{provider?.name || offer?.provider?.name || 'Anbieter'}</Text>
             {!!(provider?.address || offer?.provider?.address) && (
-              <Text style={styles.cardBody}>{provider?.address || offer?.provider?.address}</Text>
+              <Text style={styles.cardBody} allowFontScaling>{provider?.address || offer?.provider?.address}</Text>
             )}
             {!!(provider?.contact || offer?.provider?.contact) && (
-              <Text style={styles.cardBody}>{provider?.contact || offer?.provider?.contact}</Text>
+              <Text style={styles.cardBody} allowFontScaling>{provider?.contact || offer?.provider?.contact}</Text>
             )}
             {!!(provider?.description || offer?.provider?.description) && (
-              <Text style={styles.cardBody}>{provider?.description || offer?.provider?.description}</Text>
+              <Text style={styles.cardBody} allowFontScaling>{provider?.description || offer?.provider?.description}</Text>
             )}
           </View>
         </ScrollView>
 
         {/* CTA-Bar */}
-        <View style={[styles.ctaBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-          <TouchableOpacity style={[styles.ctaBtn, styles.ctaPrimary]} onPress={handleStartRoute} activeOpacity={0.9}>
-            <Text style={styles.ctaPrimaryText}>Los!</Text>
+        <SafeAreaView edges={['bottom']} style={[styles.ctaBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+          <TouchableOpacity
+            style={[styles.ctaBtn, styles.ctaPrimary]}
+            onPress={handleStartRoute}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Route starten"
+            testID="offer-start-route"
+          >
+            <Text style={styles.ctaPrimaryText} allowFontScaling>Los!</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.ctaBtn, styles.ctaGhost]} onPress={handleBackToIndex} activeOpacity={0.9}>
-            <Text style={styles.ctaGhostText}>Zurück</Text>
+          <TouchableOpacity
+            style={[styles.ctaBtn, styles.ctaGhost]}
+            onPress={handleBackToIndex}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Zurück"
+            testID="offer-back"
+          >
+            <Text style={styles.ctaGhostText} allowFontScaling>Zurück</Text>
           </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </SafeAreaView>
     );
   }
 
   if (!offers.length) {
     return (
-      <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <SafeAreaView style={styles.safe} edges={['top','bottom']}>
         <View style={styles.center}>
-          <Text style={styles.muted}>Keine Angebote im Radius deiner Interessen.</Text>
-          <TouchableOpacity style={styles.btn} onPress={load}>
-            <Text style={styles.btnText}>Neu laden</Text>
+          <Text style={styles.muted} allowFontScaling>Keine Angebote im Radius deiner Interessen.</Text>
+          <TouchableOpacity style={styles.btn} onPress={load} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Neu laden" testID="offers-empty-reload">
+            <Text style={styles.btnText} allowFontScaling>Neu laden</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -483,13 +521,15 @@ export default function OffersScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { paddingTop: insets.top, paddingBottom: 0 }]}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <FlatList
         contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
         data={offers}
         keyExtractor={(row) => String(row.offer._id)}
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        accessibilityRole="list"
+        testID="offers-list"
       />
     </SafeAreaView>
   );
@@ -497,13 +537,13 @@ export default function OffersScreen() {
 
 /* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f3f4f6' },
+  safe: { flex: 1, backgroundColor: colors.background },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   muted: { color: '#777', marginTop: 8 },
   error: { color: '#B00020', marginBottom: 12, textAlign: 'center' },
-  btn: { backgroundColor: '#111827', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
-  btnText: { color: '#fff', fontWeight: '600' },
+  btn: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  btnText: { color: '#fff', fontWeight: '700' },
 
   list: { paddingHorizontal: 12, paddingTop: 8 },
 
@@ -537,13 +577,13 @@ const styles = StyleSheet.create({
   heroArrow: {
     position: 'absolute',
     top: '45%',
-    width: 34, height: 34, borderRadius: 17,
+    width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(17,24,39,0.65)',
   },
   heroArrowLeft: { left: 14 },
   heroArrowRight: { right: 14 },
-  arrowText: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  arrowText: { color: '#fff', fontSize: 22, fontWeight: '800' },
   heroHintWrap: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: 'rgba(17,24,39,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   heroHint: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
@@ -552,8 +592,8 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 10, right: 10, flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, overflow: 'hidden',
   },
-  toggleBtn: { paddingHorizontal: 10, paddingVertical: 6 },
-  toggleBtnActive: { backgroundColor: '#111827' },
+  toggleBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  toggleBtnActive: { backgroundColor: colors.primary },
   toggleText: { fontSize: 12, color: '#111827', fontWeight: '700' },
   toggleTextActive: { color: '#fff' },
 
@@ -599,8 +639,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb',
     flexDirection: 'row', gap: 10,
   },
-  ctaBtn: { flex: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
-  ctaPrimary: { backgroundColor: '#111827' },
+  ctaBtn: { flex: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 48 },
+  ctaPrimary: { backgroundColor: colors.primary },
   ctaPrimaryText: { color: '#fff', fontWeight: '700' },
   ctaGhost: { backgroundColor: '#eef2ff' },
   ctaGhostText: { color: '#111827', fontWeight: '700' },

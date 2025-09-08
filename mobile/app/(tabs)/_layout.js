@@ -1,4 +1,3 @@
-// stepsmatch/mobile/app/(tabs)/_layout.js
 import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Text, View } from 'react-native';
@@ -7,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '../../theme/colors';
 
-// ggf. an zentraler Stelle bündeln – hier lokal für den Header
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
 /* Kleines Header-Widget: "Hallo, Vorname" */
@@ -16,31 +14,21 @@ function HeaderGreeting() {
 
   useEffect(() => {
     (async () => {
-      // 1) aus AsyncStorage versuchen
-      const tryKeys = [
-        'userFirstName',          // direkter Vorname
-        'userProfile',            // JSON: { firstName?, name? }
-        'user', 'authUser',
-        'profile', 'currentUser', // verschiedene mögliche Keys
-      ];
-
+      const tryKeys = ['userFirstName','userProfile','user','authUser','profile','currentUser'];
       const extractFirst = (val) => {
         if (!val) return null;
         if (typeof val === 'string') {
           try {
             const obj = JSON.parse(val);
-            const raw =
-              obj?.firstName || obj?.vorname || obj?.name || obj?.fullName || obj?.displayName || null;
+            const raw = obj?.firstName || obj?.vorname || obj?.name || obj?.fullName || obj?.displayName || null;
             if (raw && typeof raw === 'string') return raw.split(' ')[0].trim();
-            // falls es tatsächlich ein String war (kein JSON), nimm den Teil vor dem ersten Leerzeichen
-            if (!raw) return val.split(' ')[0].trim();
+            return val.split(' ')[0].trim();
           } catch {
             return val.split(' ')[0].trim();
           }
         }
         if (typeof val === 'object') {
-          const raw =
-            val?.firstName || val?.vorname || val?.name || val?.fullName || val?.displayName || null;
+          const raw = val?.firstName || val?.vorname || val?.name || val?.fullName || val?.displayName || null;
           if (raw && typeof raw === 'string') return raw.split(' ')[0].trim();
         }
         return null;
@@ -56,42 +44,27 @@ function HeaderGreeting() {
       }
       if (nameFromStorage) { setFirstName(nameFromStorage); return; }
 
-      // 2) Fallback: API anfragen, falls Token vorhanden
-      const tokenKeys = ['authToken', 'token', 'jwt', 'accessToken'];
       let token = null;
-      for (const tk of tokenKeys) {
+      for (const tk of ['authToken','token','jwt','accessToken']) {
         const t = await AsyncStorage.getItem(tk);
         if (t && String(t).trim()) { token = t.trim(); break; }
       }
-
       if (token) {
-        const endpoints = ['/users/me', '/me', '/auth/me'];
-        for (const ep of endpoints) {
+        for (const ep of ['/users/me','/me','/auth/me']) {
           try {
-            const res = await fetch(`${API_URL}${ep}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await fetch(`${API_URL}${ep}`, { headers: { Authorization: `Bearer ${token}` } });
             if (!res.ok) continue;
             const data = await res.json();
-
-            // mögliche Formen: { name }, { user: { name } }, { data: { name } }
-            const rawName =
-              data?.name ||
-              data?.user?.name ||
-              data?.data?.name ||
-              null;
+            const rawName = data?.name || data?.user?.name || data?.data?.name || null;
             if (rawName && typeof rawName === 'string') {
               const first = rawName.split(' ')[0].trim();
               setFirstName(first);
-              // für’s nächste Mal cachen
               try { await AsyncStorage.setItem('userFirstName', first); } catch {}
               return;
             }
           } catch {}
         }
       }
-
-      // 3) Fallback
       setFirstName(null);
     })();
   }, []);
@@ -111,16 +84,21 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      sceneContainerStyle={{ backgroundColor: colors.background }}
       screenOptions={({ route }) => ({
-        // 🔹 kompakter Header (kein extra StatusBar-Offset)
         headerShown: true,
         headerStatusBarHeight: 0,
-        headerTitle: 'Stepsmatch',
+        headerTitle: 'StepsMatch',
         headerTitleAlign: 'left',
         headerStyle: { backgroundColor: colors.background },
         headerShadowVisible: false,
-        headerTitleStyle: { fontWeight: '800', fontSize: 18, color: colors.primary },
+        headerTitleStyle: { fontWeight: '800', fontSize: 18, color: colors.primary, letterSpacing: 0.2 },
+        headerTitleAllowFontScaling: true,
+        headerTintColor: colors.primary,
         headerRight: () => <HeaderGreeting />,
+
+        statusBarStyle: 'dark',
+        statusBarBackgroundColor: colors.background,
 
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: '#9ca3af',
@@ -132,28 +110,40 @@ export default function TabLayout() {
           paddingBottom: Math.max(8, insets.bottom),
           paddingTop: 6,
         },
+        tabBarItemStyle: { minWidth: 80 },
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
         tabBarHideOnKeyboard: true,
+
         tabBarIcon: ({ focused, color, size }) => {
           let icon = 'ellipse-outline';
           if (route.name === 'index') icon = focused ? 'home' : 'home-outline';
-          if (route.name === 'NavigationMap') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'ProfileScreen') icon = focused ? 'person' : 'person-outline';
           if (route.name === 'diagnostics') icon = focused ? 'bug' : 'bug-outline';
           return <Ionicons name={icon} size={size} color={color} />;
         },
       })}
     >
+      {/* Sichtbare Tabs */}
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      {/* OffersScreen bleibt versteckt */}
-      <Tabs.Screen name="OffersScreen" options={{ href: null }} />
-      {/* ⬇️ WICHTIG: alten Navigation-Route explizit ausblenden, falls Datei existiert */}
-      <Tabs.Screen name="Navigation" options={{ href: null }} />
-      {/* aktive Navigation */}
-      <Tabs.Screen name="NavigationMap" options={{ title: 'Navigation' }} />
       <Tabs.Screen name="ProfileScreen" options={{ title: 'Profil' }} />
-      {/* ⬇️ Temporärer Tab für Live-Tests */}
       <Tabs.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
+
+      {/* Detailseite: NICHT in der Tabbar, aber mit Header "Details" */}
+      <Tabs.Screen
+        name="offers/[id]"
+        options={{
+          href: null,                // <- Tabbar ausblenden
+          headerTitle: 'Details',    // <- wenn aktiv, Header-Titel setzen
+          // tabBarStyle: { display: 'none' }, // optional: Tabbar auf der Detailseite komplett verbergen
+        }}
+      />
+
+      {/* Versteckte/ausgeblendete Screens */}
+      <Tabs.Screen name="[id]" options={{ href: null }} />          {/* dynamischer Rest — ausblenden */}
+      <Tabs.Screen name="OffersScreen" options={{ href: null }} />
+      <Tabs.Screen name="NavigationMap" options={{ href: null }} />
+      <Tabs.Screen name="NavigationScreen" options={{ href: null }} />
+      {/* Wichtig: KEIN "Navigation" mehr definieren -> verhindert die frühere Warnung */}
     </Tabs>
   );
 }

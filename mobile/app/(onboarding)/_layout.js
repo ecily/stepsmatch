@@ -2,27 +2,30 @@
 import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useTheme } from '../../theme/ThemeProvider';
 
 export default function OnboardingLayout() {
+  const t = useTheme();
+  const statusStyle = t?.mode === 'dark' ? 'light' : 'dark';
+
   return (
     <>
-      {/* Onboarding ist bewusst full-bleed, ohne Header */}
-      <StatusBar style="light" animated />
+      {/* Onboarding ohne Header, StatusBar folgt dem Theme */}
+      <StatusBar style={statusStyle} animated />
       <Stack
         screenOptions={{
           headerShown: false,
-          // sanfter, moderner Übergang fürs Onboarding
           animation: 'fade_from_bottom',
           gestureEnabled: true,
-          // fühlt sich „snappier“ an bei kurzen Screens
-          animationDuration: 250,
-          // Android: weiche Ein-/Ausblendung
-          contentStyle: { backgroundColor: 'transparent' },
+          // Einheitlicher Hintergrund für alle Onboarding-Screens → verhindert Flashes
+          contentStyle: { backgroundColor: t.colors.background },
+          // Weitergabe an native StatusBar (wo unterstützt)
+          statusBarStyle: statusStyle,
+          statusBarBackgroundColor: t.colors.background,
         }}
       >
         {/* Expo Router registriert automatisch alle Dateien in diesem Segment.
-            Diese Platzhalter sind optional – du kannst sie löschen, wenn du willst.
-            Sie helfen nur beim Typing/Autocompletion. */}
+            Die Einträge helfen nur beim Autocomplete. */}
         <Stack.Screen name="WelcomeScreen" />
         <Stack.Screen name="LocationScreen" />
         <Stack.Screen name="InterestsScreen" />

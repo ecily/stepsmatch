@@ -35,8 +35,10 @@ function InterestChip({ label, selected, onToggle }) {
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityLabel={label}
+        testID={`chip-${label}`}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
       >
-        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+        <Text style={[styles.chipText, selected && styles.chipTextSelected]} allowFontScaling>{label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -124,7 +126,7 @@ export default function InterestsScreen() {
     }, 50);
   };
 
-  // ✅ Änderung: Speichern → DoneScreen + hasOnboarded setzen
+  // Speichern → DoneScreen + hasOnboarded setzen (Logik beibehalten)
   const handleSave = async () => {
     try { await Haptics.selectionAsync(); } catch {}
     const interestsJson = JSON.stringify(selected);
@@ -134,7 +136,6 @@ export default function InterestsScreen() {
         ['hasOnboarded', '1'],
       ]);
     } catch {
-      // Fallback, falls multiSet fehlschlägt
       await AsyncStorage.setItem('userInterests', interestsJson);
       await AsyncStorage.setItem('hasOnboarded', '1');
     }
@@ -143,57 +144,67 @@ export default function InterestsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
+      <SafeAreaView style={styles.loadingContainer} edges={['top','bottom']}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Lade Kategorien…</Text>
+        <Text style={styles.loadingText} allowFontScaling>Lade Kategorien…</Text>
       </SafeAreaView>
     );
   }
 
   if (loadError) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Kategorien konnten nicht geladen werden.</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={handleRetry} activeOpacity={0.9}>
-          <Text style={styles.retryText}>Erneut versuchen</Text>
+      <SafeAreaView style={styles.loadingContainer} edges={['top','bottom']}>
+        <Text style={styles.errorText} allowFontScaling>Kategorien konnten nicht geladen werden.</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={handleRetry} activeOpacity={0.9} testID="interests-retry">
+          <Text style={styles.retryText} allowFontScaling>Erneut versuchen</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.saveButton, { marginTop: 12, backgroundColor: selected.length ? colors.primary : '#ccc' }]}
           onPress={handleSave}
           disabled={selected.length === 0}
           activeOpacity={0.9}
+          testID="interests-continue"
         >
-          <Text style={styles.saveText}>Trotzdem fortfahren</Text>
+          <Text style={styles.saveText} allowFontScaling>Trotzdem fortfahren</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.Text style={[styles.headline, { opacity: headOpacity, transform: [{ translateY: headY }] }]}>
-        Wähle deine Interessen
-      </Animated.Text>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.container}>
+        <Animated.Text
+          style={[styles.headline, { opacity: headOpacity, transform: [{ translateY: headY }] }]}
+          accessibilityRole="header"
+          allowFontScaling
+        >
+          Wähle deine Interessen
+        </Animated.Text>
 
-      <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-          {categories.map((cat) => (
-            <View key={cat._id} style={styles.categorySection}>
-              <Text style={styles.categoryTitle}>{cat.name}</Text>
-              <View style={styles.subcatRow}>
-                {(cat.subcategories || []).map((subcat) => (
-                  <InterestChip
-                    key={subcat}
-                    label={subcat}
-                    selected={selected.includes(subcat)}
-                    onToggle={toggleInterest}
-                  />
-                ))}
+        <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+            {categories.map((cat, idx) => (
+              <View key={cat._id || `${cat.name}-${idx}`} style={styles.categorySection}>
+                <Text style={styles.categoryTitle} allowFontScaling>{cat.name}</Text>
+                <View style={styles.subcatRow}>
+                  {(cat.subcategories || []).map((subcat) => (
+                    <InterestChip
+                      key={subcat}
+                      label={subcat}
+                      selected={selected.includes(subcat)}
+                      onToggle={toggleInterest}
+                    />
+                  ))}
+                </View>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      </View>
 
+      {/* Sticky Footer mit Safe-Area unten */}
+      <SafeAreaView edges={['bottom']} style={styles.footerSafe}>
         <View style={styles.footer}>
           <TouchableOpacity
             style={[styles.saveButton, selected.length === 0 && styles.saveButtonDisabled]}
@@ -202,22 +213,28 @@ export default function InterestsScreen() {
             activeOpacity={0.9}
             accessibilityRole="button"
             accessibilityLabel="Auswahl speichern"
+            testID="interests-save"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Text style={styles.saveText}>Auswahl speichern</Text>
+            <Text style={styles.saveText} allowFontScaling>Auswahl speichern</Text>
           </TouchableOpacity>
         </View>
-      </Animated.View>
+      </SafeAreaView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 96 },
+  // genug Platz, damit der Sticky-Footer nichts überdeckt
+  scrollContent: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 120 },
+
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, paddingHorizontal: 24 },
   loadingText: { marginTop: 12, color: colors.text },
   errorText: { color: colors.text, textAlign: 'center', marginBottom: 16, fontSize: 16 },
+
   headline: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -228,6 +245,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     letterSpacing: 0.2,
   },
+
   categorySection: { marginBottom: 22 },
   categoryTitle: { fontSize: 18, fontWeight: 'bold', color: colors.accent || colors.primary, marginBottom: 8 },
   subcatRow: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -254,6 +272,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  footerSafe: { backgroundColor: colors.background },
   footer: { paddingHorizontal: 24, paddingBottom: 18, paddingTop: 8 },
   saveButton: {
     backgroundColor: colors.primary,
