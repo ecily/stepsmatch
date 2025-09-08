@@ -1,99 +1,43 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="com.ecily.mobile">
-
-  <!-- Standort / FG-Service -->
-  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-
-  <!-- Netzwerk / Push / Power -->
-  <uses-permission android:name="android.permission.INTERNET" />
-  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
-  <uses-permission android:name="android.permission.VIBRATE" />
-  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-  <!-- Optional für späteren Auto-Rearm nach Reboot (nur wenn wir das Feature aktivieren): -->
-  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-  <!-- Sonstiges (nur falls wirklich benötigt; sonst kannst du sie auch entfernen) -->
-  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-  <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+  <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
   <queries>
     <intent>
-      <action android:name="android.intent.action.VIEW" />
-      <category android:name="android.intent.category.BROWSABLE" />
-      <data android:scheme="https" />
+      <action android:name="android.intent.action.VIEW"/>
+      <category android:name="android.intent.category.BROWSABLE"/>
+      <data android:scheme="https"/>
     </intent>
   </queries>
-
-  <application
-    android:name=".MainApplication"
-    android:label="@string/app_name"
-    android:icon="@mipmap/ic_launcher"
-    android:roundIcon="@mipmap/ic_launcher_round"
-    android:theme="@style/AppTheme"
-    android:supportsRtl="true"
-    android:allowBackup="false"
-    android:usesCleartextTraffic="false">
-
-    <!-- Google Maps API Key (MASKIERT IM OUTPUT – belasse deinen lokalen Wert!) -->
-    <meta-data
-      android:name="com.google.android.geo.API_KEY"
-      android:value="AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY" />
-
-    <!-- Expo Updates deaktiviert -->
-    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false" />
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS" />
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0" />
-
-    <!-- Default-Channel für Benachrichtigungen (muss zu JS passen) -->
-    <meta-data
-      android:name="expo.modules.notifications.default_channel_id"
-      android:value="stepsmatch-default-v2" />
-
-    <activity
-      android:name=".MainActivity"
-      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
-      android:launchMode="singleTask"
-      android:windowSoftInputMode="adjustResize"
-      android:theme="@style/Theme.App.SplashScreen"
-      android:exported="true"
-      android:screenOrientation="portrait">
+  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:fullBackupContent="@xml/secure_store_backup_rules" android:dataExtractionRules="@xml/secure_store_data_extraction_rules">
+    <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"/>
+    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
+    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
-        <action android:name="android.intent.action.MAIN" />
-        <category android:name="android.intent.category.LAUNCHER" />
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
-
       <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-        <category android:name="android.intent.category.DEFAULT" />
-        <category android:name="android.intent.category.BROWSABLE" />
-        <data android:scheme="mobile" />
-        <data android:scheme="exp+stepsmatch" />
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="mobile"/>
+        <data android:scheme="exp+mobile"/>
       </intent-filter>
     </activity>
-
-    <!-- Optional (nur aktivieren, wenn wir Reboot-Autostart nutzen):
-    <receiver
-      android:name="com.transistorsoft.tsbackgroundfetch.HeadlessBroadcastReceiver"
-      android:enabled="true"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-        <action android:name="android.intent.action.REBOOT" />
-        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-      </intent-filter>
-    </receiver>
-    -->
-
-    <uses-library android:name="org.apache.http.legacy" android:required="false" />
+    <uses-library android:name="org.apache.http.legacy" android:required="false"/>
   </application>
 </manifest>

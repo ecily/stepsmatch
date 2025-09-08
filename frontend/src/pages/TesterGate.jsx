@@ -4,7 +4,11 @@ import axiosInstance from "../api/axios";
 
 /**
  * TesterGate
- * - Eingabe & Validierung des Tester-Keys (Backend-Route folgt in Schritt 3).
+ * - Eingabe & Validierung des Tester-Keys (Backend-Route folgt).
+ * - Persistenz: Der gültige Tester-Key wird unter "stepsmatch_tester_key"
+ *   in localStorage gespeichert (siehe axios-Interceptor).
+ * - Rehydration: Beim Mount wird der Key aus localStorage in das Inputfeld geladen,
+ *   sodass Reloads konsistent sind und der Header X-Tester-Key weiter gesetzt bleibt.
  * - Ist NDA bereits akzeptiert (localStorage), leiten wir direkt weiter (next oder /home).
  */
 export default function TesterGate() {
@@ -16,6 +20,7 @@ export default function TesterGate() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // 1) Direkt weiter, falls NDA bereits akzeptiert
   useEffect(() => {
     const accepted = localStorage.getItem("stepsmatch_ndaa_accepted") === "1";
     if (accepted) {
@@ -23,28 +28,41 @@ export default function TesterGate() {
     }
   }, [navigate, next]);
 
+  // 2) UI-Rehydration: vorhandenen Tester-Key aus localStorage ins Input übernehmen
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("stepsmatch_tester_key");
+      if (saved && typeof saved === "string") {
+        setKey(saved);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg("");
 
     const trimmed = key.trim().toUpperCase();
     if (!trimmed) {
-      setErrorMsg("Bitte gib deinen Tester‑Key ein.");
+      setErrorMsg("Bitte gib deinen Tester-Key ein.");
       return;
     }
 
     setLoading(true);
     try {
-      // 🔜 Backend folgt in Schritt 3
       // Erwartete Response: { ok: true, tester: { key, name, email } }
       const res = await axiosInstance.post("/testers/validate", { key: trimmed });
 
       if (res?.data?.ok) {
+        // Persistenz: gültigen Key & optional Tester-Info speichern
         localStorage.setItem("stepsmatch_tester_key", trimmed);
         if (res?.data?.tester) {
           localStorage.setItem("stepsmatch_tester_info", JSON.stringify(res.data.tester));
         }
-        navigate("/nda", { replace: true }); // wird in Schritt 2 mit echter NDA-Seite ersetzt
+        // NDA als nächstes (wird später mit echter NDA-Seite ersetzt)
+        navigate("/nda", { replace: true });
       } else {
         setErrorMsg("Ungültiger Key. Bitte überprüfe deine Eingabe.");
       }
@@ -69,20 +87,20 @@ export default function TesterGate() {
           </div>
         </div>
 
-        <h1 style={styles.title}>Tester‑Zugang</h1>
+        <h1 style={styles.title}>Tester-Zugang</h1>
         <p style={styles.subtitle}>
-          Diese Vorabversion ist ausschließlich für eingeladene Tester. Bitte gib deinen persönlichen Tester‑Key ein.
+          Diese Vorabversion ist ausschließlich für eingeladene Tester. Bitte gib deinen persönlichen Tester-Key ein.
         </p>
 
         <form onSubmit={handleSubmit} style={styles.form} aria-describedby="formHint">
-          <label htmlFor="testerKey" style={styles.label}>Tester‑Key</label>
+          <label htmlFor="testerKey" style={styles.label}>Tester-Key</label>
           <input
             id="testerKey"
             name="testerKey"
             type="text"
             inputMode="latin"
             autoCapitalize="characters"
-            placeholder="z. B. SM-2025-ALPHA-7K3Q"
+            placeholder="z. B. SM-2025-ALPHA-7K3Q"
             autoFocus
             value={key}
             onChange={(e) => setKey(e.target.value)}

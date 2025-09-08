@@ -1,32 +1,15 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-  ext {
-    // ⇩ Versionen synchron zu app/build.gradle (compile auf 35 angehoben wg. core-splashscreen)
-    buildToolsVersion = "35.0.0"
-    compileSdkVersion = 35
-    targetSdkVersion = 34
-    minSdkVersion = 24
-    // RN-Template-Default; falls bei dir anders in gradle.properties gesetzt, kann das hier entfallen.
-    ndkVersion = "26.1.10909125"
-  }
-
   repositories {
     google()
     mavenCentral()
   }
   dependencies {
-    // Google Services (FCM etc.)
-    classpath "com.google.gms:google-services:4.4.1"
-
-    // Android Gradle Plugin (AGP 8.5.x kompatibel mit RN 0.73+/Expo SDK 51+)
-    classpath "com.android.tools.build:gradle:8.5.2"
-
-    // React Native Gradle Plugin
-    classpath "com.facebook.react:react-native-gradle-plugin"
-
-    // Kotlin Plugin – Version direkt angeben (keine ext.kotlinVersion Map)
-    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+        classpath 'com.google.gms:google-services:4.4.1'
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
   }
 }
 
@@ -40,8 +23,10 @@ def reactNativeAndroidDir = new File(
 
 allprojects {
   repositories {
-    // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-    maven { url(reactNativeAndroidDir) }
+    maven {
+      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+      url(reactNativeAndroidDir)
+    }
 
     google()
     mavenCentral()

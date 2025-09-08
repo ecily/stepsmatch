@@ -1,3 +1,4 @@
+// frontend/src/pages/AdminCategoryPage.jsx
 // vollständige AdminCategoryPage.jsx mit Bearbeiten + Drag & Drop
 import React, { useEffect, useState } from 'react';
 import axiosInstance from '../api/axios';
@@ -6,6 +7,7 @@ import {
   Droppable,
   Draggable,
 } from '@hello-pangea/dnd';
+import AdminNav from '../components/AdminNav';
 
 const AdminCategoryPage = () => {
   const [categories, setCategories] = useState([]);
@@ -93,7 +95,12 @@ const AdminCategoryPage = () => {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">🛠️ Kategorien verwalten</h1>
+      <h1 className="text-2xl font-semibold mb-2">🛠️ Kategorien verwalten</h1>
+
+      {/* Admin-Menüleiste */}
+      <div className="mb-6 -mx-6">
+        <AdminNav />
+      </div>
 
       {error && <p className="text-red-600 mb-2">{error}</p>}
 

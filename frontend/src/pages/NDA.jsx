@@ -65,16 +65,14 @@ export default function NDA() {
       localStorage.setItem("stepsmatch_ndaa_version", NDA_VERSION);
       localStorage.setItem("stepsmatch_ndaa_date", NDA_DATE);
 
-      // 🔜 Backend folgt in Schritt 3 — hier schon versuchen zu loggen
-      // Expected: { ok: true }
+      // Server-Log (best effort)
       try {
         await axiosInstance.post("/testers/accept", {
           key: testerKey,
           ndaVersion: NDA_VERSION,
         });
       } catch (err) {
-        // Sanftes Fallback: Wir lassen den User dennoch rein.
-        console.warn("[NDA] accept log failed (will be added in step 3)", err?.response?.data || err?.message);
+        console.warn("[NDA] accept log failed", err?.response?.data || err?.message);
       }
 
       navigate(next, { replace: true });
@@ -105,12 +103,12 @@ export default function NDA() {
           <div style={styles.metaCard}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Tester</div>
             <div style={styles.metaRow}><span style={styles.metaKey}>Name:</span><span>{testerInfo?.name || "—"}</span></div>
-            <div style={styles.metaRow}><span style={styles.metaKey}>E‑Mail:</span><span>{testerInfo?.email || "—"}</span></div>
+            <div style={styles.metaRow}><span style={styles.metaKey}>E-Mail:</span><span>{testerInfo?.email || "—"}</span></div>
             <div style={styles.metaRow}><span style={styles.metaKey}>Key:</span><code style={styles.key}>{testerKey}</code></div>
           </div>
 
           <div style={styles.metaNote}>
-            Diese „Click‑Wrap“‑Vereinbarung ist für die Pre‑Seed‑Testphase gedacht. Kein Tracking, nur technisch notwendige Cookies.
+            Diese „Click-Wrap“-Vereinbarung gilt für die Pre-Seed-Testphase. Es werden nur technisch notwendige Daten verarbeitet (siehe Abschnitt Datenschutz).
           </div>
         </section>
 
@@ -129,7 +127,7 @@ export default function NDA() {
               aria-describedby="nda-ack"
             />
             <span id="nda-ack">
-              Ich habe die Vertraulichkeitsvereinbarung gelesen und **stimme zu**.
+              Ich habe die Vertraulichkeitsvereinbarung gelesen und <strong>stimme zu</strong>.
             </span>
           </label>
 
@@ -173,80 +171,99 @@ export default function NDA() {
 function NDAContent() {
   return (
     <div style={styles.doc}>
-      <h1>Vertraulichkeitsvereinbarung (NDA) – Pre‑Seed‑Testphase</h1>
-      <p><em>Hinweis: Dieses Dokument ist ein praxisnahes Muster für Österreich und ersetzt keine Rechtsberatung.</em></p>
+      <h1>Vertraulichkeitsvereinbarung (NDA) – Pre-Seed-Testphase</h1>
 
       <h2>1. Parteien und Zweck</h2>
       <p>
-        Diese Vertraulichkeitsvereinbarung („<strong>Vereinbarung</strong>“) wird zwischen der
-        <strong> StepsMatch ECILY e.U.</strong> (nachfolgend „<strong>StepsMatch</strong>“) und der in der Testerdatenbank
-        hinterlegten Person („<strong>Tester</strong>“) geschlossen. Zweck ist die vertrauliche Evaluierung der
-        StepsMatch‑Lösung in einer frühen Entwicklungsphase („<strong>Pre‑Seed‑Testphase</strong>“).
+        Diese Vertraulichkeitsvereinbarung („<strong>Vereinbarung</strong>“) wird geschlossen zwischen der
+        <strong> StepsMatch ECILY e.U.</strong>, Sitz in Österreich (nachfolgend „<strong>StepsMatch</strong>“),
+        und der in der Testerdatenbank hinterlegten natürlichen Person (nachfolgend „<strong>Tester</strong>“).
+        Zweck dieser Vereinbarung ist es, dem Tester vertrauliche Informationen von StepsMatch ausschließlich
+        zur Evaluierung und Erprobung der StepsMatch-Lösung in einer frühen Entwicklungsphase
+        („<strong>Pre-Seed-Testphase</strong>“) zugänglich zu machen.
       </p>
 
       <h2>2. Vertrauliche Informationen</h2>
       <p>
-        „<strong>Vertrauliche Informationen</strong>“ sind alle nicht‑öffentlichen Informationen, die StepsMatch dem
-        Tester direkt oder indirekt zugänglich macht, einschließlich, aber nicht beschränkt auf: Konzepte, Geschäftsmodelle,
-        Produkt‑ und Roadmap‑Informationen, Designs, Quell‑ und Objektcode, APIs, Datenmodelle, technische Dokumentation,
-        Algorithmen, Prototypen, Usability‑Erkenntnisse, Preise, Markt‑ und Finanzinformationen sowie sämtliche Kopien
-        und daraus abgeleitete Erkenntnisse. Mündliche Informationen gelten als vertraulich, wenn ihre Vertraulichkeit den
-        Umständen nach erkennbar ist.
+        „<strong>Vertrauliche Informationen</strong>“ sind sämtliche nicht öffentliche Informationen, gleich welcher
+        Form (schriftlich, mündlich, elektronisch oder sonstiger Art), die StepsMatch dem Tester direkt oder indirekt
+        offenlegt oder zugänglich macht, einschließlich, aber nicht beschränkt auf: Konzepte, Geschäftsmodelle,
+        Produkt- und Roadmap-Informationen, Designdaten, Quell- und Objektcode, APIs, Datenmodelle, technische
+        Dokumentation, Algorithmen, Prototypen, Nutzerfeedback, Usability-Erkenntnisse, Preise, Markt- und Finanzdaten,
+        Geschäftsbeziehungen sowie alle Kopien, Notizen, Analysen oder Ableitungen hieraus. Die Tatsache der
+        Zusammenarbeit und das Bestehen dieser Vereinbarung gelten ebenfalls als vertraulich.
       </p>
 
       <h2>3. Pflichten des Testers</h2>
       <ol>
-        <li>Vertrauliche Informationen strikt geheim halten und nur zur Evaluierung des Produkts verwenden.</li>
-        <li>Keine Weitergabe an Dritte ohne vorherige schriftliche Zustimmung von StepsMatch.</li>
-        <li>Angemessene technische und organisatorische Maßnahmen zum Schutz ergreifen.</li>
-        <li>Keine Reverse‑Engineering‑, Dekompilierungs‑ oder Ableitungsversuche.</li>
-        <li>Unverzügliche Mitteilung an StepsMatch bei tatsächlicher oder drohender unbefugter Offenlegung.</li>
+        <li>Vertrauliche Informationen streng vertraulich behandeln und ausschließlich zum in Abschnitt&nbsp;1 genannten Zweck verwenden.</li>
+        <li>Vertrauliche Informationen ohne vorherige schriftliche Zustimmung von StepsMatch weder ganz noch teilweise Dritten offenlegen.</li>
+        <li>Angemessene technische und organisatorische Maßnahmen ergreifen, um Vertrauliche Informationen vor unbefugtem Zugriff zu schützen.</li>
+        <li>Kein Reverse-Engineering, keine Dekompilierung, keine Ableitung von Quellcode oder Konkurrenzprodukte aus Vertraulichen Informationen.</li>
+        <li>Unverzügliche schriftliche Mitteilung an StepsMatch bei tatsächlicher oder drohender unbefugter Offenlegung oder Nutzung.</li>
       </ol>
 
       <h2>4. Ausnahmen</h2>
       <p>
-        Die Verpflichtungen gelten nicht für Informationen, die (a) ohne Verstoß allgemein bekannt sind/werden,
-        (b) dem Tester rechtmäßig und ohne Geheimhaltungspflicht von Dritten zugänglich wurden, (c) der Tester
-        unabhängig und ohne Rückgriff auf vertrauliche Informationen entwickelt hat oder (d) aufgrund zwingender
-        gesetzlicher Vorschriften oder behördlicher/gerichtlicher Anordnung offenzulegen sind (sofern rechtlich zulässig,
-        informiert der Tester StepsMatch vorab).
+        Die Verpflichtungen dieser Vereinbarung gelten nicht für Informationen, die der Tester nachweislich (a) ohne
+        Verstoß allgemein bekannt sind oder werden, (b) rechtmäßig und ohne Geheimhaltungspflicht von Dritten erhalten
+        hat, (c) unabhängig und ohne Rückgriff auf Vertrauliche Informationen entwickelt hat oder (d) aufgrund zwingender
+        gesetzlicher Vorschriften oder behördlicher/gerichtlicher Anordnung offenlegen muss; soweit rechtlich zulässig,
+        informiert der Tester StepsMatch hierüber vorab und beschränkt die Offenlegung auf das zwingend Erforderliche.
       </p>
 
-      <h2>5. Laufzeit und Rückgabe</h2>
+      <h2>5. Eigentum, Rückgabe und Löschung</h2>
       <p>
-        Diese Vereinbarung gilt ab Akzeptanz und während der gesamten Testphase sowie darüber hinaus für
-        <strong> drei (3) Jahre</strong> nach deren Ende. Auf Anforderung von StepsMatch löscht oder gibt der Tester
-        alle vertraulichen Informationen zurück und bestätigt dies schriftlich.
+        Sämtliche Vertraulichen Informationen bleiben im Eigentum von StepsMatch. Auf Anforderung von StepsMatch hat der
+        Tester alle Vertraulichen Informationen (einschließlich Kopien und Ableitungen) unverzüglich zurückzugeben oder
+        zu löschen und schriftlich zu bestätigen, dass keine Vertraulichen Informationen zurückbehalten wurden.
       </p>
 
-      <h2>6. Rechte, Lizenzen, Feedback</h2>
+      <h2>6. Laufzeit</h2>
       <p>
-        Es werden keine Rechte oder Lizenzen an geistigem Eigentum übertragen. Der Tester räumt StepsMatch ein
-        nicht‑exklusives, unentgeltliches Recht ein, bereitgestelltes Feedback in Produkt und Geschäftsmodell zu
-        integrieren.
+        Diese Vereinbarung tritt mit der Akzeptanz durch den Tester in Kraft und gilt während der Pre-Seed-Testphase
+        sowie für <strong>drei (3) Jahre</strong> nach deren Beendigung fort. Für als „Betriebs- und Geschäftsgeheimnisse“
+        im Sinne der §§ 26 ff UWG qualifizierte Informationen gelten die Geheimhaltungspflichten zeitlich unbeschränkt,
+        solange sie als solche fortbestehen.
       </p>
 
-      <h2>7. Datenschutz (DSGVO)</h2>
+      <h2>7. Rechte, Lizenzen und Feedback</h2>
       <p>
-        StepsMatch verarbeitet Tester‑Daten (Name, E‑Mail, Tester‑Key, Zeitpunkte von Eingabe/Akzeptanz) ausschließlich
-        zur Zugangskontrolle und Dokumentation der NDA (<em>Art. 6 Abs. 1 lit. b bzw. f DSGVO</em>).
-        Keine Weitergabe an Dritte. Aufbewahrung: grund­sätzlich bis 90 Tage nach Ende der Testphase, danach Löschung
-        bzw. Anonymisierung. Betroffenenrechte nach Art. 12 ff DSGVO bleiben unberührt. Weitere Details siehe
-        Datenschutzhinweis auf der Website.
+        Durch diese Vereinbarung werden dem Tester keinerlei Rechte oder Lizenzen an geistigem Eigentum von StepsMatch
+        eingeräumt. Der Tester räumt StepsMatch an übermitteltem Feedback ein einfaches, zeitlich und räumlich
+        unbeschränktes, unentgeltliches Nutzungsrecht zur Integration in Produkte, Dienste und Geschäftsprozesse ein.
       </p>
 
-      <h2>8. Rechtswahl und Gerichtsstand</h2>
+      <h2>8. Datenschutz (DSGVO)</h2>
       <p>
-        Es gilt materielles Recht der <strong>Republik Österreich</strong> unter Ausschluss seiner Kollisionsnormen.
-        Für Streitigkeiten ist, soweit zulässig, der <strong>zuständige Gerichtsstand Wien</strong> vereinbart.
+        StepsMatch verarbeitet personenbezogene Daten des Testers (insb. Name, E-Mail, Tester-Key, Zeitpunkte von
+        Eingabe/Akzeptanz) ausschließlich zur Zugangskontrolle, Vertragsdurchführung und Dokumentation dieser
+        Vereinbarung (<em>Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;b und f DSGVO</em>). Eine Weitergabe an Dritte erfolgt nicht,
+        außer wenn gesetzlich erforderlich. Speicherfrist: grundsätzlich bis 90 Tage nach Ende der Testphase, danach
+        Löschung oder Anonymisierung. Die Betroffenenrechte nach Art.&nbsp;12 ff DSGVO (Auskunft, Berichtigung, Löschung,
+        Einschränkung, Widerspruch) bleiben unberührt. Weitere Informationen finden sich im Datenschutzhinweis auf der Website.
       </p>
 
-      <h2>9. Schlussbestimmungen</h2>
+      <h2>9. Rechtsbehelfe, Unterlassung, Schadenersatz</h2>
       <p>
-        Sollten einzelne Bestimmungen unwirksam sein/werden, bleibt die Wirksamkeit der übrigen unberührt;
-        an die Stelle tritt eine Regelung, die dem wirtschaftlichen Zweck am nächsten kommt. Änderungen und
-        Ergänzungen bedürfen der Schriftform; E‑Mail genügt. Diese klick‑wrap Akzeptanz gilt als wirksame
-        Zustimmung.
+        Bei Verstößen gegen diese Vereinbarung ist StepsMatch berechtigt, neben Schadenersatz auch Unterlassungsansprüche
+        (einschließlich einstweiliger Verfügungen) nach österreichischem Recht geltend zu machen. Die Geltendmachung
+        weiterer Rechte bleibt unberührt.
+      </p>
+
+      <h2>10. Rechtswahl und Gerichtsstand</h2>
+      <p>
+        Es gilt das materielle Recht der <strong>Republik Österreich</strong> unter Ausschluss seiner Kollisionsnormen und
+        des UN-Kaufrechts. Für alle Streitigkeiten aus oder im Zusammenhang mit dieser Vereinbarung ist, soweit
+        zulässig, der <strong>zuständige Gerichtsstand Wien</strong> vereinbart.
+      </p>
+
+      <h2>11. Schlussbestimmungen</h2>
+      <p>
+        Änderungen und Ergänzungen dieser Vereinbarung bedürfen der Schriftform; E-Mail genügt. Sollten einzelne
+        Bestimmungen unwirksam sein oder werden, berührt dies die Wirksamkeit der übrigen Bestimmungen nicht; an die
+        Stelle der unwirksamen Bestimmung tritt eine wirksame Regelung, die dem wirtschaftlichen Zweck am nächsten
+        kommt. Die elektronische Akzeptanz („Click-Wrap“) gilt als rechtsverbindliche Zustimmung.
       </p>
 
       <p style={{ marginTop: 16 }}>
@@ -379,3 +396,4 @@ const styles = {
   },
   hint: { fontSize: 12, color: "#6b7280" },
 };
+

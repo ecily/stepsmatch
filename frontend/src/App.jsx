@@ -1,6 +1,6 @@
 // src/App.jsx
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { HelmetProvider } from '@dr.pogodin/react-helmet';
 
 import AddProviderForm from './components/AddProviderForm';
@@ -19,16 +19,47 @@ import TesterGate from './pages/TesterGate';
 import NDA from './pages/NDA';
 
 // ————————————————————————————————
+// Sync-Redirect vor dem Paint, um „Flash“ zu vermeiden
+function BootGuard() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  // useLayoutEffect navigiert vor dem ersten Paint → kein visuelles Springen
+  React.useLayoutEffect(() => {
+    try {
+      const key = localStorage.getItem('stepsmatch_tester_key');
+      const accepted = localStorage.getItem('stepsmatch_ndaa_accepted') === '1';
+
+      // Root: sofort zur passenden Zielroute springen
+      if (pathname === '/') {
+        if (accepted) {
+          navigate('/home', { replace: true });
+        } else if (key) {
+          navigate('/nda', { replace: true });
+        }
+      }
+
+      // NDA-Seite: ohne Key zurück zum Gate
+      if (pathname === '/nda' && !key) {
+        navigate('/', { replace: true });
+      }
+    } catch {
+      // falls localStorage nicht verfügbar ist, nichts tun
+    }
+  }, [navigate, pathname]);
+
+  return null;
+}
+// ————————————————————————————————
+
 // Kleine UX-Hilfe: Scrollt bei jedem Routenwechsel nach oben
 function ScrollToTop() {
   const { pathname } = useLocation();
   React.useEffect(() => {
-    // sanft nach oben scrollen
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [pathname]);
   return null;
 }
-// ————————————————————————————————
 
 const AppRoutes = () => {
   const handleLogin = (providerId) => {
@@ -37,6 +68,7 @@ const AppRoutes = () => {
 
   return (
     <>
+      <BootGuard />
       <ScrollToTop />
       <Routes>
         {/* Gate als Startseite */}
