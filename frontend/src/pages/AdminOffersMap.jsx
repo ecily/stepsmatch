@@ -1,7 +1,8 @@
-// src/pages/AdminOffersMap.jsx
+// frontend/src/pages/AdminOffersMap.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axiosInstance from "../api/axios";
 import { GoogleMap, MarkerF, InfoWindowF, CircleF, useLoadScript } from "@react-google-maps/api";
+import AdminNav from "../components/AdminNav";
 
 const mapContainerStyle = { width: "100%", height: "380px" };
 
@@ -225,7 +226,12 @@ export default function AdminOffersMap() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">Admin · Angebote (Karte & Liste)</h1>
+      <h1 className="text-2xl font-semibold mb-2">Admin · Angebote (Karte & Liste)</h1>
+
+      {/* Admin-Menüleiste */}
+      <div className="mb-6 -mx-6">
+        <AdminNav />
+      </div>
 
       <div className="bg-white rounded-lg shadow mb-6">
         {!isLoaded ? (
