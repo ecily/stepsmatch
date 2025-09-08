@@ -109,9 +109,6 @@ const LandingPage = () => {
         {/* Preconnects (Performance-Hint) */}
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        {/* Falls ihr ein CDN nutzt:
-        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
-        */}
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />
@@ -151,51 +148,74 @@ const LandingPage = () => {
           <div className="grid md:grid-cols-2 gap-10 items-center">
             {/* Left: Text */}
             <motion.div className="max-w-3xl" {...fadeIn(0.05)}>
+              {/* Brand Chip */}
               <motion.span
                 className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur"
                 {...fadeUp(0.1)}
               >
-                <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                Live-Kontext • Standortbasiert • Zero-Search
+                <img src={logoIcon} alt="StepsMatch" className="h-4 w-4 rounded-sm" />
+                <span>StepsMatch</span>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Zero-Search • DSGVO-konform
               </motion.span>
 
+              {/* Brand + Claim */}
               <motion.h1
-                className="mt-5 text-4xl md:text-6xl font-black leading-tight tracking-tight text-white"
+                className="mt-5 text-[2.6rem] leading-[1.05] md:text-6xl font-black tracking-tight text-white"
                 {...fadeUp(0.15)}
               >
-                finden. nicht suchen.
+                <span className="block">StepsMatch</span>
+                <span className="block opacity-90">finden. nicht suchen.</span>
               </motion.h1>
 
               <motion.p
                 className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl"
                 {...fadeUp(0.2)}
               >
-                StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe{" "}
-                <span className="whitespace-nowrap">wirklich passt.</span>
+                Wir zeigen dir nur, was <b>jetzt</b> und <b>hier</b> wirklich passt – basierend auf
+                Standort, Zeitfenster und Interessen. Keine Suche. Kein Spam. Nur Relevanz.
               </motion.p>
 
-              <motion.div className="mt-8 flex flex-wrap items-center gap-3" {...fadeUp(0.25)}>
+              {/* Persona-CTAs */}
+              <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.25)}>
                 <Link
                   to="/register"
-                  className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
+                  className="group inline-flex items-center justify-between rounded-2xl bg-white px-5 py-4 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
+                  title="Anbieter registrieren"
                 >
-                  Für Anbieter: Jetzt starten
+                  Anbieter
+                  <span className="ml-3 text-blue-700/70 group-hover:translate-x-0.5 transition">→</span>
                 </Link>
                 <a
                   href="#how"
-                  className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
+                  className="group inline-flex items-center justify-between rounded-2xl border border-white/30 bg-white/10 px-5 py-4 text-base font-semibold text-white hover:bg-white/15 transition"
+                  title="So funktioniert’s für Nutzer"
                 >
-                  Für Nutzer: So funktioniert’s
+                  Nutzer
+                  <span className="ml-3 opacity-80 group-hover:translate-x-0.5 transition">→</span>
                 </a>
                 <Link
                   to="/pitch"
-                  className="inline-flex items-center gap-2 rounded-full bg-blue-600/90 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
+                  className="group inline-flex items-center justify-between rounded-2xl bg-blue-600/90 px-5 py-4 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
+                  title="Investor Pitch"
                 >
-                  Pitch ansehen
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
-                  </svg>
+                  Investoren
+                  <span className="ml-3 opacity-90 group-hover:translate-x-0.5 transition">→</span>
                 </Link>
+              </motion.div>
+
+              {/* Trust bar */}
+              <motion.div className="mt-8 flex flex-wrap items-center gap-4 text-white/85" {...fadeUp(0.3)}>
+                {["DSGVO", "Zero-Search", "Echtzeit", "Kein Tracking der Wege"].map((t, i) => (
+                  <div key={i} className="inline-flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/85" />
+                    <span className="tracking-wide">{t}</span>
+                  </div>
+                ))}
+              </motion.div>
+
+              {/* Admin Demo (dezent) */}
+              <motion.div className="mt-6" {...fadeUp(0.35)}>
                 <Link
                   to="/admin/offers"
                   className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
@@ -209,16 +229,6 @@ const LandingPage = () => {
                     />
                   </svg>
                 </Link>
-              </motion.div>
-
-              {/* Trust bar */}
-              <motion.div className="mt-10 flex flex-wrap items-center gap-4 text-white/80" {...fadeUp(0.3)}>
-                {["DSGVO", "Zero-Search", "Echtzeit"].map((t, i) => (
-                  <div key={i} className="inline-flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
-                    <span className="tracking-wide">{t}</span>
-                  </div>
-                ))}
               </motion.div>
             </motion.div>
 
@@ -248,17 +258,20 @@ const LandingPage = () => {
               {
                 title: "Für Nutzer",
                 lead: "Nichts mehr suchen.",
-                text: "Du bekommst nur, was genau jetzt passt – am Ort, zur Zeit, mit deinen Interessen.",
+                text: "Nur Angebote, die genau jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
+                cta: { label: "So funktioniert’s", href: "#how" },
               },
               {
                 title: "Für Anbieter",
                 lead: "Sichtbar im richtigen Moment.",
                 text: "Erreiche Menschen, die gerade in der Nähe sind. Null Streuverlust, volle Relevanz.",
+                cta: { label: "Jetzt starten", href: "/register" },
               },
               {
                 title: "Für Investoren",
                 lead: "Skalierbar & datengetrieben.",
                 text: "Event-Streams (Enter/Exit/Heartbeat), Privacy-by-Design, klare Unit-Economics.",
+                cta: { label: "Pitch ansehen", href: "/pitch" },
               },
             ].map((f, i) => (
               <motion.div
@@ -277,8 +290,14 @@ const LandingPage = () => {
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{f.title}</p>
                 <h3 className="mt-1 text-lg font-semibold">{f.lead}</h3>
                 <p className="mt-2 text-gray-600">{f.text}</p>
-                <div className="mt-4 text-sm text-blue-700 opacity-0 group-hover:opacity-100 transition">
-                  Mehr erfahren →
+                <div className="mt-4">
+                  <Link
+                    to={f.cta.href}
+                    className="text-sm text-blue-700 group-hover:text-blue-800 transition"
+                    title={f.cta.label}
+                  >
+                    {f.cta.label} →
+                  </Link>
                 </div>
               </motion.div>
             ))}
