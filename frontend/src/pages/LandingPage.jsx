@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
 import { motion } from "motion/react";
 import Navbar from "../components/Navbar";
@@ -63,6 +63,90 @@ const PhonePushMock = () => {
   );
 };
 
+/** ───────────────── APK MODAL ───────────────── **/
+function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
+  if (!open) return null;
+
+  return (
+    <div
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="apk-modal-title"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      {/* Dialog */}
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.25 } }}
+        className="relative z-[101] mx-4 sm:mx-6 w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200"
+      >
+        <div className="p-6 sm:p-7">
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold shrink-0">
+              S
+            </div>
+            <div className="flex-1">
+              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
+                Hole dir die Vorabversion der APP
+              </h3>
+              <p className="mt-1 text-gray-600">
+                Danke fürs Unterzeichnen des NDA. Du kannst die Android-Version jetzt direkt
+                installieren. iOS folgt im Beta-Programm.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid sm:grid-cols-2 gap-3">
+            <a
+              href={apkUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
+            >
+              APK herunterladen
+              <svg className="ml-2" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
+              </svg>
+            </a>
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-800 hover:bg-gray-100 transition"
+            >
+              Später
+            </button>
+          </div>
+
+          <div className="mt-4 text-xs text-gray-500 space-y-2">
+            <p>Hinweis: Möglicherweise musst du die Installation aus unbekannten Quellen erlauben.</p>
+            <button
+              onClick={onDontShowAgain}
+              className="underline underline-offset-2 hover:text-gray-700"
+            >
+              Nicht mehr anzeigen
+            </button>
+          </div>
+        </div>
+
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          aria-label="Modal schließen"
+          className="absolute top-3 right-3 h-9 w-9 grid place-items-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.89 18.3 9.18 12 2.89 5.71 4.3 4.29l6.29 6.3 6.29-6.3z" />
+          </svg>
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
 const LandingPage = () => {
   const title = "StepsMatch – finden. nicht suchen.";
   const description =
@@ -70,6 +154,51 @@ const LandingPage = () => {
   const url = "https://www.stepsmatch.com/";
   const ogImage = heroBg; // Alternativ ein dediziertes 1200x630-OG-Bild exportieren
   const twitterHandle = "@stepsmatch"; // falls vorhanden, sonst leer lassen
+  const location = useLocation();
+
+  // Konfiguration der Download-URL
+  const APK_URL =
+    import.meta.env.VITE_APK_URL ||
+    "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
+
+  // Modal-Visibility zustand
+  const [apkOpen, setApkOpen] = React.useState(false);
+
+  // Guard/Trigger: ?apk=1 ODER (NDA vorhanden + noch nicht gesehen)
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(location.search);
+      const fromQuery = params.get("apk") === "1";
+
+      const ndaAcceptedAt = localStorage.getItem("ndaAcceptedAt"); // wird nach NDA-POST gesetzt
+      const modalSeen = localStorage.getItem("apkModalSeen") === "1";
+
+      // Wenn Query-Trigger: Modal öffnen und Query entfernen (saubere URL)
+      if (fromQuery) {
+        setApkOpen(true);
+        params.delete("apk");
+        const newSearch = params.toString();
+        const newUrl = `${location.pathname}${newSearch ? `?${newSearch}` : ""}${location.hash || ""}`;
+        window.history.replaceState({}, "", newUrl);
+        return;
+      }
+
+      // Sonst: automatisch öffnen, wenn NDA akzeptiert und noch nicht gesehen
+      if (ndaAcceptedAt && !modalSeen) {
+        setApkOpen(true);
+      }
+    } catch {
+      // still ok
+    }
+  }, [location.pathname, location.search, location.hash]);
+
+  const handleCloseApk = () => setApkOpen(false);
+  const handleDontShowAgain = () => {
+    try {
+      localStorage.setItem("apkModalSeen", "1");
+    } catch {}
+    setApkOpen(false);
+  };
 
   const jsonLdOrganization = {
     "@context": "https://schema.org",
@@ -136,7 +265,7 @@ const LandingPage = () => {
 
       {/* ───────── HERO ───────── */}
       <header
-        className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
+        className="relative w-full min-h}[92vh] md:min-h-screen bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
         aria-label="Hero Hintergrundbild Stadtansicht"
       >
@@ -533,6 +662,14 @@ const LandingPage = () => {
           </div>
         </div>
       </footer>
+
+      {/* ───────── APK MODAL MOUNT ───────── */}
+      <ApkModal
+        open={apkOpen}
+        onClose={handleCloseApk}
+        onDontShowAgain={handleDontShowAgain}
+        apkUrl={APK_URL}
+      />
     </div>
   );
 };

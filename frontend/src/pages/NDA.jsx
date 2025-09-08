@@ -38,7 +38,7 @@ export default function NDA() {
   useEffect(() => {
     const accepted = localStorage.getItem("stepsmatch_ndaa_accepted") === "1";
     if (accepted) {
-      navigate(next, { replace: true });
+      navigate(appendApkParam(next), { replace: true });
     }
   }, [navigate, next]);
 
@@ -65,6 +65,12 @@ export default function NDA() {
       localStorage.setItem("stepsmatch_ndaa_version", NDA_VERSION);
       localStorage.setItem("stepsmatch_ndaa_date", NDA_DATE);
 
+      // NEW: Generischer Flag für Landing-Modal
+      try {
+        localStorage.setItem("ndaAcceptedAt", new Date().toISOString());
+        // WICHTIG: apkModalSeen NICHT setzen – Modal soll einmalig erscheinen
+      } catch {}
+
       // Server-Log (best effort)
       try {
         await axiosInstance.post("/testers/accept", {
@@ -75,7 +81,8 @@ export default function NDA() {
         console.warn("[NDA] accept log failed", err?.response?.data || err?.message);
       }
 
-      navigate(next, { replace: true });
+      // Redirect mit Trigger für APK-Modal
+      navigate(appendApkParam(next), { replace: true });
     } catch (err) {
       setErrorMsg(
         err?.response?.data?.message || "Akzeptieren derzeit nicht möglich. Bitte später erneut versuchen."
@@ -166,6 +173,18 @@ export default function NDA() {
       </div>
     </div>
   );
+}
+
+function appendApkParam(pathOrUrl) {
+  try {
+    // Falls bereits eine absolute URL/Query drin ist
+    const hasQuery = pathOrUrl.includes("?");
+    const hasApkParam = /(\?|&)apk=1(\b|&|$)/.test(pathOrUrl);
+    if (hasApkParam) return pathOrUrl;
+    return `${pathOrUrl}${hasQuery ? "&" : "?"}apk=1`;
+  } catch {
+    return "/home?apk=1";
+  }
 }
 
 function NDAContent() {
@@ -396,4 +415,3 @@ const styles = {
   },
   hint: { fontSize: 12, color: "#6b7280" },
 };
-
