@@ -17,6 +17,7 @@
         "axios": "^1.8.4",
         "lucide-react": "^0.488.0",
         "motion": "12.23.12",
+        "qrcode.react": "^4.2.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "react-image-file-resizer": "^0.4.8",

@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
 import heroBg from "../assets/hero-bg-pitch2.jpg";
+import { QRCodeCanvas } from "qrcode.react";
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 12 },
@@ -67,6 +68,9 @@ const PhonePushMock = () => {
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
 
+  // Optional: Tracking-Parameter für QR-Scans
+  const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
+
   return (
     <div
       aria-modal="true"
@@ -92,43 +96,49 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
             </div>
             <div className="flex-1">
               <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
-                Hole dir die Vorabversion der APP
+                Installiere die Android-App per QR-Code
               </h3>
               <p className="mt-1 text-gray-600">
-                Danke fürs Unterzeichnen des NDA. Du kannst die Android-Version jetzt direkt
-                installieren. iOS folgt im Beta-Programm.
+                Scanne den Code mit der Kamera deines Android-Phones. Der Browser öffnet den
+                Download der APK. iOS folgt im Beta-Programm.
               </p>
             </div>
           </div>
 
-          <div className="mt-5 grid sm:grid-cols-2 gap-3">
-            <a
-              href={apkUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
-            >
-              APK herunterladen
-              <svg className="ml-2" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <path d="M5 12h12l-4-4 1.41-1.41L21.83 12l-7.41 7.41L13 18l4-4H5z" />
-              </svg>
-            </a>
-            <button
-              onClick={onClose}
-              className="rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-800 hover:bg-gray-100 transition"
-            >
-              Später
-            </button>
+          {/* QR-Code */}
+          <div className="mt-6 flex flex-col items-center">
+            <div className="rounded-2xl p-3 border border-gray-200 bg-white">
+              <QRCodeCanvas
+                value={qrValue}
+                size={220}
+                includeMargin
+                level="M"
+              />
+            </div>
+            <p className="mt-3 text-sm text-gray-600 text-center">
+              Kamera öffnen → QR scannen → Download bestätigen
+            </p>
           </div>
 
-          <div className="mt-4 text-xs text-gray-500 space-y-2">
-            <p>Hinweis: Möglicherweise musst du die Installation aus unbekannten Quellen erlauben.</p>
-            <button
-              onClick={onDontShowAgain}
-              className="underline underline-offset-2 hover:text-gray-700"
-            >
-              Nicht mehr anzeigen
-            </button>
+          {/* Hinweise & „nicht mehr anzeigen“ */}
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+            <p className="text-xs text-gray-500">
+              Hinweis: Evtl. musst du die Installation aus unbekannten Quellen erlauben.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={onDontShowAgain}
+                className="text-sm underline underline-offset-2 hover:text-gray-700"
+              >
+                Nicht mehr anzeigen
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition"
+              >
+                Schließen
+              </button>
+            </div>
           </div>
         </div>
 
