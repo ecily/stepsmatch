@@ -68,7 +68,7 @@ const PhonePushMock = () => {
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
 
-  // Optional: Tracking-Parameter für QR-Scans
+  // QR-Ziel: Backend-Redirect (/apk) mit Tracking-Param
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
@@ -89,41 +89,54 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
         animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.25 } }}
         className="relative z-[101] mx-4 sm:mx-6 w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200"
       >
-        <div className="p-6 sm:p-7">
+        <div className="p-6 sm:p-8">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold shrink-0">
+            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">
               S
             </div>
             <div className="flex-1">
               <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
-                Installiere die Android-App per QR-Code
+                Sicher & einfach: App per QR-Code installieren
               </h3>
-              <p className="mt-1 text-gray-600">
-                Scanne den Code mit der Kamera deines Android-Phones. Der Browser öffnet den
-                Download der APK. iOS folgt im Beta-Programm.
+              <p className="mt-1 text-gray-700">
+                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den
+                APK-Download. iOS folgt im Beta-Programm.
               </p>
             </div>
           </div>
 
           {/* QR-Code */}
           <div className="mt-6 flex flex-col items-center">
-            <div className="rounded-2xl p-3 border border-gray-200 bg-white">
+            <div className="rounded-3xl p-4 border border-gray-200 bg-white shadow-sm ring-4 ring-[#0d4ea6]/10">
               <QRCodeCanvas
                 value={qrValue}
-                size={220}
+                size={232}         // 4-pt Raster: 58 * 4
                 includeMargin
                 level="M"
               />
             </div>
-            <p className="mt-3 text-sm text-gray-600 text-center">
-              Kamera öffnen → QR scannen → Download bestätigen
-            </p>
+
+            {/* Steps */}
+            <ol className="mt-6 w-full grid gap-2 text-sm text-gray-700">
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
+                Kamera öffnen oder QR-Scanner verwenden
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
+                Code scannen → Download bestätigen
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
+                „Installieren“ tippen (evtl. „Unbekannte Apps erlauben“ aktivieren)
+              </li>
+            </ol>
           </div>
 
-          {/* Hinweise & „nicht mehr anzeigen“ */}
+          {/* Hinweise & Controls */}
           <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <p className="text-xs text-gray-500">
-              Hinweis: Evtl. musst du die Installation aus unbekannten Quellen erlauben.
+              Dein Download wird über unseren gesicherten Server weitergeleitet.
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -166,10 +179,10 @@ const LandingPage = () => {
   const twitterHandle = "@stepsmatch"; // falls vorhanden, sonst leer lassen
   const location = useLocation();
 
-  // Konfiguration der Download-URL
-  const APK_URL =
-    import.meta.env.VITE_APK_URL ||
-    "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
+  // Backend-Redirect statt Direktlink: {VITE_BACKEND_URL}/apk
+  const BACKEND_URL =
+    import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
+  const APK_REDIRECT_URL = `${BACKEND_URL}/apk`;
 
   // Modal-Visibility zustand
   const [apkOpen, setApkOpen] = React.useState(false);
@@ -275,7 +288,7 @@ const LandingPage = () => {
 
       {/* ───────── HERO ───────── */}
       <header
-        className="relative w-full min-h}[92vh] md:min-h-screen bg-cover bg-center pt-16"
+        className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
         style={{ backgroundImage: `url(${heroBg})` }}
         aria-label="Hero Hintergrundbild Stadtansicht"
       >
@@ -467,7 +480,7 @@ const LandingPage = () => {
                   {
                     step: "03",
                     title: "Automatisch gefunden werden",
-                    text: "Wir benachrichtigen nur passende Personen in der Nähe – ohne Suche.",
+                    text: "Wir benachrichtigen nur passende Personen im Nähe – ohne Suche.",
                   },
                 ].map((s, i) => (
                   <motion.li key={i} className="flex gap-4" {...fadeUp(0.05 * i)}>
@@ -678,7 +691,7 @@ const LandingPage = () => {
         open={apkOpen}
         onClose={handleCloseApk}
         onDontShowAgain={handleDontShowAgain}
-        apkUrl={APK_URL}
+        apkUrl={APK_REDIRECT_URL}
       />
     </div>
   );
