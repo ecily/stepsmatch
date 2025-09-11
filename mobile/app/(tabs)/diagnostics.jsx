@@ -59,7 +59,8 @@ const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHear
 
 const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
 const DEFAULT_CHANNEL_ID = 'stepsmatch-default-v2';
-const OFFERS_CHANNEL_ID = 'offers';
+const OFFERS_CHANNEL_ID = 'offers-v2';          // ✅ konsolidiert (Schritt A)
+const OFFERS_CATEGORY_ID = 'offer-go-v2';       // ✅ konsolidiert (Schritt A)
 
 const fmtMsAge = (t) => {
   if (!t) return '–';
@@ -68,7 +69,19 @@ const fmtMsAge = (t) => {
   return `${s}s ago`;
 };
 
-const take = (s, n=8) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
+const take = (s, n=28) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
+
+// Ampel-Badge
+function Verdict({ ok, warn, label }) {
+  const style = ok ? v.ok : warn ? v.warn : v.fail;
+  return <Text style={[v.badge, style]}>{label}</Text>;
+}
+const v = StyleSheet.create({
+  badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, fontWeight: '800', alignSelf: 'flex-start' },
+  ok:   { backgroundColor: '#11391d', color: '#7CFCA7', borderWidth: 1, borderColor: '#1f7040' },
+  warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
+  fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
+});
 
 // =========================
 // Diagnostics Screen
@@ -172,7 +185,7 @@ export default function Diagnostics() {
         body: 'Sofortige Local-Notification',
         data: { offerId: 'LOCAL_TEST' },
         android: { channelId: OFFERS_CHANNEL_ID },
-        categoryIdentifier: 'offer-go',
+        categoryIdentifier: OFFERS_CATEGORY_ID,
       },
       trigger: null,
     });
@@ -232,8 +245,52 @@ export default function Diagnostics() {
     }
   };
 
+  const openAppNotificationSettings = async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS', {
+        data: undefined,
+        flags: 0,
+        extra: {
+          'android.provider.extra.APP_PACKAGE': 'com.ecily.mobile',
+          'app_package': 'com.ecily.mobile',
+          'app_uid': 0,
+        },
+      });
+    } catch {
+      Linking.openSettings().catch(()=>{});
+    }
+  };
+
   const atBottom = () => { requestAnimationFrame(() => logScrollerRef.current?.scrollToEnd?.({ animated: false })); };
   useEffect(() => { atBottom(); }, [filtered.length]);
+
+  // ===== Derived Checks / Verdict =====
+  const chById = useMemo(() => {
+    const map = {};
+    for (const c of channels) map[c.id] = c;
+    return map;
+  }, [channels]);
+
+  const chOffers = chById[OFFERS_CHANNEL_ID];
+  const chBg     = chById[BG_CHANNEL_ID];
+
+  // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo Doku)
+  const offersIsMax = !!chOffers && Number(chOffers.importance) >= 6;
+  const offersHasSound = !!chOffers && !!chOffers.sound; // "arrival" erwartet
+  const bgIsPresent = !!chBg;
+
+  const notifOk = notifPerm === 'granted';
+  const locOk = (locPerm.fg === 'granted') && (locPerm.bg === 'granted');
+  const tasksOk = bgStarted && gfStarted;
+
+  // Haupt-Verdikt (grün, gelb, rot)
+  const verdictOK =
+    notifOk && locOk && tasksOk && offersIsMax && offersHasSound && bgIsPresent;
+
+  const verdictWarn =
+    // z.B. alles ok, aber Sound fehlt oder Importance < MAX → funktioniert, aber evtl. leiser/später
+    (notifOk && locOk && tasksOk) && (!verdictOK);
 
   // ===== Render =====
   return (
@@ -269,24 +326,40 @@ export default function Diagnostics() {
           <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={roundtrip}>
             <Text style={s.bt}>Roundtrip an Backend</Text>
           </TouchableOpacity>
+
           {Platform.OS === 'android' && (
-            <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={openIgnoreBatteryOptimizations}>
-              <Text style={s.bt}>Akku-Optimierung ausschalten</Text>
-            </TouchableOpacity>
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={openAppNotificationSettings}>
+                <Text style={s.bt}>App-Benachrichtigungen öffnen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={openIgnoreBatteryOptimizations}>
+                <Text style={s.bt}>Akku-Optimierung öffnen</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
-        {/* Status Cards */}
+        {/* Verdict */}
         <View style={s.cards}>
+          <Card title="Gesamtstatus">
+            {verdictOK ? (
+              <Verdict ok label="Alles OK – Push sollte überall zuverlässig feuern." />
+            ) : verdictWarn ? (
+              <Verdict warn label="Läuft grundsätzlich – Feintuning empfohlen (Kanal/Sound/Tasks)." />
+            ) : (
+              <Verdict ok={false} warn={false} label="Fehler – mindestens eine Kernvoraussetzung fehlt." />
+            )}
+          </Card>
+
           <Card title="Permissions">
-            <KV k="Notifications" v={notifPerm} />
-            <KV k="Location FG" v={locPerm.fg} />
-            <KV k="Location BG" v={locPerm.bg} />
+            <Row verdict={notifOk} label="Notifications" value={notifPerm} />
+            <Row verdict={locPerm.fg === 'granted'} label="Location (Foreground)" value={locPerm.fg} />
+            <Row verdict={locPerm.bg === 'granted'} label="Location (Background)" value={locPerm.bg} />
           </Card>
 
           <Card title="Background Services">
-            <KV k="BG Location started" v={String(bgStarted)} />
-            <KV k="Geofencing started" v={String(gfStarted)} />
+            <Row verdict={bgStarted} label="BG Location started" value={String(bgStarted)} />
+            <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
             <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
             <KV k="lastHeartbeatAt" v={fmtMsAge(lastHeartbeatAt)} />
           </Card>
@@ -299,8 +372,8 @@ export default function Diagnostics() {
           </Card>
 
           <Card title="Identity">
-            <KV k="Expo Token" v={take(token, 28)} />
-            <KV k="DeviceId" v={take(deviceId, 28)} />
+            <KV k="Expo Token" v={take(token)} />
+            <KV k="DeviceId" v={take(deviceId)} />
           </Card>
 
           {Platform.OS === 'android' && (
@@ -317,9 +390,8 @@ export default function Diagnostics() {
                   </Text>
                 ))
               )}
-              {/* Quick sanity hints */}
               <Text style={s.hintSmall}>
-                Erwartet: {BG_CHANNEL_ID} importance ≥ DEFAULT, {OFFERS_CHANNEL_ID} importance MAX
+                Erwartet: {BG_CHANNEL_ID} present; {OFFERS_CHANNEL_ID} importance=MAX &amp; sound≠none
               </Text>
             </Card>
           )}
@@ -354,6 +426,14 @@ export default function Diagnostics() {
 }
 
 // ===== UI Bits
+function Row({ verdict, label, value }) {
+  return (
+    <View style={s.kvRow}>
+      <Text style={s.kvK}>{label}</Text>
+      <Text style={[s.kvV, verdict ? s.good : s.bad]}>{String(value)}</Text>
+    </View>
+  );
+}
 function KV({ k, v }) {
   return (
     <View style={s.kvRow}>
@@ -406,6 +486,8 @@ const s = StyleSheet.create({
   kvK: { color: '#93a4bd' },
   kvV: { color: '#e4ecf7', fontWeight: '700' },
   kvDim: { color: '#93a4bd' },
+  good: { color: '#9ae6b4' },
+  bad: { color: '#ff8b8b' },
 
   logWrapper: { paddingHorizontal: 16, paddingTop: 8 },
   logBox: {
