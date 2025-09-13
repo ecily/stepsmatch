@@ -61,8 +61,8 @@ const DEVICE_ID_ASYNC_KEY  = 'deviceId.v1.mirror';
 const GLOBAL_STATE_KEY = 'offerPushState.__global';
 
 const RESOLVED_PROJECT_ID =
-  (Constants?.expoConfig?.extra && Constants.expoConfig.extra.eas?.projectId) ||
-  (Constants?.easConfig && Constants.easConfig.projectId) ||
+  (Constants?.expoConfig?.extra && (Constants as any).expoConfig.extra.eas?.projectId) ||
+  ((Constants as any)?.easConfig && (Constants as any).easConfig.projectId) ||
   '08559a29-b307-47e9-a130-d3b31f73b4ed';
 
 // UI / Channels
@@ -95,7 +95,7 @@ const EVENT_DEDUP_WINDOW_MS = 5000;
 const PUSH_LOCKS: Record<string, number> = {};
 const PUSH_LOCK_TTL_MS = 10000;
 
-// Watchdog (Schärfung in Schritt B)
+// Watchdog
 const WD_TICK_MS = 20 * 1000;           // engerer Takt
 const LOC_STALE_MS = 120 * 1000;        // wenn letzter Fix älter → re-arm
 const GF_STALE_MS  = 3 * 60 * 1000;     // wenn Geofence-Sync zu alt → force refresh
@@ -114,6 +114,7 @@ function acquirePushLock(offerId: string) {
   setTimeout(() => { if (PUSH_LOCKS[offerId] === now) delete PUSH_LOCKS[offerId]; }, PUSH_LOCK_TTL_MS);
   return true;
 }
+
 function regionsEqual(a: typeof CURRENT_REGIONS, b: typeof CURRENT_REGIONS) {
   if ((a?.length || 0) !== (b?.length || 0)) return false;
   const sig = (r: any) => `${r.identifier}:${r.latitude.toFixed(6)}:${r.longitude.toFixed(6)}:${Math.round(Number(r.radius||0))}`;
@@ -243,12 +244,12 @@ function parseOfferIdFromIdentifier(identifier = '') {
   const m = String(identifier).match(/^offer:([a-f0-9]{24})$/i);
   return m ? m[1] : null;
 }
-async function pruneObsoleteOfferStates(validIdentifiers:string[]) {
+async function pruneObsoleteOfferStates(validIdentifiers: string[]) {
   try {
     const validIds = new Set((validIdentifiers || []).map(parseOfferIdFromIdentifier).filter(Boolean));
     const keys = await AsyncStorage.getAllKeys();
     const offerStateKeys = (keys || []).filter(k => k.startsWith('offerPushState.'));
-    const ops = [];
+    const ops: Promise<any>[] = [];
     for (const key of offerStateKeys) {
       const offerId = key.slice('offerPushState.'.length);
       if (!validIds.has(offerId)) {
@@ -277,18 +278,18 @@ async function getFreshBestFixOrNull(timeoutMs = FRESH_FIX_TIMEOUT_MS) {
 }
 async function ensureGoodAccuracyCoords(coords: Partial<Location.LocationObjectCoords> | null) {
   try {
-    if (!coords || !Number.isFinite(coords.latitude!) || !Number.isFinite(coords.longitude!)) {
+    if (!coords || !Number.isFinite((coords as any).latitude) || !Number.isFinite((coords as any).longitude)) {
       const fresh = await getFreshBestFixOrNull();
       return fresh?.coords || null;
     }
-    if (!Number.isFinite(coords.accuracy!) || (coords.accuracy as number) > MIN_GOOD_ACCURACY_M) {
+    if (!Number.isFinite((coords as any).accuracy) || ((coords as any).accuracy as number) > MIN_GOOD_ACCURACY_M) {
       const fresh = await getFreshBestFixOrNull();
-      if (fresh?.coords && (fresh.coords.accuracy < (coords.accuracy ?? 1e9))) {
+      if (fresh?.coords && (fresh.coords.accuracy < (((coords as any).accuracy) ?? 1e9))) {
         return fresh.coords;
       }
     }
     return coords as Location.LocationObjectCoords;
-  } catch { return coords as any || null; }
+  } catch { return (coords as any) || null; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -336,8 +337,8 @@ async function ensureChannels() {
     });
 
     await Notifications.setNotificationCategoryAsync('offer-go-v2', [
-      { identifier: 'go',     buttonTitle: 'GO',      options: { opensAppToForeground: true } },
-      { identifier: 'later',  buttonTitle: 'SPÄTER',  options: { isDestructive: false } },
+      { identifier: 'go',     buttonTitle: 'GO',     options: { opensAppToForeground: true } },
+      { identifier: 'later',  buttonTitle: 'SPÄTER', options: { isDestructive: false } },
     ]);
 
     await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
@@ -352,7 +353,7 @@ async function ensureChannels() {
     });
 
     console.log('[push] channels ready: offers-v2, stepsmatch-default-v2, bg-channel (legacy offers kept)');
-    console.log('[push] category ready: offer-go-v2');
+    console.log('[push] category ready: offer-go-v2]');
   } catch (e:any) {
     console.warn('[notif] ensureChannels failed:', e?.message || e);
   }
@@ -378,11 +379,11 @@ let REGISTERED_READY = false;
 async function resolveExpoTokenAuthoritative() {
   console.log(
     '[push] meta projectId extra=',
-    Constants?.expoConfig?.extra?.eas?.projectId,
+    (Constants as any)?.expoConfig?.extra?.eas?.projectId,
     'easConfig=',
-    Constants?.easConfig?.projectId,
+    (Constants as any)?.easConfig?.projectId,
     'releaseChannel=',
-    Constants?.expoConfig?.releaseChannel
+    (Constants as any)?.expoConfig?.releaseChannel
   );
   const { data: freshToken } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
   const cached = await AsyncStorage.getItem(TOKEN_KEY);
@@ -472,6 +473,15 @@ function offerRadius(offer:any) {
   return offer?.radiusM ?? offer?.radius ?? offer?.radiusMeters ?? DEFAULT_RADIUS_M;
 }
 
+// 🔸 Helper: "effektiv inside" inkl. Accuracy-Cap + Sanity-Buffer
+function effectiveInside({
+  hereLat, hereLng, regionLat, regionLng, radius, acc
+}: { hereLat:number, hereLng:number, regionLat:number, regionLng:number, radius:number, acc?:number|null }) {
+  const accCap = Math.min(Number.isFinite(acc as any) ? Number(acc) : ACCURACY_TOKEN_CAP_M, ACCURACY_TOKEN_CAP_M);
+  const d = haversineMeters(hereLat, hereLng, regionLat, regionLng);
+  return { inside: d <= ((radius ?? 0) + accCap + ENTER_SANITY_BUFFER_M), d, accCap };
+}
+
 async function refreshGeofencesAroundUser(force = false) {
   const nowStart = nowMs();
   if (GEOFENCE_REFRESH_IN_FLIGHT) return;
@@ -487,7 +497,7 @@ async function refreshGeofencesAroundUser(force = false) {
       console.log('[geofence] skip sync (no lastKnownPosition)');
       return;
     }
-    const { latitude, longitude } = loc.coords;
+    const { latitude, longitude, accuracy: hereAcc } = loc.coords;
 
     const offers = await fetchCandidateOffers();
     const activeNearby: Array<{offer:any, p:{lat:number,lng:number}, dist:number}> = [];
@@ -522,6 +532,53 @@ async function refreshGeofencesAroundUser(force = false) {
       };
     });
 
+    // 🔸 INSTANT-INSIDE: Sofort pushen, wenn wir jetzt bereits im Radius sind (keine Interessenfilter)
+    try {
+      if (regions.length && loc?.coords) {
+        for (const r of regions) {
+          const offerId = parseOfferIdFromIdentifier(r.identifier);
+          if (!offerId) continue;
+          const { inside, d } = effectiveInside({
+            hereLat: latitude, hereLng: longitude,
+            regionLat: r.latitude, regionLng: r.longitude,
+            radius: Number(r.radius) || DEFAULT_RADIUS_M, acc: hereAcc
+          });
+          if (!inside) continue;
+
+          const st = await getOfferPushState(offerId);
+          if (st?.inside) continue; // schon markiert → nicht doppeln
+
+          // Aktivität minimal prüfen (zeitlich gültig)
+          let active = true;
+          try {
+            const res = await fetch(`${API_BASE}/offers/${offerId}?withProvider=1`, { method: 'GET' });
+            const offerForChecks = await res.json();
+            active = res.ok ? !!isOfferActiveNow(offerForChecks, EUROPE_VIENNA) : true;
+          } catch {}
+
+          if (!active) {
+            await setOfferPushState(offerId, { inside: true, lastPushedAt: st?.lastPushedAt || 0 });
+            continue;
+          }
+
+          if (acquirePushLock(offerId)) {
+            const meta = await getOfferMeta(offerId);
+            await Notifications.setBadgeCountAsync?.(0).catch?.(()=>{});
+            await presentLocalOfferNotification(offerId, meta, 'synthetic-enter');
+            console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({
+              offerId, d: Math.round(d) + 'm', source: 'INSTANT_AFTER_SYNC'
+            }));
+            const ts = nowMs();
+            await setOfferPushState(offerId, { inside: true, lastPushedAt: ts });
+            await setGlobalState({ lastAnyPushAt: ts });
+            reportEnterToBackend({ offerId, lat: latitude, lng: longitude, accuracy: hereAcc ?? null }).catch(()=>{});
+          }
+        }
+      }
+    } catch (e:any) {
+      console.log('[geofence] instant-inside check failed', String(e?.message || e));
+    }
+
     if (!regions.length) {
       console.log('[geofence] no active nearby offers -> stop if running]');
       const started = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
@@ -536,7 +593,7 @@ async function refreshGeofencesAroundUser(force = false) {
       return;
     }
 
-    // Gleich? Kein Restart (keine Initial-Events)
+    // Gleich? Kein Restart (aber markiere "already inside" + ggf. synthetischer ENTER)
     if (regionsEqual(CURRENT_REGIONS, regions)) {
       CURRENT_REGIONS = regions.slice();
       lastGeofenceSyncAt = now;
@@ -877,7 +934,7 @@ async function markAlreadyInsideQuietly() {
       if (d <= effective) {
         const st = await getOfferPushState(offerId);
         if (!st.inside) {
-          // 🔍 Interessen + Aktivität verifizieren
+          // Interessen/aktiv nur für diesen ruhigen Pfad prüfen:
           let offerForChecks:any = null;
           try {
             const [interestSet, fetchedOffer] = await Promise.all([getInterestSet(), fetchOfferForInterests(offerId)]);
@@ -894,7 +951,7 @@ async function markAlreadyInsideQuietly() {
             }
           } catch {}
 
-          // ✅ NEU: Synthetischer ENTER-Push (ohne globalen Throttle)
+          // Synthetischer ENTER-Push (first-ever)
           const isFirstEver = !st.lastPushedAt;
           if (isFirstEver && acquirePushLock(offerId)) {
             try {
@@ -978,7 +1035,7 @@ export async function kickstartBackgroundLocation() {
   try {
     const fg = await Location.requestForegroundPermissionsAsync();
     const bg = await Location.requestBackgroundPermissionsAsync();
-    console.log('[BGLOC] permissions', { fg: fg?.status, bg: bg?.status });
+    console.log('[BGLOC] permissions', { fg: (fg as any)?.status, bg: (bg as any)?.status });
 
     await startAggressiveBgLocation();
 
@@ -1067,7 +1124,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       if (Number.isFinite(region?.latitude) && Number.isFinite(region?.longitude)) {
         try {
           const improved = await ensureGoodAccuracyCoords(lastKnown?.coords || null);
-        if (improved) {
+          if (improved) {
             lat = improved.latitude;
             lng = improved.longitude;
             accuracy = improved.accuracy;
@@ -1127,12 +1184,6 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
         active = res.ok ? !!isOfferActiveNow(offerForChecks, EUROPE_VIENNA) : true;
       } catch {}
 
-      if (!active) {
-        console.log('[LOCAL_PUSH] skipped (not active now)', offerId);
-        await setOfferPushState(offerId, { inside: true, lastPushedAt: state.lastPushedAt || 0 });
-        return;
-      }
-
       try {
         const interestSet = await getInterestSet();
         if (offerForChecks && !matchesInterests(offerForChecks, interestSet)) {
@@ -1142,12 +1193,17 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
         }
       } catch {}
 
+      if (!active) {
+        console.log('[LOCAL_PUSH] skipped (not active now)', offerId);
+        await setOfferPushState(offerId, { inside: true, lastPushedAt: state.lastPushedAt || 0 });
+        return;
+      }
+
       // Lokaler Sofort-Push
       const meta = await getOfferMeta(offerId);
       await Notifications.setBadgeCountAsync?.(0).catch?.(()=>{});
       await presentLocalOfferNotification(offerId, meta);
 
-      // 👉 Schritt B: deterministisches Log mit Distanz/Accuracy
       if (enteredDistanceM == null) {
         enteredDistanceM = await computeDistanceMeters(offerId, lat, lng);
       }
@@ -1221,7 +1277,7 @@ export async function sendRoundtripTest({ offerId = 'ROUNDTRIP_TEST' } = {}) {
   }
 }
 
-// ───────────── Watchdog (Schritt B: schärfer & umfassender) ─────────────
+// ───────────── Watchdog ─────────────
 function useLocationWatchdog() {
   const timerRef = useRef<any>(null);
   useEffect(() => {
@@ -1279,7 +1335,7 @@ async function initPush() {
 
   try {
     const native = await Notifications.getDevicePushTokenAsync();
-    console.log('[push] nativePushToken', native?.type, native?.data ? String(native.data).slice(0,24) + '…' : null);
+    console.log('[push] nativePushToken', (native as any)?.type, (native as any)?.data ? String((native as any).data).slice(0,24) + '…' : null);
   } catch (e:any) {
     console.log('[push] nativePushToken error', String(e));
   }
@@ -1292,7 +1348,8 @@ async function initPush() {
   try { lastLoc = await Location.getLastKnownPositionAsync({}); } catch {}
   await registerTokenWithBackend({ expoToken: token, deviceId, lastLocation: lastLoc || undefined });
 
-  Notifications.addNotificationReceivedListener((notification) => {
+  // 🔸 Optional: Backend kann bei Offer-Creation {kind:'offers-refresh'} als silent/data Push senden
+  Notifications.addNotificationReceivedListener(async (notification) => {
     const c:any = notification?.request?.content || {};
     const data = c.data || {};
     console.log('[push] received', JSON.stringify({
@@ -1301,6 +1358,15 @@ async function initPush() {
       channelId: c.android?.channelId || c.channelId || 'offers-v2',
       data,
     }));
+
+    if (data?.kind === 'offers-refresh') {
+      try {
+        console.log('[push] offers-refresh → force geofence refresh');
+        await refreshGeofencesAroundUser(true);
+      } catch (e) {
+        console.log('[push] offers-refresh failed', String((e as any)?.message || e));
+      }
+    }
   });
 
   Notifications.addNotificationResponseReceivedListener(async (response) => {

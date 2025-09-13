@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   View,
+  Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
 import colors from '../../theme/colors';
@@ -15,10 +16,76 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
+import * as IntentLauncher from 'expo-intent-launcher';
+import Constants from 'expo-constants';
+
+/* ────────────────────────────────────────────────────────────
+   Android Settings: Deep-Links
+   ──────────────────────────────────────────────────────────── */
+const ANDROID_PKG =
+  (Constants?.expoConfig as any)?.android?.package ||
+  'com.ecily.mobile';
+
+async function openAppDetailsSettings() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await IntentLauncher.startActivityAsync(
+      IntentLauncher.ActivityAction.APPLICATION_DETAILS_SETTINGS,
+      { data: `package:${ANDROID_PKG}` }
+    );
+  } catch {
+    await Linking.openSettings();
+  }
+}
+
+async function openNotificationSettings() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS' as any, {
+      extra: { app_package: ANDROID_PKG },
+    });
+  } catch {
+    await openAppDetailsSettings();
+  }
+}
+
+async function openBatteryOptimizationList() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS' as any);
+  } catch {
+    await openAppDetailsSettings();
+  }
+}
+
+// Direkter Dialog: "Von Akku-Optimierung ausnehmen" für diese App
+async function requestIgnoreBatteryOptimizations() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' as any, {
+      data: `package:${ANDROID_PKG}`,
+    });
+  } catch {
+    await openBatteryOptimizationList();
+  }
+}
+
+async function openLocationPermissionSettings() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS' as any, {
+      data: `package:${ANDROID_PKG}`,
+    });
+  } catch {
+    await openAppDetailsSettings();
+  }
+}
 
 export default function LocationScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [fgStatus, setFgStatus] = useState<'granted'|'denied'|'undetermined'>('undetermined');
+  const [bgStatus, setBgStatus] = useState<'granted'|'denied'|'undetermined'>('undetermined');
 
   // Micro-motions (beibehalten)
   const headY = useRef(new Animated.Value(12)).current;
@@ -47,15 +114,23 @@ export default function LocationScreen() {
     ]).start();
   }, [headY, headOpacity, subY, subOpacity, btnY, btnOpacity, laterOpacity]);
 
+  useEffect(() => {
+    (async () => {
+      const f = await Location.getForegroundPermissionsAsync();
+      setFgStatus(f.status);
+      const b = await Location.getBackgroundPermissionsAsync();
+      setBgStatus(b.status);
+    })();
+  }, []);
+
   const goNext = () => router.replace('/(onboarding)/InterestsScreen');
 
-  // ⚠️ Logik unverändert lassen (nur UI verbessert)
+  // Vordergrund
   const handleLocationPermission = async () => {
     if (loading) return;
     setLoading(true);
 
     try {
-      // 1) Prüfen, ob bereits gewährt
       const current = await Location.getForegroundPermissionsAsync();
       if (current.status === 'granted') {
         await Haptics.selectionAsync().catch(() => {});
@@ -63,27 +138,25 @@ export default function LocationScreen() {
         return goNext();
       }
 
-      // 2) Wenn nicht gewährt: nachfragen
       const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
 
       if (status === 'granted') {
+        setFgStatus('granted');
         await Haptics.selectionAsync().catch(() => {});
         setLoading(false);
         return goNext();
       }
 
-      // 3) Abgelehnt
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       setLoading(false);
 
       if (!canAskAgain) {
-        // In Einstellungen öffnen
         Alert.alert(
           'Standort deaktiviert',
           'Bitte erlaube den Standortzugriff in den Systemeinstellungen, damit StepsMatch in deiner Nähe passende Angebote finden kann.',
           [
             { text: 'Abbrechen', style: 'cancel' },
-            { text: 'Einstellungen öffnen', onPress: () => Linking.openSettings() },
+            { text: 'Einstellungen öffnen', onPress: () => openLocationPermissionSettings() },
           ],
         );
       } else {
@@ -93,10 +166,41 @@ export default function LocationScreen() {
           [{ text: 'OK' }],
         );
       }
-    } catch (e) {
+    } catch {
       setLoading(false);
       Alert.alert('Unerwarteter Fehler', 'Bitte versuche es in wenigen Sekunden erneut.');
     }
+  };
+
+  // Hintergrund („Immer zulassen“)
+  const handleBackgroundLocation = async () => {
+    try {
+      const res = await Location.requestBackgroundPermissionsAsync();
+      setBgStatus(res.status);
+      if (res.status !== 'granted') {
+        Alert.alert(
+          'Hintergrund-Standort',
+          'Bitte stelle in den App-Einstellungen auf „Immer zulassen“, damit Pushes im Hintergrund zuverlässig kommen.',
+          [
+            { text: 'Abbrechen', style: 'cancel' },
+            { text: 'Einstellungen öffnen', onPress: () => openLocationPermissionSettings() },
+          ],
+        );
+      } else {
+        await Haptics.selectionAsync().catch(() => {});
+      }
+    } catch {}
+  };
+
+  const handleBatteryOptOut = async () => {
+    try {
+      await requestIgnoreBatteryOptimizations();
+      await Haptics.selectionAsync().catch(() => {});
+    } catch {}
+  };
+
+  const handleOpenNotifSettings = async () => {
+    await openNotificationSettings();
   };
 
   return (
@@ -105,10 +209,7 @@ export default function LocationScreen() {
 
         {/* Headline */}
         <Animated.Text
-          style={[
-            styles.headline,
-            { opacity: headOpacity, transform: [{ translateY: headY }] },
-          ]}
+          style={[styles.headline, { opacity: headOpacity, transform: [{ translateY: headY }] }]}
           accessibilityRole="header"
           allowFontScaling
         >
@@ -117,10 +218,7 @@ export default function LocationScreen() {
 
         {/* Subheadline */}
         <Animated.Text
-          style={[
-            styles.subheadline,
-            { opacity: subOpacity, transform: [{ translateY: subY }] },
-          ]}
+          style={[styles.subheadline, { opacity: subOpacity, transform: [{ translateY: subY }] }]}
           allowFontScaling
         >
           Damit wir passende Angebote in deiner Nähe finden, brauchen wir Zugriff auf deinen Standort.
@@ -133,10 +231,16 @@ export default function LocationScreen() {
           <Benefit text="Datenschutz: Standort bleibt bei dir" />
         </View>
 
+        {/* Status */}
+        {Platform.OS === 'android' ? (
+          <View style={styles.statusRow}>
+            <Text style={styles.statusText}>Vordergrund: {fgStatus}</Text>
+            <Text style={styles.statusText}>Hintergrund: {bgStatus}</Text>
+          </View>
+        ) : null}
+
         {/* Primary CTA */}
-        <Animated.View
-          style={{ width: '100%', opacity: btnOpacity, transform: [{ translateY: btnY }] }}
-        >
+        <Animated.View style={{ width: '100%', opacity: btnOpacity, transform: [{ translateY: btnY }] }}>
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLocationPermission}
@@ -150,10 +254,42 @@ export default function LocationScreen() {
             {loading ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.buttonText} allowFontScaling>Standort erlauben</Text>
+              <Text style={styles.buttonText} allowFontScaling>Vordergrund-Standort erlauben</Text>
             )}
           </TouchableOpacity>
         </Animated.View>
+
+        {/* Android: Background & Battery */}
+        {Platform.OS === 'android' ? (
+          <View style={{ width: '100%' }}>
+            <TouchableOpacity
+              style={[styles.buttonSecondary]}
+              onPress={handleBackgroundLocation}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonSecondaryText} allowFontScaling>Hintergrund-Standort („Immer zulassen“)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.buttonSecondary]}
+              onPress={handleBatteryOptOut}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonSecondaryText} allowFontScaling>Akku-Optimierung für StepsMatch ausschalten</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.buttonSecondary]}
+              onPress={handleOpenNotifSettings}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonSecondaryText} allowFontScaling>Benachrichtigungs-Einstellungen öffnen</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Secondary CTA */}
         <Animated.View style={{ opacity: laterOpacity, marginTop: 6 }}>
@@ -187,99 +323,43 @@ function Benefit({ text }: { text: string }) {
 const R = { s2: 8, s3: 12, s4: 16, s5: 20, s6: 24, s7: 32 };
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24, // Safe-Area freundlich – kein Randkontakt
-    paddingTop: R.s6,
-    paddingBottom: R.s6,
-    backgroundColor: colors.background,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 24, paddingTop: R.s6, paddingBottom: R.s6, backgroundColor: colors.background,
   },
   headline: {
-    fontWeight: 'bold',
-    fontSize: 26,
-    color: colors.primary, // Brand-Blau
-    marginBottom: 12,
-    textAlign: 'center',
-    letterSpacing: 0.3,
+    fontWeight: 'bold', fontSize: 26, color: colors.primary, marginBottom: 12, textAlign: 'center', letterSpacing: 0.3,
   },
   subheadline: {
-    fontSize: 16,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 18,
-    lineHeight: 24,
+    fontSize: 16, color: colors.text, textAlign: 'center', marginBottom: 18, lineHeight: 24,
   },
   benefits: {
-    width: '100%',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border || '#e5e9ef',
-    backgroundColor: (colors.elevated || '#f7f8fb'),
-    borderRadius: 14,
-    paddingVertical: R.s4,
-    paddingHorizontal: R.s4,
-    marginBottom: R.s6,
+    width: '100%', borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border || '#e5e9ef', backgroundColor: (colors.elevated || '#f7f8fb'),
+    borderRadius: 14, paddingVertical: R.s4, paddingHorizontal: R.s4, marginBottom: R.s6,
   },
+  statusRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  statusText: { color: colors.text, fontSize: 13 },
   button: {
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    minHeight: 48, // Tap-Target
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 3,
-    marginBottom: R.s3,
+    backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24,
+    minHeight: 48, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.primary, shadowOpacity: 0.12, shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10, elevation: 3, marginBottom: R.s3,
   },
-  buttonDisabled: {
-    opacity: 0.7,
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: colors.white, fontWeight: 'bold', fontSize: 18, letterSpacing: 0.2, textAlign: 'center' },
+  buttonSecondary: {
+    backgroundColor: '#0b3b6810', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
+    alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: '#cfe2ff',
   },
-  buttonText: {
-    color: colors.white,
-    fontWeight: 'bold',
-    fontSize: 18,
-    letterSpacing: 0.2,
-    textAlign: 'center',
-  },
-  later: {
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-  },
-  laterText: {
-    color: colors.accent,
-    fontWeight: '500',
-    fontSize: 16,
-    textDecorationLine: 'underline',
-    textAlign: 'center',
-  },
+  buttonSecondaryText: { color: colors.primary, fontWeight: '600', fontSize: 15, textAlign: 'center' },
+  later: { paddingVertical: 8, paddingHorizontal: 8 },
+  laterText: { color: colors.accent, fontWeight: '500', fontSize: 16, textDecorationLine: 'underline', textAlign: 'center' },
 });
 
 const benefitStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: R.s3,
-  },
-  bullet: {
-    fontSize: 18,
-    lineHeight: 22,
-    color: colors.primary,
-    marginRight: R.s3,
-  },
-  text: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.text,
-  },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: R.s3 },
+  bullet: { fontSize: 18, lineHeight: 22, color: colors.primary, marginRight: R.s3 },
+  text: { flex: 1, fontSize: 15, lineHeight: 22, color: colors.text },
 });

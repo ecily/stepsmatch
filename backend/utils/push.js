@@ -29,7 +29,13 @@ const GRACE_MS = (() => {
 })();
 
 // Tipp: setze EXPO_ACCESS_TOKEN in DO, damit Requests deinem Expo-Projekt sicher zugeordnet sind.
-const expo = accessToken ? new Expo({ accessToken }) : new Expo();
+//const expo = accessToken ? new Expo({ accessToken }) : new Expo();
+  const expo = new Expo({
+  accessToken: accessToken || undefined,
+  projectId: PROJECT_ID || undefined,
+  });
+
+
 
 /* ────────────────────────────────────────────────────────────
    Helfer
