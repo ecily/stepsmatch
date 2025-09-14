@@ -3,7 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
-import { sendPush, sendPushAndCheckReceipts } from '../utils/push.js';
+import { sendToDevice } from '../services/pushService.js';
 
 const router = express.Router();
 
@@ -11,7 +11,6 @@ const router = express.Router();
    Constants & helpers
    ──────────────────────────────────────────────────────────── */
 const PLATFORMS = new Set(['android', 'ios', 'web']);
-const DEFAULT_CHANNEL = 'offers'; // Android-Channel
 
 const normPlatform = (p) => {
   const s = String(p || '').toLowerCase().trim();
@@ -148,14 +147,9 @@ router.post('/roundtrip', async (req, res) => {
     const title = rawTitle || 'StepsMatch';
     const body = (rawBody || 'Test-Push') + ` [offerId:${offerId}]`;
 
-    const resp = await sendPush({
-      tokens: [target.token],
-      title,
-      body,
-      data: payload,
-      channelId: DEFAULT_CHANNEL,
-      sound: 'default',
-      priority: 'high',
+    const resp = await sendToDevice({
+      deviceId: deviceId,
+      message: { title, body, data: payload },
     });
 
     res.json({ success: true, projectId: target.projectId || null, meta: resp, source: target.source });
@@ -184,18 +178,12 @@ router.post('/roundtrip-diagnose', async (req, res) => {
     const title = rawTitle || 'StepsMatch';
     const body = (rawBody || 'Diagnose-Push') + ` [offerId:${offerId}]`;
 
-    const diag = await sendPushAndCheckReceipts({
-      tokens: [target.token],
-      title,
-      body,
-      data: payload,
-      channelId: DEFAULT_CHANNEL,
-      sound: 'default',
-      priority: 'high',
-      delayMs: 3500,
+    const resp = await sendToDevice({
+      deviceId: deviceId,
+      message: { title, body, data: payload },
     });
 
-    res.json({ success: true, projectId: target.projectId || null, diag, tokenSource: target.source });
+    res.json({ success: true, projectId: target.projectId || null, diag: resp, tokenSource: target.source });
   } catch (e) {
     console.error('[push] diagnose error', e);
     res.status(500).json({ success: false, error: 'server-error' });
