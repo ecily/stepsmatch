@@ -1,4 +1,4 @@
-// backend/models/PushToken.js
+// stepsmatch/backend/models/PushToken.js
 import mongoose from 'mongoose';
 
 const { Schema, model } = mongoose;
@@ -17,28 +17,33 @@ const PushTokenSchema = new Schema(
     // Stabiles Geräte-Merkmal (aus SecureStore)
     deviceId: { type: String, default: null, index: true },
 
-    // Deaktiviert (z. B. nach DeviceNotRegistered)
+    // ── NEU: Gültigkeitsflag für Self-Heal
+    valid: { type: Boolean, default: true, index: true },
+
+    // (Alt, nur für Rückwärtskompatibilität)
     disabled: { type: Boolean, default: false, index: true },
+
+    // ── NEU: Fehler-/Retry-Metadaten
+    lastError: { type: String, default: null },   // z. B. 'DeviceNotRegistered'
+    lastTriedAt: { type: Date, default: null },
 
     // Aktivitäts-Timestamps
     lastSeenAt: { type: Date, default: Date.now, index: true },
     lastHeartbeatAt: { type: Date, default: null, index: true },
 
-    // Gemeldete Location (GeoJSON: [lng, lat])
+    // Letzte bekannte Location (GeoJSON: [lng, lat])
     lastLocation: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: undefined },
     },
+    lastLocationAccuracy: { type: Number, default: null },
+    lastLocationAt: { type: Date, default: null },
+    lastLocationSpeed: { type: Number, default: null },
 
-    // Zusatzinfos zur Location
-    lastLocationAccuracy: { type: Number, default: null }, // Meter
-    lastLocationAt: { type: Date, default: null },         // wann Position gültig war
-    lastLocationSpeed: { type: Number, default: null },    // m/s (falls vorhanden)
-
-    // Interessen für Targeting
+    // Interessen
     interests: { type: [String], default: [] },
 
-    // Expo-Project-Scope
+    // Expo Project Scope
     projectId: { type: String, default: null, index: true },
   },
   {
@@ -50,28 +55,35 @@ const PushTokenSchema = new Schema(
   }
 );
 
-/* ────────────────────────────────────────────────────────────
-   Indizes
-   ──────────────────────────────────────────────────────────── */
-
-// 2dsphere-Index auf GeoJSON-Feld (für $near / $geoNear)
+/* Indizes */
+// Geo
 PushTokenSchema.index({ lastLocation: '2dsphere' }, { name: 'lastLocation_2dsphere' });
 
-// Aktivität / Frische
+// Aktivität
 PushTokenSchema.index({ updatedAt: -1 }, { name: 'updatedAt_desc' });
 PushTokenSchema.index({ lastHeartbeatAt: -1 }, { name: 'lastHeartbeatAt_desc' });
 
-// Häufige Filterkombis
+// Häufige Filterkombis (Self-Heal nutzt "valid:true")
+PushTokenSchema.index(
+  { projectId: 1, valid: 1, lastSeenAt: -1, updatedAt: -1 },
+  { name: 'byProject_valid_recent' }
+);
+PushTokenSchema.index(
+  { deviceId: 1, valid: 1, lastSeenAt: -1, updatedAt: -1 },
+  { name: 'byDevice_valid_recent' }
+);
+
+// Altkompatibel für disabled
 PushTokenSchema.index(
   { projectId: 1, disabled: 1, lastSeenAt: -1, updatedAt: -1 },
-  { name: 'byProject_enabled_recent' }
+  { name: 'byProject_disabled_recent' }
 );
 PushTokenSchema.index(
   { deviceId: 1, disabled: 1, lastSeenAt: -1, updatedAt: -1 },
-  { name: 'byDevice_enabled_recent' }
+  { name: 'byDevice_disabled_recent' }
 );
 
-// Für Leader-/Poller-Scans nach frischen Locations
+// Für Location-Scans
 PushTokenSchema.index(
   { 'lastLocation.coordinates': 1, lastLocationAt: -1 },
   { name: 'coords_present_lastLocationAt_desc' }
