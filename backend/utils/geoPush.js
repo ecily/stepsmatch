@@ -34,6 +34,12 @@ const OFFER_NOTIFY_RESET_ON_UPDATE = !['0', 'false', 'off'].includes(
 // Verbose Diagnose-Logs (Default: ON). Setze GEOPUSH_DEBUG=0 zum Abschalten.
 const GEOPUSH_DEBUG = String(process.env.GEOPUSH_DEBUG ?? '1') !== '0';
 
+// Fresh-Token-Retry: Delays
+const FRESH_RETRY_DELAYS_MS = (process.env.FRESH_RETRY_DELAYS_MS || '90000,300000')
+  .split(',')
+  .map(s => Number(s.trim()))
+  .filter(n => Number.isFinite(n) && n > 0);
+
 /* ────────────────────────────────────────────────────────────
    Helpers
    ──────────────────────────────────────────────────────────── */
@@ -81,6 +87,111 @@ function logDiag(offer, phase, detail = {}) {
   };
   // Einzeilige, klar lesbare Debug-Zeile
   console.log(`[geoPush.diag] ${phase} ${sjson({ ...base, ...detail }, 1200)}`);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Retry-Helper für DeviceNotRegistered bei frischen Tokens
+   ──────────────────────────────────────────────────────────── */
+async function scheduleFreshTokenRetries({ offer, tokens, now }) {
+  try {
+    if (!Array.isArray(FRESH_RETRY_DELAYS_MS) || FRESH_RETRY_DELAYS_MS.length === 0) return;
+    if (!tokens?.length) return;
+
+    // Wir merken uns das ursprüngliche Token-Set. Vor jedem Retry:
+    // 1) Offer noch aktiv?
+    // 2) OfferVisibility-Dedupe (keine Doppel-Pushs)
+    // 3) Push senden; Erfolgreiche werden markiert
+    for (const delayMs of FRESH_RETRY_DELAYS_MS) {
+      setTimeout(async () => {
+        try {
+          const stillActive = isOfferActiveNow(offer, 'Europe/Vienna', new Date());
+          if (!stillActive) {
+            console.log('[geoPush.retry] offer no longer active -> skip', String(offer?._id || ''));
+            return;
+          }
+
+          // OfferVisibility-Dedupe: entferne bereits Benachrichtigte
+          const sentDocs = await PushToken.find({ token: { $in: tokens } }, { _id: 1, token: 1 }).lean();
+          const ids = sentDocs.map(d => d._id);
+          if (!ids.length) return;
+
+          const vis = await OfferVisibility.find({
+            offerId: offer._id,
+            deviceToken: { $in: ids },
+            $or: [
+              { status: 'snoozed', remindAt: { $gt: new Date() } },
+              { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: new Date(offer?.updatedAt || offer?.createdAt || 0) } },
+            ],
+          }).select('deviceToken').lean();
+
+          const already = new Set(vis.map(v => String(v.deviceToken)));
+          const retryTokens = sentDocs
+            .filter(d => !already.has(String(d._id)))
+            .map(d => d.token);
+
+          if (!retryTokens.length) {
+            console.log('[geoPush.retry] nothing to retry (dedup cleared)', String(offer?._id || ''));
+            return;
+          }
+
+          console.log('[geoPush.retry] sending', retryTokens.length, 'tokens after', delayMs, 'ms', String(offer?._id || ''));
+
+          const diagRetry = await sendPushAndCheckReceipts({
+            tokens: retryTokens,
+            title: offer.name || 'Angebot in deiner Nähe',
+            body: 'Tippe, um Details zu sehen.',
+            data: {
+              type: 'offer',
+              offerId: String(offer._id),
+              route: `/offers/${offer._id}`,
+              source: 'offer-update-retry',
+            },
+            channelId: PUSH_CHANNEL_ID,
+            priority: PUSH_PRIORITY,
+            sound: PUSH_SOUND,
+            delayMs: 1500,
+          });
+
+          // Markiere erfolgreiche Tokens
+          const tickets = Array.isArray(diagRetry?.sent?.tickets) ? diagRetry.sent.tickets : [];
+          const idToToken = diagRetry?.sent?.idToToken || {};
+          const okTokens = [];
+          for (const t of tickets) {
+            if (t?.status === 'ok' && t?.id && idToToken[t.id]) okTokens.push(idToToken[t.id]);
+          }
+          if (okTokens.length) {
+            const okDocs = await PushToken.find({ token: { $in: okTokens } }, { _id: 1, token: 1 }).lean();
+            const bulk = okDocs.map((d) => ({
+              updateOne: {
+                filter: { offerId: offer._id, deviceToken: d._id },
+                update: {
+                  $setOnInsert: { offerId: offer._id, deviceToken: d._id, firstSeenAt: new Date() },
+                  $set: { status: 'notified', remindAt: null, lastNotifiedAt: new Date(), updatedAt: new Date() },
+                },
+                upsert: true,
+              },
+            }));
+            if (bulk.length) await OfferVisibility.bulkWrite(bulk);
+          }
+
+          // Disable kaputte Tokens
+          if (Array.isArray(diagRetry?.disabledTokens) && diagRetry.disabledTokens.length > 0) {
+            await PushToken.updateMany({ token: { $in: diagRetry.disabledTokens } }, { $set: { disabled: true } });
+          }
+
+          const summary = diagRetry?.receipts?.summary || {};
+          console.log(
+            `[geoPush.retry] offer=${offer._id} after=${delayMs}ms tried=${retryTokens.length} ` +
+            `ok=${okTokens.length} receipts=${JSON.stringify(summary)}`
+          );
+        } catch (err) {
+          console.error('[geoPush.retry] error:', err?.message || err);
+        }
+      }, delayMs);
+    }
+  } catch (e) {
+    console.error('[geoPush.retry] schedule error:', e?.message || e);
+  }
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -365,6 +476,31 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       disabledCount,
       receipts: summary,
     });
+
+    // 🔁 Fresh-Token-Retry: wenn Expo „DeviceNotRegistered“ meldet
+    // Wir kennen nicht immer die exakten fehlerhaften Tokens → Retry auf Rest ist ok,
+    // denn OfferVisibility blockt Doppel-Pushs von bereits „ok“-markierten Tokens.
+    try {
+      const deviceNotRegistered =
+        summary && summary.errors && typeof summary.errors.DeviceNotRegistered === 'number'
+          ? summary.errors.DeviceNotRegistered
+          : 0;
+
+      const tokensForRetry = sentTokens.length
+        ? tokens.filter(t => !sentTokens.includes(t)) // retry nur für Rest
+        : tokens.slice(); // wenn niemand ok war → alle erneut versuchen
+
+      if (deviceNotRegistered > 0 && tokensForRetry.length) {
+        console.log('[geoPush.retry] scheduling for DeviceNotRegistered', {
+          offerId: String(offer?._id || ''),
+          count: tokensForRetry.length,
+          delays: FRESH_RETRY_DELAYS_MS,
+        });
+        await scheduleFreshTokenRetries({ offer, tokens: tokensForRetry, now });
+      }
+    } catch (e) {
+      console.log('[geoPush.retry] scheduling failed (non-fatal):', e?.message || e);
+    }
 
     return {
       ok: true,

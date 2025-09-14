@@ -23,7 +23,8 @@ import Constants from 'expo-constants';
    Android Settings: Deep-Links
    ──────────────────────────────────────────────────────────── */
 const ANDROID_PKG =
-  (Constants?.expoConfig as any)?.android?.package ||
+  (Constants?.expoConfig?.android?.package) ||
+  (Constants?.manifest?.android?.package) ||
   'com.ecily.mobile';
 
 async function openAppDetailsSettings() {
@@ -41,7 +42,8 @@ async function openAppDetailsSettings() {
 async function openNotificationSettings() {
   if (Platform.OS !== 'android') return;
   try {
-    await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS' as any, {
+    // funktioniert ab Android 5+
+    await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS', {
       extra: { app_package: ANDROID_PKG },
     });
   } catch {
@@ -52,7 +54,7 @@ async function openNotificationSettings() {
 async function openBatteryOptimizationList() {
   if (Platform.OS !== 'android') return;
   try {
-    await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS' as any);
+    await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
   } catch {
     await openAppDetailsSettings();
   }
@@ -62,7 +64,7 @@ async function openBatteryOptimizationList() {
 async function requestIgnoreBatteryOptimizations() {
   if (Platform.OS !== 'android') return;
   try {
-    await IntentLauncher.startActivityAsync('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' as any, {
+    await IntentLauncher.startActivityAsync('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', {
       data: `package:${ANDROID_PKG}`,
     });
   } catch {
@@ -73,7 +75,7 @@ async function requestIgnoreBatteryOptimizations() {
 async function openLocationPermissionSettings() {
   if (Platform.OS !== 'android') return;
   try {
-    await IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS' as any, {
+    await IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS', {
       data: `package:${ANDROID_PKG}`,
     });
   } catch {
@@ -84,10 +86,10 @@ async function openLocationPermissionSettings() {
 export default function LocationScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [fgStatus, setFgStatus] = useState<'granted'|'denied'|'undetermined'>('undetermined');
-  const [bgStatus, setBgStatus] = useState<'granted'|'denied'|'undetermined'>('undetermined');
+  const [fgStatus, setFgStatus] = useState('undetermined'); // 'granted' | 'denied' | 'undetermined'
+  const [bgStatus, setBgStatus] = useState('undetermined'); // 'granted' | 'denied' | 'undetermined'
 
-  // Micro-motions (beibehalten)
+  // Micro-motions
   const headY = useRef(new Animated.Value(12)).current;
   const headOpacity = useRef(new Animated.Value(0)).current;
   const subY = useRef(new Animated.Value(12)).current;
@@ -129,7 +131,6 @@ export default function LocationScreen() {
   const handleLocationPermission = async () => {
     if (loading) return;
     setLoading(true);
-
     try {
       const current = await Location.getForegroundPermissionsAsync();
       if (current.status === 'granted') {
@@ -311,7 +312,7 @@ export default function LocationScreen() {
 }
 
 /** Kleine, neutrale Benefit-Zeile */
-function Benefit({ text }: { text: string }) {
+function Benefit({ text }) {
   return (
     <View style={benefitStyles.row} accessible accessibilityRole="text">
       <Text style={benefitStyles.bullet} accessibilityElementsHidden>{'•'}</Text>

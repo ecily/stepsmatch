@@ -63,6 +63,119 @@ const ACCURACY_TOKEN_CAP = Number(process.env.PUSH_ACCURACY_TOKEN_CAP ?? 60);
 const DEFAULT_RADIUS_M = Number(process.env.DEFAULT_OFFER_RADIUS_M ?? 120);
 const TZ = 'Europe/Vienna';
 
+// Fresh-Token Retry Delays (ms), default: 90s, 5min
+const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000,300000')
+  .split(',')
+  .map(s => Number(s.trim()))
+  .filter(n => Number.isFinite(n) && n > 0);
+
+/* ───────────────── Retry-Helper (Heartbeat) ─────────────────
+   Schedult Retries für DeviceNotRegistered beim Heartbeat-Push.
+   Prüft vor jedem Retry:
+   - Offer noch aktiv?
+   - Token nicht disabled & existiert?
+   - OfferVisibility (keine Doppel-Pushs)
+   Markiert bei Erfolg OfferVisibility=notified.
+---------------------------------------------------------------- */
+function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
+  try {
+    if (!FRESH_RETRY_DELAYS_MS.length || !offer?._id || (!pushTokenId && !tokenString)) return;
+
+    for (const delayMs of FRESH_RETRY_DELAYS_MS) {
+      setTimeout(async () => {
+        try {
+          // 1) Offer noch aktiv?
+          const now = new Date();
+          const stillActive = isOfferActiveNow(offer, TZ, now);
+          if (!stillActive) {
+            console.log('[hb-retry] offer not active anymore -> skip', String(offer?._id || ''));
+            return;
+          }
+
+          // 2) Token laden/prüfen (aktuellster Stand)
+          let tokenDoc = null;
+          if (pushTokenId) {
+            tokenDoc = await PushToken.findOne({ _id: pushTokenId }).select('_id token disabled projectId interests').lean();
+          }
+          if (!tokenDoc && tokenString) {
+            tokenDoc = await PushToken.findOne({ token: tokenString }).select('_id token disabled projectId interests').lean();
+          }
+          if (!tokenDoc || tokenDoc.disabled) {
+            console.log('[hb-retry] token missing/disabled -> skip', tokenString ? String(tokenString).slice(0,22)+'…' : String(pushTokenId));
+            return;
+          }
+          if (PROJECT_ID && tokenDoc.projectId && String(tokenDoc.projectId) !== String(PROJECT_ID)) {
+            console.log('[hb-retry] projectId mismatch -> skip');
+            return;
+          }
+
+          // 3) OfferVisibility-Dedupe
+          const cutoff = new Date(offer?.updatedAt || offer?.createdAt || 0);
+          const exists = await OfferVisibility.findOne({
+            offerId: offer._id,
+            deviceToken: tokenDoc._id,
+            $or: [
+              { status: 'snoozed', remindAt: { $gt: now } },
+              { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: cutoff } },
+            ],
+          }).select('_id').lean();
+          if (exists) {
+            console.log('[hb-retry] dedup -> already seen/notified, skip', String(offer._id));
+            return;
+          }
+
+          // 4) Push senden
+          const title = offer.name || 'Angebot in deiner Nähe';
+          const body  = 'Tippe, um Details zu sehen.';
+          const data  = {
+            type: 'offer',
+            offerId: String(offer._id),
+            route: `/offers/${offer._id}`,
+            source: 'heartbeat-retry',
+          };
+
+          const diagRetry = await sendPushAndCheckReceipts({
+            tokens: [tokenDoc.token],
+            title, body, data,
+            channelId: process.env.PUSH_CHANNEL_ID || 'offers',
+            priority: process.env.PUSH_PRIORITY || 'high',
+            sound: process.env.PUSH_SOUND || 'default',
+            delayMs: 1500,
+          });
+
+          const tickets = Array.isArray(diagRetry?.sent?.tickets) ? diagRetry.sent.tickets : [];
+          const ok = tickets.some(t => t?.status === 'ok');
+
+          if (ok) {
+            await OfferVisibility.updateOne(
+              { offerId: offer._id, deviceToken: tokenDoc._id },
+              {
+                $setOnInsert: { offerId: offer._id, deviceToken: tokenDoc._id, firstSeenAt: now },
+                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null },
+              },
+              { upsert: true }
+            );
+          }
+
+          // disable invalid tokens if any
+          if (Array.isArray(diagRetry?.disabledTokens) && diagRetry.disabledTokens.length > 0) {
+            await PushToken.updateMany({ token: { $in: diagRetry.disabledTokens } }, { $set: { disabled: true } });
+          }
+
+          const summary = diagRetry?.receipts?.summary || {};
+          console.log(
+            `[hb-retry] offer=${offer._id} token=${String(tokenDoc.token).slice(0,22)}… ok=${ok ? 1 : 0} receipts=${JSON.stringify(summary)}`
+          );
+        } catch (err) {
+          console.error('[hb-retry] error:', err?.message || err);
+        }
+      }, delayMs);
+    }
+  } catch (e) {
+    console.error('[hb-retry] schedule error:', e?.message || e);
+  }
+}
+
 /* ───────────────── Heartbeat + server-side geofence ───────────────── */
 router.post('/heartbeat', async (req, res) => {
   try {
@@ -254,6 +367,26 @@ router.post('/heartbeat', async (req, res) => {
               },
               { upsert: true }
             );
+          } else {
+            // Fresh-Token-Case? -> Retry schedulen, wenn DeviceNotRegistered
+            try {
+              const summary = diag?.receipts?.summary || {};
+              const dnr = summary?.errors?.DeviceNotRegistered ? Number(summary.errors.DeviceNotRegistered) : 0;
+              if (dnr > 0) {
+                console.log('[hb-retry] schedule DeviceNotRegistered', {
+                  offerId: String(x.offer._id),
+                  token: String(pushTokenDoc.token).slice(0,22) + '…',
+                  delays: FRESH_RETRY_DELAYS_MS
+                });
+                scheduleHeartbeatRetries({
+                  offer: x.offer,
+                  pushTokenId: pushTokenDoc._id,
+                  tokenString: pushTokenDoc.token
+                });
+              }
+            } catch (e) {
+              console.log('[hb-retry] scheduling failed (non-fatal):', e?.message || e);
+            }
           }
 
           const summary = diag?.receipts?.summary || {};
