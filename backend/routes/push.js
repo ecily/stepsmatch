@@ -149,6 +149,7 @@ router.post('/roundtrip', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
+      token: target.token,                // <─ optional: Token explizit mitgeben
       message: { title, body, data: payload },
     });
 
@@ -180,12 +181,62 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
+      token: target.token,                // <─ optional
       message: { title, body, data: payload },
     });
 
     res.json({ success: true, projectId: target.projectId || null, diag: resp, tokenSource: target.source });
   } catch (e) {
     console.error('[push] diagnose error', e);
+    res.status(500).json({ success: false, error: 'server-error' });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   NEW: Canary endpoint – prüft gültigen Token & invalidiert bei Fehler
+   ──────────────────────────────────────────────────────────── */
+router.post('/canary', async (_req, res) => {
+  try {
+    const latest = await getLatestActiveTokenPreferProject();
+    if (!latest?.token) {
+      return res.status(404).json({ success: false, error: 'no-valid-token' });
+    }
+
+    const title = 'StepsMatch Canary';
+    const body  = 'Automatischer Test-Push zur Token-Validierung.';
+    const payload = { route: '/canary', source: 'canary', t: Date.now() };
+
+    const resp = await sendToDevice({
+      deviceId: latest.deviceId ?? null,
+      token: latest.token,                // <─ wir adressieren exakt diesen Token
+      message: { title, body, data: payload },
+    });
+
+    // DeviceNotRegistered heuristisch erkennen
+    const hasDNR =
+      (resp?.receipts && resp.receipts.errors && Number(resp.receipts.errors.DeviceNotRegistered || 0) > 0) ||
+      (Array.isArray(resp?.tickets) && resp.tickets.some(t => (t?.status || '').toLowerCase() === 'error' && String(t?.details?.error || '').toLowerCase() === 'devicenotregistered'));
+
+    let autoInvalidated = false;
+    if (hasDNR) {
+      const upd = await PushToken.updateOne(
+        { token: latest.token },
+        { $set: { valid: false, lastError: 'DeviceNotRegistered', updatedAt: new Date() } }
+      );
+      autoInvalidated = upd.modifiedCount > 0;
+      console.warn('[push][canary] DeviceNotRegistered – token invalidated:', latest.token.slice(0, 22) + '…');
+    }
+
+    res.json({
+      success: true,
+      projectId: PROJECT_ID || latest.projectId || null,
+      token: latest.token,
+      deviceId: latest.deviceId ?? null,
+      result: resp,
+      autoInvalidated,
+    });
+  } catch (e) {
+    console.error('[push][canary] error', e);
     res.status(500).json({ success: false, error: 'server-error' });
   }
 });
