@@ -1,4 +1,4 @@
-// backend/routes/location.js
+// stepsmatch/backend/routes/location.js
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Expo } from 'expo-server-sdk';
@@ -421,12 +421,12 @@ router.post('/heartbeat', async (req, res) => {
   }
 });
 
-/* ───────────────── Geofence-Enter → Sofort-Push ─────────────────
+/* ───────────────── Geofence-Enter → Local-first Dedupe (kein Remote-Push) ─────────────────
    Body: { token?, deviceId?, offerId, lat?, lng?, accuracy?, projectId?, platform? }
    - akzeptiert token ODER deviceId (mind. eines erforderlich)
    - upsertet Token-Dokument (mit optionaler Location)
-   - sendet an den neuesten aktiven Token je deviceId/project (Fallback: rawToken)
-   - dedupliziert per OfferVisibility
+   - **sendet KEINEN Remote-Push**
+   - markiert OfferVisibility als 'notified' (damit Heartbeat/Fresh-Pipeline nicht doppelt pushen)
 */
 router.post('/geofence-enter', async (req, res) => {
   try {
@@ -479,11 +479,11 @@ router.post('/geofence-enter', async (req, res) => {
 
     const now = new Date();
     if (!isOfferActiveNow(offer, TZ, now)) {
-      console.log('[geofence] offer not active now, skip push', offerId);
-      return res.json({ ok: 1, pushed: 0, reason: 'offer_not_active' });
+      console.log('[geofence-enter] offer not active now, record only', offerId);
+      return res.json({ ok: 1, pushed: 0, recorded: 1, reason: 'offer_not_active' });
     }
 
-    // Ziel-Token bestimmen
+    // Ziel-Token bestimmen (jüngster aktiver Token je deviceId / Fallback: rawToken)
     let targetDoc = null;
     if (deviceId) {
       const q = { deviceId, disabled: { $ne: true } };
@@ -503,59 +503,14 @@ router.post('/geofence-enter', async (req, res) => {
           .lean());
     }
 
-    const sendToken = targetDoc?.token || (hasToken ? rawToken : null);
-    if (!sendToken) {
-      return res.status(404).json({ ok: 0, error: 'no_deliverable_token' });
-    }
-
-    // Interests (optional)
+    // Interests (optional) – wenn nicht passt, trotzdem "record", damit HB später nicht pusht
     if (targetDoc && !interestsMatch(offer, targetDoc)) {
-      return res.json({ ok: 1, pushed: 0, reason: 'interests_mismatch' });
+      // Wir markieren nicht als notified, um spätere gültige Fälle nicht zu blocken
+      return res.json({ ok: 1, pushed: 0, recorded: 0, reason: 'interests_mismatch' });
     }
 
-    // Sichtbarkeit / Duplikatschutz
+    // Sichtbarkeit / Duplikatschutz markieren (ohne Remote-Push)
     if (targetDoc?._id) {
-      const already = await OfferVisibility.findOne({
-        offerId: offer._id,
-        deviceToken: targetDoc._id,
-        $or: [
-          { status: 'notified' },
-          { status: 'dismissed' },
-          { status: 'snoozed', remindAt: { $gt: now } },
-        ],
-      }).lean();
-      if (already) {
-        return res.json({ ok: 1, pushed: 0, reason: 'visibility_blocked' });
-      }
-    }
-
-    const title = offer.name ?? 'Neues Angebot in deiner Nähe';
-    const body = 'Tippe, um Details zu sehen.';
-    const data = {
-      type: 'offer',
-      offerId: String(offer._id),
-      route: `/offers/${offer._id}`,
-      source: 'geofence',
-      t: now.getTime(),
-    };
-
-    const diag = await sendPushAndCheckReceipts({
-      tokens: [sendToken],
-      title,
-      body,
-      data,
-      channelId: process.env.PUSH_CHANNEL_ID || 'offers',
-      priority: process.env.PUSH_PRIORITY || 'high',
-      sound: process.env.PUSH_SOUND || 'default',
-      delayMs: 2500,
-    });
-
-    // Erfolg?
-    const tickets = Array.isArray(diag?.sent?.tickets) ? diag.sent.tickets : [];
-    const okFirst = tickets.find((t) => t?.status === 'ok') ? 1 : 0;
-
-    let pushed = okFirst;
-    if (okFirst && targetDoc?._id) {
       await OfferVisibility.updateOne(
         { offerId: offer._id, deviceToken: targetDoc._id },
         {
@@ -564,46 +519,20 @@ router.post('/geofence-enter', async (req, res) => {
         },
         { upsert: true }
       );
-    } else if (!okFirst && (diag?.retry?.succeeded || 0) > 0) {
-      pushed = 1;
-      const dev = targetDoc?.deviceId || deviceId || null;
-      if (dev) {
-        const q = { deviceId: dev, disabled: { $ne: true } };
-        if (projectFilter) q.projectId = projectFilter;
-        const newest = await PushToken.findOne(q).sort({ lastSeenAt: -1, updatedAt: -1 }).select('_id token').lean();
-        if (newest?._id) {
-          await OfferVisibility.updateOne(
-            { offerId: offer._id, deviceToken: newest._id },
-            {
-              $setOnInsert: { offerId: offer._id, deviceToken: newest._id, firstSeenAt: now },
-              $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null },
-            },
-            { upsert: true }
-          );
-        }
-      }
     }
 
-    // disable invalid tokens if any
-    if (Array.isArray(diag?.disabledTokens) && diag.disabledTokens.length > 0) {
-      await PushToken.updateMany({ token: { $in: diag.disabledTokens } }, { $set: { disabled: true } });
-    }
-
-    const summary = diag?.receipts?.summary || {};
     console.log(
-      `[geofence] offer=${offer._id} token=${String(sendToken).slice(0, 22)}… pushed=${pushed} receipts=${JSON.stringify(
-        summary
-      )}${diag?.retry && diag.retry.count > 0 ? ` retry=${JSON.stringify(diag.retry)}` : ''}`
+      `[geofence-enter] recorded offer=${offer._id} dev=${targetDoc?.deviceId || deviceId || ''} token=${String(targetDoc?.token || rawToken).slice(0,22)}…`
     );
 
     return res.json({
       ok: 1,
-      pushed,
-      receipts: summary,
-      retry: diag?.retry || { count: 0, succeeded: 0 },
+      pushed: 0,
+      recorded: targetDoc?._id ? 1 : 0,
+      reason: 'local_first_recorded'
     });
   } catch (e) {
-    console.error('[geofence] error', e?.message || e);
+    console.error('[geofence-enter] error', e?.message || e);
     return res.status(500).json({ ok: 0, error: 'server_error' });
   }
 });

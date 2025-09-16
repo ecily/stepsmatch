@@ -1,4 +1,4 @@
-// backend/utils/geoPush.js
+// stepsmatch/backend/utils/geoPush.js
 import mongoose from 'mongoose';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
@@ -39,6 +39,17 @@ const FRESH_RETRY_DELAYS_MS = (process.env.FRESH_RETRY_DELAYS_MS || '90000,30000
   .split(',')
   .map(s => Number(s.trim()))
   .filter(n => Number.isFinite(n) && n > 0);
+
+// Suppression/Cooldown (Default: 2h – synchron zu OfferVisibility)
+function envMs(name, def) {
+  const v = process.env[name];
+  if (v === undefined) return def;
+  const s = String(v).trim().toLowerCase();
+  if (['', '0', 'false', 'off', 'null', 'none'].includes(s)) return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : def;
+}
+const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
 
 /* ────────────────────────────────────────────────────────────
    Helpers
@@ -120,7 +131,12 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
             deviceToken: { $in: ids },
             $or: [
               { status: 'snoozed', remindAt: { $gt: new Date() } },
-              { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: new Date(offer?.updatedAt || offer?.createdAt || 0) } },
+              // ❗ dismissed blockt immer
+              { status: 'dismissed' },
+              // ❗ notified blockt, wenn seit letztem Update schon benachrichtigt
+              { status: 'notified', lastNotifiedAt: { $gte: new Date(offer?.updatedAt || offer?.createdAt || 0) } },
+              // ❗ suppressUntil blockt innerhalb des Fensters
+              { suppressUntil: { $gt: new Date() } },
             ],
           }).select('deviceToken').lean();
 
@@ -161,12 +177,20 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
           }
           if (okTokens.length) {
             const okDocs = await PushToken.find({ token: { $in: okTokens } }, { _id: 1, token: 1 }).lean();
+            const nowOk = new Date();
+            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowOk.getTime() + RENOTIFY_COOLDOWN_MS) : null;
             const bulk = okDocs.map((d) => ({
               updateOne: {
                 filter: { offerId: offer._id, deviceToken: d._id },
                 update: {
-                  $setOnInsert: { offerId: offer._id, deviceToken: d._id, firstSeenAt: new Date() },
-                  $set: { status: 'notified', remindAt: null, lastNotifiedAt: new Date(), updatedAt: new Date() },
+                  $setOnInsert: { offerId: offer._id, deviceToken: d._id, firstSeenAt: nowOk },
+                  $set: {
+                    status: 'notified',
+                    remindAt: null,
+                    lastNotifiedAt: nowOk,
+                    updatedAt: nowOk,
+                    ...(suppressUntil ? { suppressUntil } : { suppressUntil: null }),
+                  },
                 },
                 upsert: true,
               },
@@ -340,7 +364,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       };
     }
 
-    // 5) OfferVisibility-Dedupe
+    // 5) OfferVisibility-Dedupe (+ Suppression)
     const cutoff = OFFER_NOTIFY_RESET_ON_UPDATE
       ? new Date(offer?.updatedAt || offer?.createdAt || 0)
       : new Date(0);
@@ -349,11 +373,13 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       offerId: offer._id,
       deviceToken: { $in: matched.map((t) => t._id) },
       $or: [
-        { status: 'snoozed', remindAt: { $gt: now } }, // Snooze aktiv → block
-        { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: cutoff } }, // schon nach letztem Update benachrichtigt/weggewischt
+        { status: 'snoozed', remindAt: { $gt: now } },                   // Snooze aktiv → block
+        { status: 'dismissed' },                                         // Dismissed blockt immer
+        { status: 'notified', lastNotifiedAt: { $gte: cutoff } },        // Notified seit letztem Update
+        { suppressUntil: { $gt: now } },                                 // Suppression-Fenster aktiv
       ],
     })
-      .select('deviceToken status remindAt lastNotifiedAt')
+      .select('deviceToken status remindAt lastNotifiedAt suppressUntil')
       .lean();
 
     const already = new Set(vis.map((v) => String(v.deviceToken)));
@@ -429,11 +455,12 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       }
     }
 
-    // 8) OfferVisibility auf „notified“ setzen
+    // 8) OfferVisibility auf „notified“ setzen (+ Suppression)
     if (sentTokens.length) {
       const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
       const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
       const nowIso = new Date();
+      const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowIso.getTime() + RENOTIFY_COOLDOWN_MS) : null;
       const bulk = sentTokens
         .map((tok) => {
           const deviceTokenId = byToken.get(tok);
@@ -443,7 +470,13 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
               filter: { offerId: offer._id, deviceToken: deviceTokenId },
               update: {
                 $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
-                $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
+                $set: {
+                  status: 'notified',
+                  remindAt: null,
+                  lastNotifiedAt: nowIso,
+                  updatedAt: nowIso,
+                  ...(suppressUntil ? { suppressUntil } : { suppressUntil: null }),
+                },
               },
               upsert: true,
             },
@@ -478,8 +511,6 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     });
 
     // 🔁 Fresh-Token-Retry: wenn Expo „DeviceNotRegistered“ meldet
-    // Wir kennen nicht immer die exakten fehlerhaften Tokens → Retry auf Rest ist ok,
-    // denn OfferVisibility blockt Doppel-Pushs von bereits „ok“-markierten Tokens.
     try {
       const deviceNotRegistered =
         summary && summary.errors && typeof summary.errors.DeviceNotRegistered === 'number'

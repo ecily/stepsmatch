@@ -1,4 +1,4 @@
-// backend/models/OfferVisibility.js
+// stepsmatch/backend/models/OfferVisibility.js
 import mongoose from 'mongoose';
 
 const { Schema, model, Types } = mongoose;
@@ -57,6 +57,9 @@ const OfferVisibilitySchema = new Schema(
     firstSeenAt: { type: Date, default: Date.now, index: true },
     lastNotifiedAt: { type: Date, default: null, index: true },
     remindAt: { type: Date, default: null, index: true },
+
+    /** Optionale serverseitige Unterdrückung bis zu einem Zeitpunkt */
+    suppressUntil: { type: Date, default: null, index: true },
   },
   {
     timestamps: true,
@@ -85,11 +88,24 @@ OfferVisibilitySchema.statics.upsertSeen = async function upsertSeen(deviceToken
   ).exec();
 };
 
-OfferVisibilitySchema.statics.markNotified = async function markNotified(deviceTokenId, offerId, at = new Date()) {
+OfferVisibilitySchema.statics.markNotified = async function markNotified(
+  deviceTokenId,
+  offerId,
+  at = new Date(),
+  cooldownMs = RENOTIFY_COOLDOWN_MS
+) {
+  const suppressUntil =
+    Number.isFinite(cooldownMs) && cooldownMs > 0 ? new Date(at.getTime() + cooldownMs) : null;
+
   return this.findOneAndUpdate(
     { deviceToken: deviceTokenId, offerId },
     {
-      $set: { status: STATUS.NOTIFIED, lastNotifiedAt: at, remindAt: null },
+      $set: {
+        status: STATUS.NOTIFIED,
+        lastNotifiedAt: at,
+        remindAt: null,
+        ...(suppressUntil ? { suppressUntil } : { suppressUntil: null }),
+      },
       $setOnInsert: { firstSeenAt: at },
     },
     { new: true, upsert: true }
@@ -102,7 +118,7 @@ OfferVisibilitySchema.statics.snooze = async function snooze(deviceTokenId, offe
   return this.findOneAndUpdate(
     { deviceToken: deviceTokenId, offerId },
     {
-      $set: { status: STATUS.SNOOZED, remindAt },
+      $set: { status: STATUS.SNOOZED, remindAt, suppressUntil: null },
       $setOnInsert: { firstSeenAt: now },
     },
     { new: true, upsert: true }
@@ -114,8 +130,26 @@ OfferVisibilitySchema.statics.dismiss = async function dismiss(deviceTokenId, of
   return this.findOneAndUpdate(
     { deviceToken: deviceTokenId, offerId },
     {
-      $set: { status: STATUS.DISMISSED, remindAt: null },
+      $set: { status: STATUS.DISMISSED, remindAt: null, suppressUntil: null },
       $setOnInsert: { firstSeenAt: now },
+    },
+    { new: true, upsert: true }
+  ).exec();
+};
+
+/** Suppress-Helfer: setzt/verlängert die Unterdrückung bis now+ms */
+OfferVisibilitySchema.statics.setSuppressFor = async function setSuppressFor(
+  deviceTokenId,
+  offerId,
+  ms = RENOTIFY_COOLDOWN_MS
+) {
+  const now = new Date();
+  const until = Number.isFinite(ms) && ms > 0 ? new Date(now.getTime() + ms) : null;
+  return this.findOneAndUpdate(
+    { deviceToken: deviceTokenId, offerId },
+    {
+      $set: { suppressUntil: until },
+      $setOnInsert: { firstSeenAt: now, status: STATUS.SEEN },
     },
     { new: true, upsert: true }
   ).exec();
@@ -125,6 +159,7 @@ OfferVisibilitySchema.statics.dismiss = async function dismiss(deviceTokenId, of
  * shouldNotify:
  * - DISMISSED → nie
  * - SNOOZED  → erst ab remindAt
+ * - suppressUntil > now → nein
  * - SEEN     → ja
  * - NOTIFIED → nur wenn Cooldown seit lastNotifiedAt abgelaufen
  */
@@ -137,6 +172,7 @@ OfferVisibilitySchema.statics.shouldNotify = async function shouldNotify(
   if (!doc) return true;
   if (doc.status === STATUS.DISMISSED) return false;
   if (doc.status === STATUS.SNOOZED) return !!doc.remindAt && doc.remindAt <= now;
+  if (doc.suppressUntil && doc.suppressUntil > now) return false;
   if (doc.status === STATUS.SEEN) return true;
   // NOTIFIED
   if (!doc.lastNotifiedAt) return false;
