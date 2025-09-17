@@ -1,3 +1,4 @@
+// stepsmatch/mobile/app/(tabs)/_layout.js
 import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Text, View } from 'react-native';
@@ -119,12 +120,14 @@ export default function TabLayout() {
           if (route.name === 'index') icon = focused ? 'home' : 'home-outline';
           if (route.name === 'ProfileScreen') icon = focused ? 'person' : 'person-outline';
           if (route.name === 'diagnostics') icon = focused ? 'bug' : 'bug-outline';
+          if (route.name === 'NavigationMap') icon = focused ? 'navigate' : 'navigate-outline';
           return <Ionicons name={icon} size={size} color={color} />;
         },
       })}
     >
       {/* Sichtbare Tabs */}
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="NavigationMap" options={{ title: 'Navigation' }} />
       <Tabs.Screen name="ProfileScreen" options={{ title: 'Profil' }} />
       <Tabs.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
 
@@ -141,9 +144,9 @@ export default function TabLayout() {
       {/* Versteckte/ausgeblendete Screens */}
       <Tabs.Screen name="[id]" options={{ href: null }} />          {/* dynamischer Rest — ausblenden */}
       <Tabs.Screen name="OffersScreen" options={{ href: null }} />
-      <Tabs.Screen name="NavigationMap" options={{ href: null }} />
+      {/* NavigationScreen bleibt versteckt (falls vorhanden) */}
       <Tabs.Screen name="NavigationScreen" options={{ href: null }} />
-      {/* Wichtig: KEIN "Navigation" mehr definieren -> verhindert die frühere Warnung */}
+      {/* Wichtig: KEIN "navigation" Alias definieren */}
     </Tabs>
   );
 }
