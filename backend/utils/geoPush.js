@@ -14,7 +14,12 @@ const PROJECT_ID =
   process.env.PROJECT_ID ||
   null;
 
-const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
+// ⚠️ Wichtig: Standard-Kanal jetzt 'offers-v2' und Expo-kompatible ENV bevorzugen
+const PUSH_CHANNEL_ID =
+  process.env.EXPO_PUSH_CHANNEL_ID ||  // primär: neue ENV, z. B. EXPO_PUSH_CHANNEL_ID=offers-v2
+  process.env.PUSH_CHANNEL_ID ||       // fallback: alte ENV
+  'offers-v2';                         // letzte Instanz: harter Default passend zur App
+
 const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
 const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 
@@ -108,10 +113,6 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
     if (!Array.isArray(FRESH_RETRY_DELAYS_MS) || FRESH_RETRY_DELAYS_MS.length === 0) return;
     if (!tokens?.length) return;
 
-    // Wir merken uns das ursprüngliche Token-Set. Vor jedem Retry:
-    // 1) Offer noch aktiv?
-    // 2) OfferVisibility-Dedupe (keine Doppel-Pushs)
-    // 3) Push senden; Erfolgreiche werden markiert
     for (const delayMs of FRESH_RETRY_DELAYS_MS) {
       setTimeout(async () => {
         try {
@@ -121,7 +122,6 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
             return;
           }
 
-          // OfferVisibility-Dedupe: entferne bereits Benachrichtigte
           const sentDocs = await PushToken.find({ token: { $in: tokens } }, { _id: 1, token: 1 }).lean();
           const ids = sentDocs.map(d => d._id);
           if (!ids.length) return;
@@ -131,11 +131,8 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
             deviceToken: { $in: ids },
             $or: [
               { status: 'snoozed', remindAt: { $gt: new Date() } },
-              // ❗ dismissed blockt immer
               { status: 'dismissed' },
-              // ❗ notified blockt, wenn seit letztem Update schon benachrichtigt
               { status: 'notified', lastNotifiedAt: { $gte: new Date(offer?.updatedAt || offer?.createdAt || 0) } },
-              // ❗ suppressUntil blockt innerhalb des Fensters
               { suppressUntil: { $gt: new Date() } },
             ],
           }).select('deviceToken').lean();
@@ -168,7 +165,6 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
             delayMs: 1500,
           });
 
-          // Markiere erfolgreiche Tokens
           const tickets = Array.isArray(diagRetry?.sent?.tickets) ? diagRetry.sent.tickets : [];
           const idToToken = diagRetry?.sent?.idToToken || {};
           const okTokens = [];
@@ -198,7 +194,6 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
             if (bulk.length) await OfferVisibility.bulkWrite(bulk);
           }
 
-          // Disable kaputte Tokens
           if (Array.isArray(diagRetry?.disabledTokens) && diagRetry.disabledTokens.length > 0) {
             await PushToken.updateMany({ token: { $in: diagRetry.disabledTokens } }, { $set: { disabled: true } });
           }
@@ -224,7 +219,7 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
    ──────────────────────────────────────────────────────────── */
 export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() } = {}) {
   try {
-    // 0) Sanity: Geo & Radius & Zeitfenster
+    // 0) Sanity
     const coords = offer?.location?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) {
       logDiag(offer, 'early-exit', { reason: 'offer-has-no-geo' });
@@ -247,7 +242,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       return { ok: false, reason: 'offer-not-active' };
     }
 
-    // 1) Frische Tokens (Project-Scope + Freshness)
+    // 1) Frische Tokens
     const freshSince = new Date(now.getTime() - LAST_LOCATION_MAX_AGE_MS);
     const tokenQuery = {
       disabled: { $ne: true },
@@ -277,7 +272,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       return { ok: true, total: 0, tried: 0, sent: 0, skipped: 0, reason: 'no-fresh-tokens' };
     }
 
-    // 2) Vorselektion per $near mit großzügigem Suchpuffer
+    // 2) Vorselektion per $near
     const searchRadiusM = Math.max(1, baseRadiusM + SEARCH_BUFFER);
     const nearDocs = await PushToken.find({
       _id: { $in: freshTokens.map((t) => t._id) },
@@ -327,7 +322,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       };
     }
 
-    // 4) Nachfilter (exakte Haversine + per-Token Accuracy-Cap)
+    // 4) Haversine + Accuracy-Cap
     const diagDistances = GEOPUSH_DEBUG ? [] : null;
     matched = matched.filter((t) => {
       const [tlng, tlat] = (t?.lastLocation?.coordinates || []);
@@ -344,7 +339,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
 
     logDiag(offer, 'distance-filter', {
       after: matched.length,
-      samples: diagDistances || undefined, // bis zu 8 Stichproben
+      samples: diagDistances || undefined,
     });
 
     if (!matched.length) {
@@ -373,10 +368,10 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       offerId: offer._id,
       deviceToken: { $in: matched.map((t) => t._id) },
       $or: [
-        { status: 'snoozed', remindAt: { $gt: now } },                   // Snooze aktiv → block
-        { status: 'dismissed' },                                         // Dismissed blockt immer
-        { status: 'notified', lastNotifiedAt: { $gte: cutoff } },        // Notified seit letztem Update
-        { suppressUntil: { $gt: now } },                                 // Suppression-Fenster aktiv
+        { status: 'snoozed', remindAt: { $gt: now } },
+        { status: 'dismissed' },
+        { status: 'notified', lastNotifiedAt: { $gte: cutoff } },
+        { suppressUntil: { $gt: now } },
       ],
     })
       .select('deviceToken status remindAt lastNotifiedAt suppressUntil')
@@ -439,7 +434,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       title,
       body,
       data,
-      channelId: PUSH_CHANNEL_ID,
+      channelId: PUSH_CHANNEL_ID, // ← jetzt konsistent 'offers-v2' (oder ENV)
       priority: PUSH_PRIORITY,
       sound: PUSH_SOUND,
       delayMs: 2500,
@@ -510,7 +505,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       receipts: summary,
     });
 
-    // 🔁 Fresh-Token-Retry: wenn Expo „DeviceNotRegistered“ meldet
+    // 🔁 Fresh-Token-Retry (optional)
     try {
       const deviceNotRegistered =
         summary && summary.errors && typeof summary.errors.DeviceNotRegistered === 'number'
@@ -518,8 +513,8 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
           : 0;
 
       const tokensForRetry = sentTokens.length
-        ? tokens.filter(t => !sentTokens.includes(t)) // retry nur für Rest
-        : tokens.slice(); // wenn niemand ok war → alle erneut versuchen
+        ? tokens.filter(t => !sentTokens.includes(t))
+        : tokens.slice();
 
       if (deviceNotRegistered > 0 && tokensForRetry.length) {
         console.log('[geoPush.retry] scheduling for DeviceNotRegistered', {
