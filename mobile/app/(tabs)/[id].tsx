@@ -1,410 +1,468 @@
-// stepsmatch/mobile/app/offers/[id].tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  FlatList,
   ActivityIndicator,
-  ScrollView,
-  Image,
   TouchableOpacity,
-  SafeAreaView,
+  Dimensions,
+  Animated,
+  Easing,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import axios from 'axios';
-import { useTheme } from '../../theme/ThemeProvider';
-import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
-import { DistanceBadge } from '../../components/DistanceBadge';
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Map
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-// (kein Background/Push-Impact) – einmalige Positionsabfrage für die Karte:
 import * as Location from 'expo-location';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '@react-navigation/native';
 
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
-const api = axios.create({ baseURL: API_URL, timeout: 12000 });
+// ✅ relative Pfade angepasst (2 Ebenen hoch, nicht 3)
+import DistanceBadge from '../../components/DistanceBadge';
+import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
+import colors from '../../theme/colors';
 
-const OID24 = /^[0-9a-fA-F]{24}$/;
+const API_BASE_URL =
+  (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
+const SCREEN_W = Dimensions.get('window').width;
 
-function toNumber(val: any) {
-  if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    const n = parseFloat(val);
-    return isNaN(n) ? null : n;
+/* ───────── Geo / Utils ───────── */
+const toRad = (d: number) => (d * Math.PI) / 180;
+function haversineM(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
+  const R = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const s1 = Math.sin(dLat / 2);
+  const s2 = Math.sin(dLng / 2);
+  const aa = s1 * s1 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * s2 * s2;
+  return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+}
+function fmtDistance(m: number) { return m < 995 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
+function pickOfferLocation(offer: any) {
+  const coords = offer?.location?.coordinates || offer?.provider?.location?.coordinates || null;
+  if (Array.isArray(coords) && coords.length >= 2) {
+    const [lng, lat] = coords;
+    const latN = Number(lat), lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) return { latitude: latN, longitude: lngN };
   }
   return null;
 }
-
-function formatDistance(metersLike: any) {
-  const meters = toNumber(metersLike);
-  if (meters == null) return null;
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+function pickRadiusMeters(offer: any) {
+  const r1 = Number(offer?.radius);
+  if (Number.isFinite(r1) && r1 >= 0) return r1;
+  const r2 = Number(offer?.provider?.radius);
+  if (Number.isFinite(r2) && r2 >= 0) return r2;
+  return null;
 }
-
-function pickOfferLatLng(o: any) {
-  try {
-    if (o?.location?.coordinates && Array.isArray(o.location.coordinates) && o.location.coordinates.length === 2) {
-      const [lng, lat] = o.location.coordinates;
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
+function getRemainingMs(offer: any) {
+  const keys = ['activeUntil','activeEnd','validUntil','endAt','validTo','dateTo','activeWindowEnd','endTime'];
+  const vd = offer?.validDates;
+  if (vd && typeof vd === 'object') {
+    const toRaw = vd.to ?? vd.end ?? vd.toDate ?? vd.endDate;
+    if (toRaw) {
+      const d = new Date(toRaw);
+      if (!isNaN(d as any)) {
+        const diff = d.getTime() - Date.now();
+        if (diff > 0) return diff;
+      }
     }
-    if (o?.provider?.location?.coordinates && Array.isArray(o.provider.location.coordinates) && o.provider.location.coordinates.length === 2) {
-      const [lng, lat] = o.provider.location.coordinates;
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
+  }
+  for (const k of keys) {
+    const v = offer?.[k as any]; if (!v) continue;
+    const d = new Date(v);
+    if (!isNaN(d as any)) {
+      const diff = d.getTime() - Date.now();
+      if (diff > 0) return diff;
     }
-    const lat = toNumber(o?.lat ?? o?.latitude ?? o?.provider?.lat ?? o?.provider?.latitude);
-    const lng = toNumber(o?.lng ?? o?.lon ?? o?.longitude ?? o?.provider?.lng ?? o?.provider?.lon ?? o?.provider?.longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat: Number(lat), lng: Number(lng) };
-    return null;
-  } catch {
-    return null;
   }
+  return null;
+}
+function formatRemaining(diffMs: number | null) {
+  if (diffMs == null) return '—';
+  const totalMin = Math.ceil(diffMs / 60000);
+  if (totalMin <= 0) return '—';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `${m}\u00A0min`;
+  if (m === 0) return `${h}\u00A0h`;
+  return `${h}\u00A0h ${m}\u00A0min`;
+}
+function formatRelative(dateLike: any) {
+  if (!dateLike) return '—';
+  const ts = new Date(dateLike).getTime();
+  if (Number.isNaN(ts)) return '—';
+  const diff = Date.now() - ts;
+  if (diff < 0) return 'gerade eben';
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'gerade eben';
+  if (m < 60) return `vor ${m} Min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `vor ${h} h`;
+  const d = Math.floor(h / 24);
+  return `vor ${d} d`;
 }
 
-function pickRadiusMeters(o: any) {
-  const candidates = [
-    o?.radiusMeters, o?.radius_m, o?.radiusM, o?.radius, o?.range, o?.distanceRadius, o?.geoRadiusM,
-    o?.provider?.radiusMeters, o?.provider?.radius_m, o?.provider?.radiusM, o?.provider?.radius,
-  ].map(toNumber);
-  for (const v of candidates) {
-    if (v != null && Number.isFinite(v) && v > 0) return v;
-  }
-  return 150;
-}
-
-export default function OfferDetailsScreen() {
+/* ───────── Screen ───────── */
+export default function OfferDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { id: idParam, distance: distanceParam } = useLocalSearchParams();
+  const t: any = useTheme?.() || {};
+  const pal = (t && t.colors) ? t.colors : colors;
 
-  const id = useMemo(() => (typeof idParam === 'string' ? idParam.trim() : ''), [idParam]);
-  const validId = useMemo(() => OID24.test(id), [id]);
-
-  // Distanz ggf. aus Route-Param (von der Liste übergeben)
-  const distanceFromParam = useMemo(() => {
-    const n = toNumber(typeof distanceParam === 'string' ? distanceParam : undefined);
-    return n != null ? n : null;
-  }, [distanceParam]);
-
-  const [offer, setOffer] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const [error, setError] = useState<string | null>(null);
+  const [offer, setOffer] = useState<any>(null);
+  const [provider, setProvider] = useState<any>(null);
+  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
 
-  // Nutzer-Position (nur für die Karte; kein Eingriff in Push/Heartbeat)
-  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+  const userPosRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const mapRef = useRef<MapView | null>(null);
 
   useEffect(() => {
-    setOffer(null);
-    setErr(null);
-
-    if (!validId) {
-      setLoading(false);
-      setErr('Ungültige Angebots-ID.');
-      return;
-    }
-
-    const controller = new AbortController();
     (async () => {
       try {
-        setLoading(true);
-        const res = await api.get(`/offers/${id}`, { params: { withProvider: 1 }, signal: controller.signal });
-        const data = res?.data?.offer ?? res?.data ?? null;
-        if (!mountedRef.current) return;
-        setOffer(data);
-        setErr(null);
-      } catch (e: any) {
-        if (!mountedRef.current) return;
-        const msg = e?.message?.includes?.('timeout') ? 'Zeitüberschreitung – bitte erneut versuchen.' : 'Fehler beim Laden des Angebots.';
-        setErr(msg);
-        setOffer(null);
-      } finally {
-        if (mountedRef.current) setLoading(false);
-      }
-    })();
-
-    return () => controller.abort?.();
-  }, [id, validId]);
-
-  // Einmalig aktuelle Position laden (sanft, ohne Batterie-Impact)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // erst least-recently-known versuchen
-        const last = await Location.getLastKnownPositionAsync();
-        if (!cancelled && last?.coords) {
-          setUserPos({ lat: last.coords.latitude, lng: last.coords.longitude });
-          return;
-        }
-        // sonst sanfte Abfrage
-        const cur = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-          maximumAge: 30_000,
-          timeout: 7_000,
+        setError(null);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') throw new Error('Standortberechtigung verweigert');
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Platform.OS === 'android' ? Location.Accuracy.Balanced : Location.Accuracy.High,
         });
-        if (!cancelled && cur?.coords) {
-          setUserPos({ lat: cur.coords.latitude, lng: cur.coords.longitude });
+        userPosRef.current = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+
+        const res = await fetch(`${API_BASE_URL}/offers/${encodeURIComponent(id)}?withProvider=1`);
+        if (!res.ok) throw new Error(`GET /offers/:id failed ${res.status}`);
+        const obj = await res.json();
+        const off = obj?.offer || obj?.data || obj;
+        setOffer(off);
+
+        if (off?.provider && typeof off.provider === 'object') setProvider(off.provider);
+        else if (off?.provider) {
+          try {
+            const rp = await fetch(`${API_BASE_URL}/providers/${encodeURIComponent(off.provider)}`);
+            if (rp.ok) setProvider(await rp.json());
+          } catch {}
         }
-      } catch {
-        // still: Karte funktioniert auch nur mit Offer-Marker
+      } catch (e: any) {
+        setError(e?.message || 'Fehler beim Laden');
+      } finally {
+        setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, []);
+  }, [id]);
 
-  const isActive = useMemo(
-    () => (offer ? isOfferActiveNow(offer, 'Europe/Vienna', new Date()) : false),
-    [offer]
-  );
-  const geo = useMemo(() => (offer ? pickOfferLatLng(offer) : null), [offer]);
+  const loc = useMemo(() => (offer ? pickOfferLocation(offer) : null), [offer]);
   const radiusM = useMemo(() => (offer ? pickRadiusMeters(offer) : null), [offer]);
+  const distanceM = useMemo(() => {
+    if (!offer || !loc || !userPosRef.current) return null as number | null;
+    return haversineM(userPosRef.current, loc);
+  }, [offer, loc]);
+  const remainingMs = offer ? getRemainingMs(offer) : null;
+  const updatedAtRel = offer?.updatedAt ? formatRelative(offer.updatedAt) : null;
+  const activeNow = offer ? isOfferActiveNow(offer, 'Europe/Vienna') : false;
 
-  // Distanzanzeige: Param > Offer.distance
-  const distanceMeters = useMemo(() => {
-    if (distanceFromParam != null) return distanceFromParam;
-    const dFromOffer = toNumber((offer as any)?.distance);
-    return dFromOffer != null ? dFromOffer : null;
-  }, [distanceFromParam, offer]);
+  // WOW: sanfter Headline-Fade/Slide
+  const titleAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!loading) {
+      Animated.timing(titleAnim, { toValue: 1, duration: 380, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
+    }
+  }, [loading, titleAnim]);
 
-  // Region für Map
-  const mapRegion = useMemo(() => {
-    const target = geo || userPos;
-    if (!target) return null;
-    const latDelta = 0.01; // ~1.1km
-    const lngDelta = 0.01;
-    return {
-      latitude: target.lat,
-      longitude: target.lng,
-      latitudeDelta: latDelta,
-      longitudeDelta: lngDelta,
-    };
-  }, [geo, userPos]);
+  // Bilder
+  const images: string[] = useMemo(() => {
+    if (!offer) return [];
+    return Array.isArray(offer.images) ? offer.images.filter(Boolean) : [];
+  }, [offer]);
+  const heroRef = useRef<FlatList<string> | null>(null);
+  const heroHeight = 220;
+
+  const handleStartRoute = () => {
+    if (!offer) return;
+    router.push({ pathname: '/(tabs)/NavigationScreen', params: { id: offer._id } });
+  };
+  const handleBack = () => {
+    try {
+      if (router.canGoBack?.()) { router.back(); return; }
+    } catch {}
+    router.replace('/');
+  };
+
+  useEffect(() => {
+    if (!mapRef.current || !userPosRef.current || !loc) return;
+    try {
+      (mapRef.current as any).fitToCoordinates([userPosRef.current, loc], {
+        edgePadding: { top: 40, right: 40, bottom: 40, left: 40 },
+        animated: true,
+      });
+    } catch {}
+  }, [loc]);
+
+  if (loading) {
+    return (
+      <View style={[styles.safeLike, { backgroundColor: pal.background }]}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={pal.primary || colors.primary} />
+          <Text style={[styles.muted, { color: pal.inkLow || '#777' }]}>Lade…</Text>
+        </View>
+      </View>
+    );
+  }
+  if (error || !offer) {
+    return (
+      <View style={[styles.safeLike, { backgroundColor: pal.background }]}>
+        <View style={styles.center}>
+          <Text style={styles.error}>Fehler: {error || 'Unbekannt'}</Text>
+          <TouchableOpacity style={[styles.btn, { backgroundColor: pal.primary || colors.primary }]} onPress={handleBack}>
+            <Text style={styles.btnText}>Zurück</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
-        {/* HEADER + SCROLLABLE CONTENT */}
-        <ScrollView
-          contentContainerStyle={[
-            styles.scroll,
-            { paddingTop: 12 + insets.top, paddingBottom: 16 + insets.bottom },
+    <View style={[styles.safeLike, { backgroundColor: pal.background }]}>
+      {/* Badges oben (einheitlich) */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <View style={[styles.badgesRow, { marginBottom: 8 }]}>
+          <Text style={[styles.badgeUniform, activeNow ? styles.badgeOk : styles.badgeWarn]}>
+            <Text style={styles.badgeText}>{activeNow ? 'Jetzt gültig' : 'Nicht aktiv'}</Text>
+          </Text>
+          <Text style={[styles.badgeUniform, styles.badgeOrange]}>
+            <Text style={styles.badgeText}>Rest: {formatRemaining(remainingMs)}</Text>
+          </Text>
+          {!!offer?.category && (
+            <Text style={[styles.badgeUniform, styles.badgeNeutral]}>
+              <Text style={styles.badgeText}>{offer.category}</Text>
+            </Text>
+          )}
+          {!!offer?.subcategory && (
+            <Text style={[styles.badgeUniform, styles.badgeNeutral]}>
+              <Text style={styles.badgeText}>{offer.subcategory}</Text>
+            </Text>
+          )}
+          {Number.isFinite(distanceM as number) && (
+            <View style={[styles.badgeUniform, styles.badgeBlue, { paddingVertical: 0, paddingHorizontal: 0 }]}>
+              <DistanceBadge distanceM={distanceM as number} compact />
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Titel + Description */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+        <Animated.Text
+          style={[
+            styles.titleXL,
+            {
+              color: pal.ink || '#1f2937',
+              opacity: titleAnim,
+              transform: [{ translateY: titleAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+            },
           ]}
+          numberOfLines={2}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
-              <Text style={[styles.backText, { color: t.colors.primary }]}>Zurück</Text>
-            </TouchableOpacity>
+          {offer.name}
+        </Animated.Text>
+        {!!offer.description && (
+          <Text style={[styles.cardBody, { color: pal.inkMid || '#4b5563', marginTop: 6 }]}>
+            {offer.description}
+          </Text>
+        )}
+        {!!offer.updatedAt && <Text style={[styles.metaSmall, { color: pal.inkLow || '#6b7280' }]}>Letztes Update: {formatRelative(offer.updatedAt)}</Text>}
+      </View>
 
-            <View style={styles.titleRow}>
-              <Text style={[styles.title, { color: t.colors.inkHigh }]} numberOfLines={2}>
-                {offer?.name ?? 'Angebot'}
-              </Text>
-              {distanceMeters != null ? (
-                <DistanceBadge meters={distanceMeters} />
-              ) : null}
-            </View>
-
-            <View style={styles.badges}>
-              {isActive && <Badge label="Jetzt gültig" tone="success" style={styles.badge} />}
-              {!!offer?.category && (
-                <Badge
-                  label={offer?.subcategory ? `${offer.category} · ${offer.subcategory}` : offer.category}
-                  tone="neutral"
-                  style={styles.badge}
+      {/* Bilder – wischbar nebeneinander */}
+      <View style={[styles.card, styles.heroCard, { height: heroHeight, backgroundColor: pal.card || '#fff' }]}>
+        {images.length ? (
+          <FlatList
+            ref={heroRef as any}
+            data={images}
+            horizontal
+            pagingEnabled
+            scrollEventThrottle={16}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(uri, i) => `${offer._id}-img-${i}`}
+            renderItem={({ item: uri }) => {
+              const fade = new Animated.Value(0);
+              const onLoad = () => Animated.timing(fade, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+              return (
+                <Animated.Image
+                  source={{ uri }}
+                  style={{ width: SCREEN_W - 24, height: heroHeight - 24, borderRadius: 12, opacity: fade }}
+                  onLoad={onLoad}
+                  resizeMode="cover"
                 />
-              )}
-            </View>
+              );
+            }}
+            style={{ height: heroHeight - 24 }}
+            contentContainerStyle={{ alignItems: 'center' }}
+            getItemLayout={(_, index) => ({ length: SCREEN_W - 24, offset: (SCREEN_W - 24) * index, index })}
+          />
+        ) : (
+          <View style={[styles.heroPlaceholder, { flex: 1, borderRadius: 12 }]}>
+            <Text style={styles.heroPlaceholderText}>Keine Bilder</Text>
           </View>
-
-          {/* Loading / Error */}
-          {loading && (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" color={t.colors.primary} />
-              <Text style={{ color: t.colors.inkLow, marginTop: 12 }}>Lade Angebot …</Text>
-            </View>
-          )}
-
-          {!loading && err && (
-            <View style={styles.center}>
-              <Text style={[styles.err, { color: t.colors.danger }]}>{err}</Text>
-              <View style={{ marginTop: 16, width: 200 }}>
-                <Button
-                  title="Nochmal versuchen"
-                  variant="primary"
-                  size="md"
-                  onPress={() => router.replace(`/offers/${id}`)}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Content */}
-          {!loading && !err && offer && (
-            <>
-              {/* Bilder */}
-              <View style={styles.imagesRow}>
-                {(offer.images || []).slice(0, 3).map((src: string | null, i: number) =>
-                  !!src ? <Image key={i} source={{ uri: src }} style={styles.img} /> : <View key={i} style={styles.imgPlaceholder} />
-                )}
-              </View>
-
-              {/* Anbieter / Adresse */}
-              {(offer?.provider?.name || offer?.provider?.address) && (
-                <View style={styles.infoBox}>
-                  <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Anbieter</Text>
-                  {!!offer?.provider?.name && (
-                    <Text style={[styles.infoText, { color: t.colors.ink }]}>{offer.provider.name}</Text>
-                  )}
-                  {!!offer?.provider?.address && (
-                    <Text style={[styles.infoText, { color: t.colors.inkLow }]}>{offer.provider.address}</Text>
-                  )}
-                </View>
-              )}
-
-              {/* Beschreibung */}
-              {!!offer.description && (
-                <Text style={[styles.desc, { color: t.colors.ink }]}>{offer.description}</Text>
-              )}
-
-              {/* Geo / Distanz / Radius (statisch angezeigt) */}
-              {geo && (
-                <View style={styles.infoBox}>
-                  <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Ort</Text>
-                  <Text style={[styles.infoText, { color: t.colors.ink }]}>
-                    Lat {geo.lat.toFixed(5)} · Lng {geo.lng.toFixed(5)}{radiusM ? ` · Radius ${radiusM} m` : ''}
-                  </Text>
-                  {distanceMeters != null && (
-                    <Text style={[styles.infoText, { color: t.colors.inkLow }]}>
-                      Entfernung: {formatDistance(distanceMeters)}
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {/* 🗺️ Map-Card: aktueller Standort + Offer-Marker */}
-              {(mapRegion && (geo || userPos)) && (
-                <View style={styles.mapCard}>
-                  <Text style={[styles.infoTitle, { color: t.colors.inkHigh, marginBottom: 8 }]}>Karte</Text>
-                  <View style={styles.mapWrap}>
-                    <MapView
-                      provider={PROVIDER_GOOGLE}
-                      style={StyleSheet.absoluteFill}
-                      initialRegion={mapRegion}
-                      showsUserLocation={!!userPos} // native blue dot optional
-                      toolbarEnabled={false}
-                      pitchEnabled={false}
-                      rotateEnabled={false}
-                      loadingEnabled
-                    />
-                    {/* Offer Marker */}
-                    {geo && (
-                      <Marker
-                        coordinate={{ latitude: geo.lat, longitude: geo.lng }}
-                        title={offer?.name || 'Ziel'}
-                        description="Angebot"
-                      />
-                    )}
-                    {/* User Marker (optional, wenn vorhanden) */}
-                    {userPos && (
-                      <Marker
-                        coordinate={{ latitude: userPos.lat, longitude: userPos.lng }}
-                        title="Du"
-                        description="Aktuelle Position"
-                        pinColor="#0d4ea6"
-                      />
-                    )}
-                  </View>
-                  <Text style={[styles.mapHint, { color: t.colors.inkLow }]}>
-                    Hinweis: Position nur zur Orientierung; Navigation starten über „Route starten“.
-                  </Text>
-                </View>
-              )}
-
-              {/* Extra Bottom Padding, damit der Sticky-CTA nicht überlappt */}
-              <View style={{ height: Math.max(88, 56 + insets.bottom) }} />
-            </>
-          )}
-        </ScrollView>
-
-        {/* STICKY CTA-FOOTER (Safe-Area unten) */}
-        {!loading && !err && offer && (
-          <SafeAreaView style={{ backgroundColor: t.colors.background }}>
-            <View style={[styles.footer, { borderTopColor: t.colors.divider, paddingBottom: 12 + insets.bottom }]}>
-              <View style={{ flex: 1 }}>
-                <Button
-                  title="Route starten"
-                  variant="primary"
-                  size="lg"
-                  onPress={() => {
-                    // WICHTIG: ID bleibt erhalten; keine Änderung an Push/Geo-Logik.
-                    router.push({ pathname: '/(tabs)/NavigationScreen', params: { id } });
-                  }}
-                />
-              </View>
-              <View style={{ width: 12 }} />
-              <View style={{ flex: 1 }}>
-                <Button title="Merken" variant="secondary" size="lg" onPress={() => {}} />
-              </View>
-            </View>
-          </SafeAreaView>
         )}
       </View>
-    </SafeAreaView>
+
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Provider statt Lat/Lng */}
+        <View style={[styles.infoCard, { backgroundColor: pal.card || '#fff' }]}>
+          <Text style={[styles.cardTitleBig, { color: pal.ink || '#1f2937' }]}>
+            {provider?.name || offer?.provider?.name || 'Anbieter'}
+          </Text>
+          {!!(provider?.address || offer?.provider?.address) && (
+            <Text style={[styles.cardBody, { color: pal.inkMid || '#4b5563' }]}>
+              {provider?.address || offer?.provider?.address}
+            </Text>
+          )}
+        </View>
+
+        {/* Karte ohne Lat/Lng-Textbox */}
+        <View style={[styles.card, { padding: 12, backgroundColor: pal.card || '#fff' }]}>
+          <View style={{ height: 220, borderRadius: 12, overflow: 'hidden' }}>
+            <MapView
+              ref={mapRef as any}
+              style={{ flex: 1 }}
+              provider={PROVIDER_GOOGLE}
+              mapType={mapType}
+              initialRegion={{
+                latitude: (pickOfferLocation(offer)?.latitude ?? userPosRef.current?.latitude ?? 47.0707),
+                longitude: (pickOfferLocation(offer)?.longitude ?? userPosRef.current?.longitude ?? 15.4395),
+                latitudeDelta: 0.02,
+                longitudeDelta: 0.02,
+              }}
+              accessibilityRole="image"
+              accessibilityLabel="Karte mit Ziel und aktuellem Standort"
+            >
+              {userPosRef.current && <Marker coordinate={userPosRef.current} title="Du" />}
+              {pickOfferLocation(offer) && (
+                <Marker
+                  coordinate={pickOfferLocation(offer) as any}
+                  title={offer?.name || 'Ziel'}
+                  pinColor={pal.primary || colors.primary}
+                />
+              )}
+            </MapView>
+            <View style={[styles.mapToggle, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
+              <TouchableOpacity
+                onPress={() => setMapType('standard')}
+                style={[styles.toggleBtn, mapType === 'standard' && { backgroundColor: pal.primary || colors.primary }]}
+              >
+                <Text style={[styles.toggleText, mapType === 'standard' && { color: '#fff' }]}>Map</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setMapType('satellite')}
+                style={[styles.toggleBtn, mapType === 'satellite' && { backgroundColor: pal.primary || colors.primary }]}
+              >
+                <Text style={[styles.toggleText, mapType === 'satellite' && { color: '#fff' }]}>Sat</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* CTA-Bar mit „Zurück“ */}
+      <SafeAreaView
+        edges={['bottom']}
+        style={[
+          styles.ctaBar,
+          { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: (pal.card || '#ffffff') + 'F2', borderTopColor: pal.separator || '#e5e7eb' },
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.ctaBtn, { backgroundColor: pal.primary || colors.primary }]}
+          onPress={handleStartRoute}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.ctaPrimaryText}>Route starten</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ctaBtn, styles.ctaGhost]}
+          onPress={handleBack}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.ctaGhostText}>Zurück</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    </View>
   );
 }
 
-const IMG_W = 110;
-const IMG_H = 86;
-
+/* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  // Safe-Area-freundlich: oben/unten über Insets
-  scroll: { paddingHorizontal: 16 },
-  header: { marginBottom: 12 },
-  backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
-  backText: { fontSize: 14, fontWeight: '700' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { flex: 1, fontSize: 22, fontWeight: '800', lineHeight: 26 },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-  badge: { marginRight: 6, marginBottom: 6 },
+  safeLike: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  muted: { marginTop: 8 },
+  error: { color: '#B00020', marginBottom: 12, textAlign: 'center' },
+  btn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  btnText: { color: '#fff', fontWeight: '700' },
 
-  center: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
-  err: { fontSize: 14, textAlign: 'center' },
+  titleXL: { fontSize: 20, fontWeight: '800', lineHeight: 24 },
+  metaSmall: { fontSize: 12, marginTop: 8, marginBottom: 8 },
+  cardBody: { fontSize: 14, lineHeight: 20 },
 
-  imagesRow: { flexDirection: 'row', marginTop: 12, marginBottom: 8 },
-  img: { width: IMG_W, height: IMG_H, borderRadius: 10, backgroundColor: '#eee', marginRight: 8 },
-  imgPlaceholder: { width: IMG_W, height: IMG_H, borderRadius: 10, backgroundColor: '#e9eef5', marginRight: 8 },
-
-  desc: { marginTop: 8, fontSize: 15, lineHeight: 21 },
-
-  infoBox: { marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: '#f7f8fb' },
-  infoTitle: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
-  infoText: { fontSize: 14 },
-
-  mapCard: { marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: '#f7f8fb' },
-  mapWrap: {
-    height: 180,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#e9eef5',
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
   },
-  mapHint: { marginTop: 8, fontSize: 12 },
+  heroCard: { marginTop: 8, marginBottom: 8, padding: 12 },
+  heroPlaceholder: { width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' },
+  heroPlaceholderText: { color: '#6b7280', fontWeight: '600' },
 
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 10,
+  mapToggle: {
+    position: 'absolute', top: 10, right: 10, flexDirection: 'row',
+    borderRadius: 999, overflow: 'hidden',
+  },
+  toggleBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  toggleText: { fontSize: 12, fontWeight: '700' },
+
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  badgeUniform: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
+    minHeight: 28, borderWidth: 1, marginRight: 8, marginBottom: 8,
+  },
+  badgeNeutral: { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' },
+  badgeBlue: { backgroundColor: '#e5f0ff', borderColor: '#bfdbfe' },
+  badgeOrange: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' },
+  badgeWarn: { backgroundColor: 'rgba(255,149,0,0.18)', borderColor: 'rgba(255,149,0,0.45)' },
+  badgeOk: { backgroundColor: 'rgba(46,213,115,0.22)', borderColor: 'rgba(46,213,115,0.45)' },
+  badgeText: { fontSize: 12, fontWeight: '700', color: '#0f172a' },
+
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
+  },
+  cardTitleBig: { fontSize: 18, fontWeight: '900', color: '#1f2937', marginBottom: 6, lineHeight: 22 },
+
+  ctaBar: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    paddingHorizontal: 16, paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row', gap: 10,
   },
+  ctaBtn: { flex: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 48 },
+  ctaPrimaryText: { color: '#fff', fontWeight: '700' },
+  ctaGhost: { backgroundColor: '#eef2ff' },
+  ctaGhostText: { color: '#111827', fontWeight: '700' },
 });

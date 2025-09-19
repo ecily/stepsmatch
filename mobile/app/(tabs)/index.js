@@ -1,3 +1,11 @@
+// stepsmatch/mobile/app/(tabs)/index.js
+// Änderungen in diesem Schritt:
+// - SafeArea (oben) via react-native-safe-area-context (edges=['top','left','right'])
+// - Einheitliche Badge-Größe (inkl. DistanceBadge) via styles.badgeUniform
+// - WOW-Effekt: sanfter Fade-In fürs Hero-Bild, subtiler Scale/Lift der Card bei Press
+// - „Aktualisiert“ → relative Anzeige („vor 2 Min“) statt technische Uhrzeit
+// - Keine neuen Libraries außerhalb von Expo/Bestand, Push-/Fetch-Logik unverändert
+
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { sendHeartbeat } from '../../components/PushInitializer';
 import {
@@ -5,7 +13,7 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  TouchableOpacity,
+  TouchableWithoutFeedback,
   ActivityIndicator,
   Image,
   ScrollView,
@@ -15,8 +23,8 @@ import {
   Easing,
   Platform,
   InteractionManager,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // <- useSafeAreaInsets entfernt
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -82,11 +90,6 @@ function formatDistance(metersLike) {
   return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
 }
 
-function isNear(metersLike) {
-  const m = toNumber(metersLike);
-  return m != null && m <= 500;
-}
-
 /* ─────────── Geo-Helpers (robust) ─────────── */
 function pickOfferLatLng(o) {
   try {
@@ -109,17 +112,8 @@ function pickOfferLatLng(o) {
 
 function pickRadiusMeters(o) {
   const candidates = [
-    o?.radiusMeters,
-    o?.radius_m,
-    o?.radiusM,
-    o?.radius,
-    o?.range,
-    o?.distanceRadius,
-    o?.geoRadiusM,
-    o?.provider?.radiusMeters,
-    o?.provider?.radius_m,
-    o?.provider?.radiusM,
-    o?.provider?.radius,
+    o?.radiusMeters, o?.radius_m, o?.radiusM, o?.radius, o?.range, o?.distanceRadius, o?.geoRadiusM,
+    o?.provider?.radiusMeters, o?.provider?.radius_m, o?.provider?.radiusM, o?.provider?.radius,
   ].map(toNumber);
   for (const v of candidates) {
     if (Number.isFinite(v) && v > 0) return v;
@@ -221,15 +215,34 @@ function getRemainingMs(item, now = new Date()) {
   return null;
 }
 
-function formatRemaining(diffMs) {
-  if (diffMs == null) return 'Rest: —';
+/* Nutzerfreundlichere Restzeit (Tage/Std) */
+function formatRemainingFriendly(diffMs) {
+  if (diffMs == null) return null;
   const totalMin = Math.ceil(diffMs / 60000);
-  if (totalMin <= 0) return 'Rest: —';
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h <= 0) return `Rest: ${m}\u00A0min`;
-  if (m === 0) return `Rest: ${h}\u00A0h`;
-  return `Rest: ${h}\u00A0h ${m}\u00A0min`;
+  if (totalMin <= 0) return null;
+  const totalH = Math.ceil(totalMin / 60);
+  if (totalH >= 24) {
+    const d = Math.floor(totalH / 24);
+    const h = totalH % 24;
+    if (d >= 14) return `noch ${Math.round(d / 7)} Wochen`;
+    if (h === 0) return `noch ${d} Tage`;
+    return `noch ${d} Tage ${h} h`;
+  }
+  if (totalH >= 2) return `noch ${totalH} h`;
+  return `noch ${totalMin} min`;
+}
+
+/* Relative Zeit (UI) */
+function formatRelative(ts, now = Date.now()) {
+  if (!ts) return '';
+  const diff = Math.max(0, now - ts.getTime());
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'gerade eben';
+  if (m < 60) return `vor ${m} Min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `vor ${h} Std`;
+  const d = Math.floor(h / 24);
+  return `vor ${d} Tag${d > 1 ? 'en' : ''}`;
 }
 
 /* ───────────── Screen ───────────── */
@@ -241,7 +254,7 @@ export default function HomeTab() {
   // Data
   const [offers, setOffers] = useState([]);
   const [grouped, setGrouped] = useState({});
-  // Paging  (FIX: entfernte, versehentliche Zeile `the`)
+  // Paging
   const [page, setPage] = useState(1);
   const [limit] = useState(200);
   const [hasMore, setHasMore] = useState(false);
@@ -256,13 +269,6 @@ export default function HomeTab() {
   // Location
   const [userLoc, setUserLoc] = useState(null);
 
-  // Dev-Banner
-  const [devMsg, setDevMsg] = useState(null);
-  const showDev = useCallback((msg) => {
-    setDevMsg(String(msg || ''));
-    setTimeout(() => setDevMsg(null), 3500);
-  }, []);
-
   // Refs
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
@@ -274,43 +280,16 @@ export default function HomeTab() {
 
   const fetchFnRef = useRef(null);
 
-  const navigateFromNotifData = useCallback((originLabel, data) => {
-    try {
-      const d = data || {};
-      const offerId = d.offerId || d?.offer?.id || d?.id;
-      const link = d.link || d.url;
-
-      if (offerId) {
-        console.log('[NotifNav]', originLabel, '→ /offers/', offerId);
-        InteractionManager.runAfterInteractions(() => {
-          router.push({ pathname: '/(tabs)/offers/[id]', params: { id: String(offerId) } });
-        });
-        return true;
-      }
-      if (typeof link === 'string' && link.length > 0) {
-        console.log('[NotifNav]', originLabel, '→', link);
-        InteractionManager.runAfterInteractions(() => router.push(link));
-        return true;
-      }
-
-      console.log('[NotifNav] Kein offerId/link im Payload:', d);
-      return false;
-    } catch (e) {
-      console.warn('[NotifNav] Fehler beim Navigieren:', e);
-      return false;
-    }
-  }, [router]);
-
   /* Initial HB */
   useEffect(() => {
     (async () => {
       try {
         await sendHeartbeat();
       } catch (e) {
-        if (__DEV__) showDev('Heartbeat nicht gesendet.');
+        /* noop */
       }
     })();
-  }, [showDev]);
+  }, []);
 
   /* Push-FG-Refresh */
   useEffect(() => {
@@ -318,18 +297,16 @@ export default function HomeTab() {
       try {
         const data = n?.request?.content?.data || {};
         if (data?.type === 'offer') {
-          if (__DEV__) showDev('Neues Angebot – Liste aktualisieren …');
           fetchFnRef.current?.({ pageToLoad: 1, mode: 'push' });
         }
       } catch {}
     });
     return () => { try { sub?.remove?.(); } catch {} };
-  }, [showDev]);
+  }, []);
 
   /* Gesehen-IDs */
   const SEEN_IDS_KEY = 'seenOfferIds_v1';
   const BASELINE_ON_FIRST_LOAD = false;
-  const MAX_POSTS_PER_RELOAD = 1;
 
   const seenIdsRef = useRef(new Set());
   const baselineAppliedRef = useRef(BASELINE_ON_FIRST_LOAD);
@@ -570,14 +547,13 @@ export default function HomeTab() {
 
   if (!hasLoadedOnce && initialLoading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
-        <View style={[styles.container, { backgroundColor: t.colors.background }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
+        <View style={[styles.container, { backgroundColor: t.colors.surface }]}>
           <ScrollView contentContainerStyle={styles.categoryContainer}>
             <SkeletonSection titleWidth={140} />
             <SkeletonSection titleWidth={120} />
             <SkeletonSection titleWidth={160} />
           </ScrollView>
-          {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
         </View>
       </SafeAreaView>
     );
@@ -585,8 +561,8 @@ export default function HomeTab() {
 
   if (err && !hasLoadedOnce) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
-        <View style={[styles.containerCenter, { backgroundColor: t.colors.background }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
+        <View style={[styles.containerCenter, { backgroundColor: t.colors.surface }]}>
           <Text style={[styles.error, { color: t.colors.danger }]}>{err}</Text>
           <View style={{ marginTop: 16, width: 220, alignItems: 'center' }}>
             <Button
@@ -596,22 +572,21 @@ export default function HomeTab() {
               onPress={() => fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' })}
             />
           </View>
-          {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <View style={[styles.container, { backgroundColor: t.colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
+      <View style={[styles.container, { backgroundColor: t.colors.surface }]}>
         <ScrollView
-          contentContainerStyle={styles.categoryContainer}
+          contentContainerStyle={styles.categoryContainer}  // <- kein insets.top mehr
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {lastUpdated && (
             <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
-              Aktualisiert: {lastUpdated.toLocaleTimeString()}
+              Letztes Update: {formatRelative(lastUpdated)}
             </Text>
           )}
 
@@ -659,7 +634,7 @@ export default function HomeTab() {
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
-                  style={{ marginBottom: 26 }}
+                  style={{ marginBottom: 24 }}
                 />
               </View>
             ))
@@ -682,139 +657,147 @@ export default function HomeTab() {
             </View>
           )}
         </ScrollView>
-
-        {__DEV__ && devMsg ? <DevBanner msg={devMsg} onClose={() => setDevMsg(null)} theme={t} /> : null}
       </View>
     </SafeAreaView>
   );
 }
 
-/* ───────────── Card ───────────── */
+/* ───────────── Card (Badges ÜBER dem Hero, WOW: Fade-In & Press-Scale) ───────────── */
 
 function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
   const t = theme || useTheme();
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(6)).current;
+
+  // Enter animation
+  const enterOpacity = useRef(new Animated.Value(0)).current;
+  const enterTranslateY = useRef(new Animated.Value(6)).current;
+
+  // Press scale
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  // Hero fade-in
+  const heroOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const delay = Math.min(index * 50, 250);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 200, delay, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 200, delay, useNativeDriver: true }),
+      Animated.timing(enterOpacity, { toValue: 1, duration: 220, delay, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(enterTranslateY, { toValue: 0, duration: 220, delay, useNativeDriver: true }),
     ]).start();
-  }, [index, opacity, translateY]);
+  }, [index, enterOpacity, enterTranslateY]);
 
+  const onPressIn = () => {
+    Animated.spring(pressScale, { toValue: 0.98, useNativeDriver: true, friction: 6, tension: 120 }).start();
+  };
+  const onPressOut = () => {
+    Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, friction: 6, tension: 120 }).start();
+  };
+
+  // Distanz berechnen
   let distanceMeters = toNumber(item.distance);
   if (distanceMeters == null && userLoc && item?.location?.coordinates?.length === 2) {
     const [lng, lat] = item.location.coordinates;
     distanceMeters = haversineMeters(userLoc.lat, userLoc.lng, lat, lng);
   }
-  const distanceText = formatDistance(distanceMeters);
-  const near = isNear(distanceMeters);
 
+  // Zeit-Infos
   const isActiveNowFlag = isOfferActiveNow(item, 'Europe/Vienna', new Date());
-
   const remainingMs = getRemainingMs(item);
-  const remainingLabel = formatRemaining(remainingMs);
-  const hurry = remainingMs != null && remainingMs <= 60 * 60 * 1000;
+  const remainingNice = formatRemainingFriendly(remainingMs);
 
-  const imgs = (item.images || []).slice(0, 3);
-  while (imgs.length < 3) imgs.push(null);
+  // Bild (Hero)
+  const hero = Array.isArray(item.images) && item.images.length > 0 ? item.images[0] : null;
+
+  // Description
+  const desc = typeof item.description === 'string' ? item.description : '';
 
   return (
     <Animated.View
       style={[
         styles.card,
         {
-          opacity,
-          transform: [{ translateY }],
-          overflow: 'hidden',
+          opacity: enterOpacity,
+          transform: [{ translateY: enterTranslateY }, { scale: pressScale }],
           backgroundColor: t.colors.card,
           shadowOpacity: t.mode === 'dark' ? 0.25 : 0.08,
         },
       ]}
     >
-      <TouchableOpacity style={{ flex: 1 }} onPress={onPress} activeOpacity={0.9}>
-        <View style={styles.badgeRow}>
-          {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={{ marginRight: 6, marginBottom: 6 }} />}
-          <Badge label={remainingLabel} tone="warning" style={{ marginRight: 6, marginBottom: 6 }} />
+      <TouchableWithoutFeedback
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        onPress={onPress}
+      >
+        <View style={styles.cardInner}>
+          {/* BADGE-ROW (oben, außerhalb des Bildes) */}
+          <View style={styles.badgeRowTop}>
+            {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={[styles.badgeSpacing, styles.badgeUniform]} />}
+            {remainingNice && <Badge label={remainingNice} tone="warning" style={[styles.badgeSpacing, styles.badgeUniform]} />}
+            {/* DistanceBadge an Badgehöhe angleichen */}
+            <DistanceBadge meters={distanceMeters} style={[styles.badgeSpacing, styles.badgeUniform]} />
+          </View>
 
-          <DistanceBadge meters={distanceMeters} style={{ marginRight: 6, marginBottom: 6 }} />
-
-          {near && <Badge label="In der Nähe" tone="success" style={{ marginRight: 6, marginBottom: 6 }} />}
-          {!!item.category && (
-            <Badge
-              label={item.subcategory ? `${item.category} · ${item.subcategory}` : item.category}
-              tone="neutral"
-              style={{ marginRight: 6, marginBottom: 6 }}
-            />
-          )}
-        </View>
-
-        {hurry && (
-          <Text style={[styles.hurryText, { color: t.colors.warning }]}>
-            Beeilung! Läuft bald aus!
-          </Text>
-        )}
-
-        <Text style={[styles.title, { color: t.colors.primary }]} numberOfLines={2}>
-          {item.name}
-        </Text>
-
-        {!!item.description && (
-          <Text style={[styles.desc, { color: t.colors.ink }]} numberOfLines={3}>
-            {item.description}
-          </Text>
-        )}
-
-        <View style={styles.imagesRow}>
-          {imgs.map((src, i) =>
-            src ? (
-              <Image key={i} source={{ uri: src }} style={styles.offerImage} />
+          {/* HERO (ohne Overlay) */}
+          <View style={styles.heroWrap}>
+            {hero ? (
+              <Animated.Image
+                source={{ uri: hero }}
+                style={[styles.heroImage, { opacity: heroOpacity }]}
+                onLoad={() => {
+                  Animated.timing(heroOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+                }}
+                onError={() => {
+                  heroOpacity.setValue(1);
+                }}
+              />
             ) : (
-              <View key={i} style={styles.offerImageTransparent} />
-            )
-          )}
+              <View style={[styles.heroImage, { backgroundColor: t.colors.elevated, alignItems: 'center', justifyContent: 'center' }]}>
+                <Text style={{ color: t.colors.inkLow, fontSize: 12 }}>Kein Bild</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Textbereich */}
+          <View>
+            <Text style={[styles.title, { color: t.colors.primary }]} numberOfLines={2}>
+              {item.name}
+            </Text>
+
+            {!!item.category && (
+              <Text style={[styles.meta, { color: t.colors.inkLow }]} numberOfLines={1}>
+                {item.subcategory ? `${item.category} · ${item.subcategory}` : item.category}
+              </Text>
+            )}
+
+            {!!desc && (
+              <Text style={[styles.desc, { color: t.colors.ink }]} numberOfLines={3}>
+                {desc}
+              </Text>
+            )}
+          </View>
+
+          {/* CTA */}
+          <View style={styles.ctaRow}>
+            <View style={{ flex: 1 }}>
+              <Button title="Details ansehen" variant="primary" size="sm" onPress={onPress} />
+            </View>
+          </View>
         </View>
-      </TouchableOpacity>
+      </TouchableWithoutFeedback>
     </Animated.View>
   );
 }
 
-/* ───────────── Dev-Banner & Skeletons & Styles ───────────── */
-
-function DevBanner({ msg, onClose, theme }) {
-  const t = theme || useTheme();
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={onClose}
-      style={[
-        styles.devBannerWrap,
-        {
-          backgroundColor: t.colors.elevated,
-          borderColor: t.colors.divider,
-        },
-      ]}
-    >
-      <Text style={[styles.devBannerText, { color: t.colors.inkHigh }]} numberOfLines={3}>
-        {msg}
-      </Text>
-    </TouchableOpacity>
-  );
-}
+/* ───────────── Skeletons & Styles ───────────── */
 
 function SkeletonCard() {
   return (
     <View style={[styles.card, { overflow: 'hidden' }]}>
-      <View style={[styles.skel, { width: 80, height: 12, marginBottom: 10 }]} />
-      <View style={[styles.skel, { width: 160, height: 16, marginBottom: 8 }]} />
-      <View style={[styles.skel, { width: 200, height: 12, marginBottom: 12 }]} />
-      <View style={{ flexDirection: 'row', marginTop: 8 }}>
-        <View style={styles.skelImg} />
-        <View style={styles.skelImg} />
-        <View style={styles.skelImg} />
-      </View>
+      <View style={[styles.skel, { width: 90, height: 28, marginBottom: 8, borderRadius: 14 }]} />
+      <View style={[styles.skel, { width: 120, height: 28, marginBottom: 8, borderRadius: 14 }]} />
+      <View style={[styles.skel, { width: '100%', height: HERO_HEIGHT, borderRadius: 12, marginBottom: 12 }]} />
+      <View style={[styles.skel, { width: 160, height: 16, marginBottom: 6 }]} />
+      <View style={[styles.skel, { width: 220, height: 12, marginBottom: 8 }]} />
+      <View style={[styles.skel, { width: 200, height: 12 }]} />
     </View>
   );
 }
@@ -830,35 +813,32 @@ function SkeletonSection({ titleWidth = 140 }) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.horizontalList}
-        style={{ marginBottom: 26 }}
+        style={{ marginBottom: 24 }}
       />
     </View>
   );
 }
 
 const CARD_WIDTH = 260;
-const CARD_MIN_HEIGHT = 216;
-const IMAGE_MARGIN = 8;
-const IMAGE_WIDTH = 70;
-const IMAGE_HEIGHT = 54;
+const CARD_MIN_HEIGHT = 300;
+const HERO_HEIGHT = 136;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
+  container: { flex: 1 },
+  categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }, // <- unverändert, KEIN insets.top
   containerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  categoryBlock: { marginBottom: 8 },
-  categoryTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10 },
+  categoryBlock: { marginBottom: 16 },
+  categoryTitle: { fontSize: 20, fontWeight: '800', marginBottom: 10 },
 
   horizontalList: { paddingLeft: 2, paddingRight: 2 },
 
   updatedHint: { fontSize: 12, marginBottom: 8 },
 
   card: {
-    backgroundColor: '#f7f8fb',
     borderRadius: 16,
     padding: 16,
-    marginRight: 14,
+    marginRight: 12,
     width: CARD_WIDTH,
     minHeight: CARD_MIN_HEIGHT,
     elevation: 2,
@@ -870,60 +850,46 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  badgeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' },
+  cardInner: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
 
-  hurryText: { fontSize: 12, marginBottom: 4, fontWeight: '600' },
-
-  title: { fontSize: 18, fontWeight: '800', marginBottom: 6, lineHeight: 22 },
-  desc: { fontSize: 14, marginBottom: 10, lineHeight: 19 },
-
-  imagesRow: {
+  // Badges oben, außerhalb des Bildes – alle gleich groß
+  badgeRowTop: {
     flexDirection: 'row',
-    marginTop: 6,
-    justifyContent: 'flex-start',
     alignItems: 'center',
-    minHeight: IMAGE_HEIGHT,
+    flexWrap: 'wrap',
+    marginBottom: 8,
   },
-  offerImage: {
-    width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT,
-    borderRadius: 10,
+  badgeSpacing: { marginRight: 6, marginBottom: 6 },
+  badgeUniform: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    minHeight: 28,
+    alignSelf: 'flex-start',
+  },
+
+  heroWrap: { marginBottom: 12 },
+  heroImage: {
+    width: '100%',
+    height: HERO_HEIGHT,
+    borderRadius: 12,
     backgroundColor: '#eee',
-    marginRight: IMAGE_MARGIN,
   },
-  offerImageTransparent: {
-    width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT,
-    borderRadius: 10,
-    marginRight: IMAGE_MARGIN,
-    opacity: 0,
+
+  title: { fontSize: 18, fontWeight: '900', marginBottom: 4, lineHeight: 22 },
+  meta: { fontSize: 12, marginBottom: 6 },
+  desc: { fontSize: 14, lineHeight: 20 },
+
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
   },
 
   skel: { backgroundColor: '#e9eef5', borderRadius: 8 },
-  skelImg: {
-    width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT,
-    borderRadius: 10,
-    backgroundColor: '#e9eef5',
-    marginRight: IMAGE_MARGIN,
-  },
 
   error: { marginTop: 30, textAlign: 'center' },
-  empty: { marginTop: 20, textAlign: 'center', fontSize: 16 },
-
-  devBannerWrap: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 16,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    elevation: 6,
-  },
-  devBannerText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
 });

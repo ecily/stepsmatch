@@ -55,12 +55,12 @@ function clearLogs() { if (Array.isArray(globalThis.__SM_LOGS__)) globalThis.__S
 // =========================
 const TOKEN_KEY = 'expoPushToken.v2';
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
-const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHeartbeatAt }
+const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHeartbeatAt, lastGeofenceSyncAt? }
 
 const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
 const DEFAULT_CHANNEL_ID = 'stepsmatch-default-v2';
-const OFFERS_CHANNEL_ID = 'offers-v2';          // ✅ konsolidiert (Schritt A)
-const OFFERS_CATEGORY_ID = 'offer-go-v2';       // ✅ konsolidiert (Schritt A)
+const OFFERS_CHANNEL_ID = 'offers-v2';          // ✅ konsolidiert
+const OFFERS_CATEGORY_ID = 'offer-go-v2';       // ✅ konsolidiert
 
 const fmtMsAge = (t) => {
   if (!t) return '–';
@@ -71,17 +71,18 @@ const fmtMsAge = (t) => {
 
 const take = (s, n=28) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
 
-// Ampel-Badge
-function Verdict({ ok, warn, label }) {
-  const style = ok ? v.ok : warn ? v.warn : v.fail;
-  return <Text style={[v.badge, style]}>{label}</Text>;
+// Haversine
+const R_EARTH_M = 6371000;
+const toRad = (d) => (d * Math.PI) / 180;
+function distM(aLat, aLng, bLat, bLng) {
+  if ([aLat,aLng,bLat,bLng].some((v)=>typeof v!=='number'||Number.isNaN(v))) return NaN;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
+  const aa = s1*s1 + Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*s2*s2;
+  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+  return Math.round(R_EARTH_M * c);
 }
-const v = StyleSheet.create({
-  badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, fontWeight: '800', alignSelf: 'flex-start' },
-  ok:   { backgroundColor: '#11391d', color: '#7CFCA7', borderWidth: 1, borderColor: '#1f7040' },
-  warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
-  fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
-});
 
 // =========================
 // Diagnostics Screen
@@ -99,12 +100,18 @@ export default function Diagnostics() {
 
   const [lastFixAt, setLastFixAt] = useState(0);
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState(0);
+  const [lastGeofenceSyncAt, setLastGeofenceSyncAt] = useState(0);
 
   const [lastKnown, setLastKnown] = useState(null);
+  const [providerStatus, setProviderStatus] = useState(null);
+
   const [token, setToken] = useState(null);
   const [deviceId, setDeviceId] = useState(null);
 
   const [channels, setChannels] = useState([]);
+
+  // Local geofence snapshot (from AsyncStorage)
+  const [gfSnapshot, setGfSnapshot] = useState({ count: 0, items: [], accCapM: 0 });
 
   // ---- poll logs every 500ms
   useEffect(() => {
@@ -119,6 +126,85 @@ export default function Diagnostics() {
     try { await Clipboard.setStringAsync((filtered || []).join('\n') || '(keine Logs)'); } catch {}
   };
   const onClear = () => { clearLogs(); setLogs([]); };
+
+  async function loadGeofenceSnapshot(pos) {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const metaKeys = allKeys.filter(k => k.startsWith('offerMeta.'));
+      const stateKeys = allKeys.filter(k => k.startsWith('offerPushState.') && k !== GLOBAL_STATE_KEY);
+
+      const kv = await AsyncStorage.multiGet([...metaKeys, ...stateKeys]);
+      const metaById = {};
+      const stateById = {};
+
+      for (const [k, v] of kv) {
+        if (!v) continue;
+        if (k.startsWith('offerMeta.')) {
+          const id = k.slice('offerMeta.'.length);
+          try {
+            const j = JSON.parse(v);
+            // Try to normalize coordinates
+            let lat=null, lng=null, radiusM=null;
+            if (j?.location?.coordinates && Array.isArray(j.location.coordinates)) {
+              lng = Number(j.location.coordinates[0]);
+              lat = Number(j.location.coordinates[1]);
+            } else if (typeof j?.lat === 'number' && typeof j?.lng === 'number') {
+              lat = j.lat; lng = j.lng;
+            }
+            if (typeof j?.radiusM === 'number') radiusM = j.radiusM;
+            metaById[id] = { lat, lng, radiusM, raw: j };
+          } catch {}
+        } else if (k.startsWith('offerPushState.')) {
+          const id = k.slice('offerPushState.'.length);
+          try {
+            const j = JSON.parse(v);
+            stateById[id] = { inside: !!j?.inside, lastPushedAt: Number(j?.lastPushedAt || 0), raw: j };
+          } catch {}
+        }
+      }
+
+      const lat = pos?.coords?.latitude;
+      const lng = pos?.coords?.longitude;
+      const acc = pos?.coords?.accuracy;
+      const accCapM = Math.min(Math.max(0, Number(acc || 999)), 60); // cap at 60 m like runtime
+
+      const items = [];
+      for (const id of Object.keys(metaById)) {
+        const m = metaById[id];
+        const s = stateById[id] || {};
+        const d = (typeof lat === 'number' && typeof lng === 'number' && typeof m.lat === 'number' && typeof m.lng === 'number')
+          ? distM(lat, lng, m.lat, m.lng)
+          : NaN;
+        const r = Number(m.radiusM || 0);
+        const effective = (isFinite(d) ? r + accCapM + 5 : NaN);
+        const wouldEnter = isFinite(d) ? d <= effective : false;
+        items.push({
+          id,
+          distM: d,
+          radiusM: r,
+          effectiveM: isFinite(d) ? effective : NaN,
+          insideFlag: s.inside === true,
+          lastPushedAt: s.lastPushedAt || 0,
+        });
+      }
+
+      // sort nearest first
+      items.sort((a, b) => {
+        const da = isFinite(a.distM) ? a.distM : 1e12;
+        const db = isFinite(b.distM) ? b.distM : 1e12;
+        return da - db;
+      });
+
+      setGfSnapshot({
+        count: items.length,
+        items: items.slice(0, 30),
+        accCapM,
+      });
+    } catch (e) {
+      setGfSnapshot({ count: 0, items: [], accCapM: 0 });
+      console.warn('[diag] geofence snapshot error', String(e));
+    }
+  }
 
   // ---- refresh diagnostics snapshot
   const snapshot = async () => {
@@ -147,12 +233,22 @@ export default function Diagnostics() {
     try {
       const g = JSON.parse((await AsyncStorage.getItem(GLOBAL_STATE_KEY)) || '{}');
       setLastHeartbeatAt(Number(g?.lastHeartbeatAt || 0));
-    } catch { setLastHeartbeatAt(0); }
+      setLastGeofenceSyncAt(Number(g?.lastGeofenceSyncAt || 0));
+    } catch { setLastHeartbeatAt(0); setLastGeofenceSyncAt(0); }
 
     try {
       const pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 400 });
       setLastKnown(pos || null);
-    } catch { setLastKnown(null); }
+      await loadGeofenceSnapshot(pos || null);
+    } catch {
+      setLastKnown(null);
+      await loadGeofenceSnapshot(null);
+    }
+
+    try {
+      const prov = await Location.getProviderStatusAsync();
+      setProviderStatus(prov || null);
+    } catch { setProviderStatus(null); }
 
     try {
       const cached = await AsyncStorage.getItem(TOKEN_KEY);
@@ -362,6 +458,7 @@ export default function Diagnostics() {
             <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
             <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
             <KV k="lastHeartbeatAt" v={fmtMsAge(lastHeartbeatAt)} />
+            <KV k="lastGeofenceSyncAt" v={fmtMsAge(lastGeofenceSyncAt)} />
           </Card>
 
           <Card title="Position (lastKnown)">
@@ -369,6 +466,12 @@ export default function Diagnostics() {
             <KV k="lng" v={lastKnown?.coords?.longitude?.toFixed?.(5) ?? '–'} />
             <KV k="acc" v={lastKnown?.coords?.accuracy != null ? `${Math.round(lastKnown.coords.accuracy)} m` : '–'} />
             <KV k="age" v={lastKnown?.timestamp ? fmtMsAge(lastKnown.timestamp) : '–'} />
+          </Card>
+
+          <Card title="Location Provider">
+            <KV k="GPS enabled" v={providerStatus?.gpsAvailable === true ? 'true' : 'false'} />
+            <KV k="Network enabled" v={providerStatus?.networkAvailable === true ? 'true' : 'false'} />
+            <KV k="Location services" v={providerStatus?.locationServicesEnabled === true ? 'true' : 'false'} />
           </Card>
 
           <Card title="Identity">
@@ -395,6 +498,28 @@ export default function Diagnostics() {
               </Text>
             </Card>
           )}
+
+          <Card title="Local Geofence Snapshot (aus AsyncStorage)">
+            <KV k="registrierte Offers (lokal)" v={String(gfSnapshot.count)} />
+            <KV k="accCap (m)" v={String(gfSnapshot.accCapM)} />
+            {gfSnapshot.items.length === 0 ? (
+              <Text style={s.kvV}>–</Text>
+            ) : (
+              gfSnapshot.items.map((it) => (
+                <Text key={it.id} style={s.kvV}>
+                  {take(it.id, 16)} · d={Number.isFinite(it.distM) ? `${it.distM}m` : '–'} · r={it.radiusM ?? '–'} · eff={Number.isFinite(it.effectiveM) ? `${it.effectiveM}m` : '–'} · insideFlag={String(it.insideFlag)} · lastPush={fmtMsAge(it.lastPushedAt)}
+                </Text>
+              ))
+            )}
+            <Text style={s.hintSmall}>
+              ENTER-Schwelle: distance ≤ radius + min(accuracy, 60m) + 5m
+            </Text>
+            <View style={{ marginTop: 8, gap: 8 }}>
+              <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={snapshot}>
+                <Text style={s.bt}>Snapshot aktualisieren</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
         </View>
 
         {/* Logs – eigene Scroll-Area mit begrenzter Höhe */}
@@ -426,6 +551,10 @@ export default function Diagnostics() {
 }
 
 // ===== UI Bits
+function Verdict({ ok, warn, label }) {
+  const style = ok ? v.ok : warn ? v.warn : v.fail;
+  return <Text style={[v.badge, style]}>{label}</Text>;
+}
 function Row({ verdict, label, value }) {
   return (
     <View style={s.kvRow}>
@@ -507,4 +636,11 @@ const s = StyleSheet.create({
 
   hint: { color: '#7f8ea3', padding: 12, fontSize: 12 },
   hintSmall: { color: '#7f8ea3', paddingTop: 8, fontSize: 11 },
+});
+
+const v = StyleSheet.create({
+  badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, fontWeight: '800', alignSelf: 'flex-start' },
+  ok:   { backgroundColor: '#11391d', color: '#7CFCA7', borderWidth: 1, borderColor: '#1f7040' },
+  warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
+  fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
 });

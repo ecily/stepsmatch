@@ -1,21 +1,27 @@
-// backend/utils/push.js
+// stepsmatch/backend/utils/push.js
 import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
 
 /**
- * Centralized Expo push client
- * - Uses projectId header (VERY IMPORTANT) so tokens from this project are valid
+ * Centralized Expo Push Client (StepsMatch)
+ * - Forces correct channelId default (offers-v2) to match the app's Android channel
+ * - Uses Expo projectId header so tokens are scoped correctly (avoids DeviceNotRegistered)
  * - Sends in chunks, collects tickets & receipts
- * - Auto-disables tokens on DeviceNotRegistered
+ * - Auto-disables *and* invalidates tokens on DeviceNotRegistered
+ * - When pushing from DB, picks the *freshest* token per deviceId (prevents sending to stale tokens)
  */
 
 const PROJECT_ID =
   process.env.EXPO_PROJECT_ID ||
-  process.env.EXPO_PROJECTID || // fallback naming
-  process.env.EXPO_PROJECT ||   // last resort
-  null;
+  process.env.EXPO_PROJECTID || // legacy env
+  process.env.EXPO_PROJECT ||   // last-resort alias
+  '08559a29-b307-47e9-a130-d3b31f73b4ed'; // hard fallback (your real Expo Project ID)
 
-// Create Expo client; attach projectId if available
+const DEFAULT_CHANNEL_ID =
+  process.env.EXPO_PUSH_CHANNEL_ID ||
+  'offers-v2'; // must match the channel created in the app
+
+// Create Expo client; attach projectId if available (important for token scope)
 const expo = new Expo(PROJECT_ID ? { projectId: PROJECT_ID } : {});
 
 function asArray(x) {
@@ -34,14 +40,14 @@ export function isExpoToken(str) {
 /**
  * pushToTokens(tokens, { title, body, data, sound, priority, channelId })
  * - tokens: string|string[]
- * - returns: { tickets: [], receipts: {}, disabledTokens: [] }
+ * - returns: { tickets: [], receipts: {}, disabledTokens: [], invalid: [] }
  */
 export async function pushToTokens(tokens, message = {}) {
   const tokenList = asArray(tokens)
     .map(t => String(t || '').trim())
     .filter(Boolean);
 
-  // Filter only valid Expo tokens; log invalids
+  // Filter only syntactically valid Expo tokens; log invalids
   const valid = [];
   const invalid = [];
   for (const t of tokenList) {
@@ -56,14 +62,14 @@ export async function pushToTokens(tokens, message = {}) {
     return { tickets: [], receipts: {}, disabledTokens: [], invalid };
   }
 
-  // Default sound/channel for Android
+  // Default payload (Android requires an existing channelId, we default to offers-v2)
   const baseMsg = {
-    title: message.title || 'StepsMatch',
-    body: message.body || '',
-    data: message.data || {},
+    title: message.title ?? 'StepsMatch',
+    body: message.body ?? '',
+    data: message.data ?? {},
     sound: message.sound ?? 'default',
-    channelId: message.channelId ?? 'stepsmatch-default-v2',
-    priority: message.priority ?? 'default',
+    channelId: message.channelId ?? DEFAULT_CHANNEL_ID, // <— important
+    priority: message.priority ?? 'high',
   };
 
   // Build messages
@@ -98,12 +104,15 @@ export async function pushToTokens(tokens, message = {}) {
         Object.assign(receipts, rec);
 
         // Inspect receipts → disable DeviceNotRegistered
+        // We map ticket index -> token by order (Expo preserves order in responses)
         for (const [id, info] of Object.entries(rec || {})) {
           if (info?.status === 'error') {
-            const err = info?.details?.error || info?.details?.errorCode || info?.message;
+            const err =
+              info?.details?.error ||
+              info?.details?.errorCode ||
+              info?.message;
+
             if (err === 'DeviceNotRegistered') {
-              // Map back ticket id -> token(s) in that chunk
-              // We don't get direct token per receipt; we fallback to disabling tokens that were part of the send and had this ticket id.
               const idx = tickets.findIndex(t => t?.id === id);
               if (idx >= 0) {
                 const tok = messages[idx]?.to;
@@ -111,6 +120,8 @@ export async function pushToTokens(tokens, message = {}) {
                   disabledTokens.push(tok);
                 }
               }
+            } else {
+              console.warn('[push] receipt error:', err, info);
             }
           }
         }
@@ -120,17 +131,23 @@ export async function pushToTokens(tokens, message = {}) {
     }
   }
 
-  // Persist disable in DB (best-effort)
+  // Persist disable/invalid in DB (best-effort)
   if (disabledTokens.length) {
     try {
-      await PushToken.updateMany(
+      const now = new Date();
+      const res = await PushToken.updateMany(
         { token: { $in: disabledTokens } },
-        { $set: { disabled: true, updatedAt: new Date() } }
+        { $set: { disabled: true, valid: false, lastError: 'DeviceNotRegistered', updatedAt: now } }
       );
-      console.log('[push] disabled tokens:', disabledTokens.length);
+      console.log('[push] disabled tokens (DeviceNotRegistered):', disabledTokens.length, 'updated:', res?.modifiedCount ?? 'n/a');
     } catch (err) {
       console.error('[push] disable DB update error:', err);
     }
+  }
+
+  // Optional visibility
+  if (!PROJECT_ID) {
+    console.warn('[push] WARNING: PROJECT_ID missing — Dev tokens may be rejected by Expo');
   }
 
   return { tickets, receipts, disabledTokens, invalid };
@@ -139,9 +156,57 @@ export async function pushToTokens(tokens, message = {}) {
 /**
  * Convenience: push to many tokens from DB query (e.g., by user or by area)
  * selector can be { disabled: false, platform: 'android', ... }
+ *
+ * Improvements:
+ *  - Enforces projectId match (if PROJECT_ID is set)
+ *  - Filters disabled:false & valid:true by default
+ *  - Picks the *freshest* token per deviceId (by lastSeenAt, fallback createdAt)
+ *  - Sends using channelId DEFAULT_CHANNEL_ID ('offers-v2') unless overridden
  */
-export async function pushByQuery(selector, message = {}) {
-  const docs = await PushToken.find(selector, { token: 1 }).lean();
-  const tokens = docs.map(d => d.token).filter(Boolean);
-  return pushToTokens(tokens, message);
+export async function pushByQuery(selector = {}, message = {}) {
+  const baseSelector = {
+    ...(selector || {}),
+    disabled: false,
+    valid: true,
+    ...(PROJECT_ID ? { projectId: PROJECT_ID } : {}),
+  };
+
+  // We need deviceId & timestamps to pick freshest token per device
+  const docs = await PushToken.find(
+    baseSelector,
+    { token: 1, deviceId: 1, lastSeenAt: 1, createdAt: 1 }
+  ).lean();
+
+  if (!docs.length) {
+    console.warn('[push] no tokens matched selector', baseSelector);
+    return { tickets: [], receipts: {}, disabledTokens: [], invalid: [] };
+  }
+
+  // Group by deviceId, pick freshest (prefer lastSeenAt, fallback createdAt)
+  const pickFreshestPerDevice = (() => {
+    const byDevice = new Map(); // deviceId -> {token, lastSeenAt, createdAt}
+    for (const d of docs) {
+      const key = d.deviceId || 'unknown';
+      const prev = byDevice.get(key);
+      const currScore = Number(new Date(d.lastSeenAt || d.createdAt || 0));
+      const prevScore = Number(new Date(prev?.lastSeenAt || prev?.createdAt || 0));
+      if (!prev || currScore > prevScore) {
+        byDevice.set(key, d);
+      }
+    }
+    return Array.from(byDevice.values());
+  })();
+
+  const tokens = pickFreshestPerDevice
+    .map(d => d.token)
+    .filter(Boolean);
+
+  // Force our canonical channel unless caller overrides
+  const msg = {
+    ...message,
+    channelId: message.channelId ?? DEFAULT_CHANNEL_ID,
+    priority: message.priority ?? 'high',
+  };
+
+  return pushToTokens(tokens, msg);
 }

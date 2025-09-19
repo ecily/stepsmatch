@@ -88,7 +88,7 @@ export default function TabLayout() {
       sceneContainerStyle={{ backgroundColor: colors.background }}
       screenOptions={({ route }) => ({
         headerShown: true,
-        headerStatusBarHeight: 0,
+        //headerStatusBarHeight: 0,
         headerTitle: 'StepsMatch',
         headerTitleAlign: 'left',
         headerStyle: { backgroundColor: colors.background },
