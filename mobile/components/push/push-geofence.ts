@@ -25,7 +25,13 @@ import { matchesInterests } from '../../utils/interests';
 import { presentLocalOfferNotification } from './push-notifications';
 
 // ⬇️ Neu: zentrales Dedupe-Gate (wird in push-notifications.ts implementiert)
-import { shouldNotify } from './push-notifications';
+import { shouldNotify as _shouldNotify } from './push-notifications';
+
+// Fallback, falls shouldNotify (noch) nicht exportiert ist → niemals crashen
+const shouldNotify: (offerId: string, reason: string) => Promise<{ ok: boolean; reason?: string }> =
+  typeof _shouldNotify === 'function'
+    ? _shouldNotify
+    : async () => ({ ok: true, reason: 'noop-shouldNotify' });
 
 // Regions cache (module-local)
 let CURRENT_REGIONS: Array<{identifier:string, latitude:number, longitude:number, radius:number}> = [];
@@ -267,7 +273,11 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
             }
 
             const meta = await getOfferMeta(offerId);
-            await Notifications.setBadgeCountAsync?.(0).catch?.(()=>{});
+            try {
+              if (typeof Notifications.setBadgeCountAsync === 'function') {
+                await Notifications.setBadgeCountAsync(0).catch(() => {});
+              }
+            } catch {}
             const distanceBadge = await computeDistanceBadge(offerId);
             await presentLocalOfferNotification(offerId, meta, 'synthetic-enter', distanceBadge || null);
             console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({
@@ -305,7 +315,8 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
       CURRENT_REGIONS = regions.slice();
       lastGeofenceSyncAt = now;
       LAST_REFRESH_TS = nowMs();
-      await markAlreadyInsideQuietly({ allowFirstEverPush: !silent });
+      // WICHTIG: Erlaube First-Ever-Push auch bei "silent" Refresh (einmalig), um Inside-Ohne-Enter abzudecken
+      await markAlreadyInsideQuietly({ allowFirstEverPush: true });
       console.log('[geofence] regions unchanged -> no restart]');
 
       // ⬇️ EMIT UI REFRESH: nach stillem/normalem Sync
@@ -333,7 +344,8 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
 
     try { await pruneObsoleteOfferStates(regions.map(r => r.identifier)); } catch {}
 
-    await markAlreadyInsideQuietly({ allowFirstEverPush: !silent });
+    // WICHTIG: Auch nach (Re)Start einmaligen First-Ever-Push zulassen
+    await markAlreadyInsideQuietly({ allowFirstEverPush: true });
 
     // ⬇️ EMIT UI REFRESH: nach Restart/Neu-Setzen der Regionen
     DeviceEventEmitter.emit('offers:refresh');
@@ -427,7 +439,11 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
               }
 
               const meta = await getOfferMeta(offerId);
-              await Notifications.setBadgeCountAsync?.(0).catch?.(()=>{});
+              try {
+                if (typeof Notifications.setBadgeCountAsync === 'function') {
+                  await Notifications.setBadgeCountAsync(0).catch(() => {});
+                }
+              } catch {}
               const distanceBadge = await computeDistanceBadge(offerId);
               await presentLocalOfferNotification(offerId, meta, 'synthetic-enter', distanceBadge || null);
 

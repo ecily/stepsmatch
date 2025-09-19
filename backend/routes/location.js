@@ -39,16 +39,55 @@ function distanceMeters(lng1, lat1, lng2, lat2) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
-function normalizeInterests(arr) {
-  if (!Array.isArray(arr)) return [];
-  return arr.map(s => String(s || '').toLowerCase().normalize('NFKD').trim()).filter(Boolean);
+
+/** Normalisiert Interessen-Tokens (Array ODER CSV-String).
+ * - lowercased
+ * - Diakritika entfernt (NFD + strip)
+ * - Mehrfachspaces gekürzt
+ */
+function normalizeInterests(input) {
+  if (input == null) return [];
+  const arr = Array.isArray(input) ? input : String(input).split(/[,;|]/);
+  return arr
+    .map((s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // diacritics
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter(Boolean);
 }
+
+/** Leitet die benötigten Tags aus dem Offer ab:
+ *  1) bevorzugt offer.interestsRequired (falls befüllt)
+ *  2) Fallback auf [subcategory, category]
+ */
+function deriveRequiredFromOffer(offer) {
+  try {
+    const explicit = Array.isArray(offer?.interestsRequired) ? offer.interestsRequired : [];
+    const fallback = [offer?.subcategory, offer?.category].filter(Boolean);
+    const merged = explicit.length ? explicit : fallback;
+    return normalizeInterests(merged);
+  } catch {
+    return [];
+  }
+}
+
+/** Prüft, ob Device-Interessen (vom PushToken) zu den Offer-Anforderungen passen.
+ *  - Wenn Offer keinerlei Anforderungen hat → true (keine Einschränkung)
+ *  - Wenn Anforderungen existieren, Device aber keine Interessen → false
+ *  - Match, sobald mind. 1 Tag übereinstimmt (OR-Logik)
+ */
 function interestsMatch(offer, tokenDoc) {
-  const req = normalizeInterests(offer?.interestsRequired);
-  if (req.length === 0) return true;
+  const required = deriveRequiredFromOffer(offer);
+  if (required.length === 0) return true;
+
   const have = new Set(normalizeInterests(tokenDoc?.interests));
   if (have.size === 0) return false;
-  return req.some(r => have.has(r));
+
+  return required.some((r) => have.has(r));
 }
 
 /* ───────────────────────── config ───────────────────────── */
@@ -70,7 +109,7 @@ const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000
   .filter(n => Number.isFinite(n) && n > 0);
 
 /* ───────────────── Retry-Helper (Heartbeat) ─────────────────
-   Schedult Retries für DeviceNotRegistered beim Heartbeat-Push.
+   Scheduled Retries für DeviceNotRegistered beim Heartbeat-Push.
    Prüft vor jedem Retry:
    - Offer noch aktiv?
    - Token nicht disabled & existiert?
@@ -276,6 +315,8 @@ router.post('/heartbeat', async (req, res) => {
               validTimes: 1,
               validDates: 1,
               interestsRequired: 1,
+              category: 1,
+              subcategory: 1,
               distanceMeters: 1
             }
           },
@@ -284,7 +325,10 @@ router.post('/heartbeat', async (req, res) => {
         ]);
       } catch (aggErr) {
         // fallback ohne $geoNear
-        const all = await Offer.find({}, 'name location radius validDays validTimes validDates interestsRequired').lean();
+        const all = await Offer.find(
+          {},
+          'name location radius validDays validTimes validDates interestsRequired category subcategory'
+        ).lean();
         rows = all
           .filter(o => Array.isArray(o?.location?.coordinates) && o.location.coordinates.length === 2)
           .map(o => {
@@ -310,7 +354,7 @@ router.post('/heartbeat', async (req, res) => {
           const [olng, olat] = coords;
           if (!isValidNumber(olng) || !isValidNumber(olat)) continue;
 
-          // Interests (optional)
+          // Interessen / Kategorien (mit Fallback auf category/subcategory)
           if (!interestsMatch(o, pushTokenDoc)) continue;
 
           const baseR = Number(o.radius || 0) || DEFAULT_RADIUS_M;
@@ -503,7 +547,7 @@ router.post('/geofence-enter', async (req, res) => {
           .lean());
     }
 
-    // Interests (optional) – wenn nicht passt, trotzdem "record", damit HB später nicht pusht
+    // Interessen/Kategorien prüfen (mit Fallback auf category/subcategory)
     if (targetDoc && !interestsMatch(offer, targetDoc)) {
       // Wir markieren nicht als notified, um spätere gültige Fälle nicht zu blocken
       return res.json({ ok: 1, pushed: 0, recorded: 0, reason: 'interests_mismatch' });

@@ -1,10 +1,8 @@
 // stepsmatch/mobile/app/(tabs)/index.js
 // Änderungen in diesem Schritt:
-// - SafeArea (oben) via react-native-safe-area-context (edges=['top','left','right'])
-// - Einheitliche Badge-Größe (inkl. DistanceBadge) via styles.badgeUniform
-// - WOW-Effekt: sanfter Fade-In fürs Hero-Bild, subtiler Scale/Lift der Card bei Press
-// - „Aktualisiert“ → relative Anzeige („vor 2 Min“) statt technische Uhrzeit
-// - Keine neuen Libraries außerhalb von Expo/Bestand, Push-/Fetch-Logik unverändert
+// - Foreground-Sync garantiert: Heartbeat -> Geofence-Refresh(force) -> Offers-Reload
+// - Dedupe: 2.5s Gap, damit AppState + Focus nicht doppelt triggern
+// - Keine neuen Libraries, Business-Logik unverändert
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { sendHeartbeat } from '../../components/PushInitializer';
@@ -24,10 +22,11 @@ import {
   Platform,
   InteractionManager,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context'; // <- useSafeAreaInsets entfernt
+import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
@@ -39,6 +38,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { DistanceBadge } from '../../components/DistanceBadge';
 
 import { csvToSet, matchesInterests } from '../../utils/interests';
+import { refreshGeofencesAroundUser } from '../../components/push/push-geofence';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -280,6 +280,11 @@ export default function HomeTab() {
 
   const fetchFnRef = useRef(null);
 
+  // Foreground-sync dedupe
+  const fgSyncInFlightRef = useRef(false);
+  const lastFgSyncAtRef = useRef(0);
+  const FG_REFRESH_MIN_GAP_MS = 2500;
+
   /* Initial HB */
   useEffect(() => {
     (async () => {
@@ -502,6 +507,19 @@ export default function HomeTab() {
   useEffect(() => {
     mountedRef.current = true;
     fetchFnRef.current?.({ pageToLoad: 1, mode: 'initial' });
+
+    // Nach dem ersten Render aktiv einen Foreground-Sync durchführen
+    InteractionManager.runAfterInteractions(async () => {
+      try {
+        await sendHeartbeat();
+      } catch {}
+      try {
+        await refreshGeofencesAroundUser({ force: true, silent: false });
+      } catch {}
+      fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
+      lastFgSyncAtRef.current = Date.now();
+    });
+
     return () => {
       mountedRef.current = false;
       if (abortRef.current) try { abortRef.current.abort(); } catch {}
@@ -510,26 +528,41 @@ export default function HomeTab() {
     };
   }, []);
 
+  // Garantierter Foreground-Sync (Heartbeat -> Geofence -> Offers) mit Dedupe
+  const foregroundSync = useCallback(async (reason = 'focus') => {
+    const now = Date.now();
+    if (fgSyncInFlightRef.current) return;
+    if (now - (lastFgSyncAtRef.current || 0) < FG_REFRESH_MIN_GAP_MS) return;
+
+    fgSyncInFlightRef.current = true;
+    try {
+      console.log(`[FOREGROUND_SYNC] start reason=${reason}`);
+      try { await sendHeartbeat(); } catch {}
+      try { await refreshGeofencesAroundUser({ force: true, silent: false }); } catch {}
+      await fetchFnRef.current?.({ pageToLoad: 1, mode: reason });
+      lastFgSyncAtRef.current = Date.now();
+      console.log('[FOREGROUND_SYNC] done');
+    } finally {
+      fgSyncInFlightRef.current = false;
+    }
+  }, []);
+
   const onRefresh = useCallback(() => {
     fetchFnRef.current?.({ pageToLoad: 1, mode: 'pull' });
   }, []);
 
+  // AppState -> active: Foreground-Sync
   useEffect(() => {
     const handleAppState = async (next) => {
       const prev = appState.current;
       appState.current = next;
       if (prev?.match(/inactive|background/) && next === 'active') {
-        const now = Date.now();
-        if (now - (lastFocusAtRef.current || 0) > 5000) {
-          lastFocusAtRef.current = now;
-          await sendHeartbeat();
-          fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
-        }
+        await foregroundSync('appstate');
       }
     };
     const sub = AppState.addEventListener('change', handleAppState);
 
-    // Auto-Refresh
+    // Auto-Refresh alle 3 Min
     refreshTimerRef.current = setInterval(() => {
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
     }, 180000);
@@ -539,7 +572,15 @@ export default function HomeTab() {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
       if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     };
-  }, []);
+  }, [foregroundSync]);
+
+  // Screen-Focus -> Foreground-Sync (z. B. beim Tab-Wechsel)
+  useFocusEffect(
+    useCallback(() => {
+      foregroundSync('focus');
+      return () => {};
+    }, [foregroundSync])
+  );
 
   /* UI */
 
@@ -581,7 +622,7 @@ export default function HomeTab() {
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
       <View style={[styles.container, { backgroundColor: t.colors.surface }]}>
         <ScrollView
-          contentContainerStyle={styles.categoryContainer}  // <- kein insets.top mehr
+          contentContainerStyle={styles.categoryContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {lastUpdated && (
@@ -590,14 +631,14 @@ export default function HomeTab() {
             </Text>
           )}
 
-          {groupedEntries.length === 0 ? (
+          {Object.keys(grouped).length === 0 ? (
             <EmptyState
               title="Keine Angebote in deiner Nähe"
               subtitle="Passe deine Interessen an oder versuche es später erneut."
               icon="📍"
             />
           ) : (
-            groupedEntries.map(([category, catOffers]) => (
+            Object.entries(grouped).map(([category, catOffers]) => (
               <View key={category} style={styles.categoryBlock}>
                 <Text style={[styles.categoryTitle, { color: t.colors.inkHigh }]}>{category}</Text>
                 <FlatList
@@ -825,7 +866,7 @@ const HERO_HEIGHT = 136;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }, // <- unverändert, KEIN insets.top
+  categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
   containerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   categoryBlock: { marginBottom: 16 },
