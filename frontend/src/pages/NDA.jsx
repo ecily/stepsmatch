@@ -1,20 +1,19 @@
+// frontend/src/pages/NDA.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import axiosInstance from "../api/axios";
 
 /**
  * NDA Page (AT)
- * - Zeigt klick-wrap NDA.
- * - Erfordert Checkbox + (optional) bis zum Ende scrollen.
+ * - Zeigt Click-Wrap NDA.
+ * - Erfordert Checkbox + bis zum Ende scrollen.
  * - Speichert lokales Flag und versucht einen Server-Log (/testers/accept).
  * - Wenn kein tester_key im localStorage -> zurück zum Gate (/).
+ * - APK-Download-Möglichkeit wurde entfernt (keine Links/Parameter/Modals).
  */
 
 const NDA_VERSION = "v1.0";
 const NDA_DATE = "20.08.2025"; // bei Änderungen anpassen
-const APK_URL =
-  import.meta.env.VITE_APK_URL ||
-  "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
 
 export default function NDA() {
   const navigate = useNavigate();
@@ -37,11 +36,11 @@ export default function NDA() {
     }
   }, []);
 
-  // Falls schon akzeptiert -> direkt weiter
+  // Falls schon akzeptiert -> direkt weiter (ohne APK-Parameter)
   useEffect(() => {
     const accepted = localStorage.getItem("stepsmatch_ndaa_accepted") === "1";
     if (accepted) {
-      navigate(appendApkParam(next), { replace: true });
+      navigate(next, { replace: true });
     }
   }, [navigate, next]);
 
@@ -68,10 +67,9 @@ export default function NDA() {
       localStorage.setItem("stepsmatch_ndaa_version", NDA_VERSION);
       localStorage.setItem("stepsmatch_ndaa_date", NDA_DATE);
 
-      // NEW: Generischer Flag für Landing-Modal
+      // Generischer Flag (ohne APK-Modal-Trigger)
       try {
         localStorage.setItem("ndaAcceptedAt", new Date().toISOString());
-        // WICHTIG: apkModalSeen NICHT setzen – Modal soll einmalig erscheinen
       } catch {}
 
       // Server-Log (best effort)
@@ -84,8 +82,8 @@ export default function NDA() {
         console.warn("[NDA] accept log failed", err?.response?.data || err?.message);
       }
 
-      // Redirect mit Trigger für APK-Modal
-      navigate(appendApkParam(next), { replace: true });
+      // Direkt weiter – kein APK-Param mehr
+      navigate(next, { replace: true });
     } catch (err) {
       setErrorMsg(
         err?.response?.data?.message || "Akzeptieren derzeit nicht möglich. Bitte später erneut versuchen."
@@ -122,39 +120,22 @@ export default function NDA() {
           </div>
         </section>
 
-        {/* ===== Einfache Installations-Anleitung inkl. Download-Button ===== */}
-        <section style={styles.installCard} aria-label="So installierst du die App">
+        {/* ===== Hinweise: APK-Download entfernt ===== */}
+        <section style={styles.installCard} aria-label="Hinweise zur Nutzung">
           <div style={styles.installHead}>
-            <span style={styles.installIcon} aria-hidden>📲</span>
+            <span style={styles.installIcon} aria-hidden>ℹ️</span>
             <div>
-              <div style={styles.installTitle}>So installierst du die App (Android)</div>
-              <div style={styles.installSubtitle}>Einfach in 5 Schritten – ganz ohne Play Store</div>
+              <div style={styles.installTitle}>Hinweise</div>
+              <div style={styles.installSubtitle}>APK-Download ist deaktiviert. Zugang erfolgt nur nach NDA-Akzeptanz.</div>
             </div>
           </div>
 
-          <ol style={styles.installList}>
-            <li><strong>APK herunterladen:</strong> Klicke auf „APK herunterladen“. Die Datei <code>app-release.apk</code> wird geladen.</li>
-            <li><strong>Datei öffnen:</strong> Nach dem Download „Öffnen“ tippen&nbsp;– oder in der <em>Downloads</em>/<em>Dateien</em>-App die APK antippen.</li>
-            <li><strong>Unbekannte Apps erlauben:</strong> Falls eine Sicherheitsmeldung erscheint → <em>Einstellungen</em> öffnen und „Unbekannte Apps installieren“ für deinen Browser erlauben.</li>
-            <li><strong>Installation bestätigen:</strong> „Installieren“ tippen und kurz warten, bis „App installiert“ erscheint.</li>
-            <li><strong>App starten:</strong> „Öffnen“ tippen – oder später in der App-Liste <em>StepsMatch</em> starten.</li>
-          </ol>
-
-          <a
-            href={APK_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={styles.downloadBtn}
-          >
-            APK herunterladen
-          </a>
-
-          <div style={styles.installNotes}>
-            <div>🔔 <strong>Hinweis:</strong> Für Push & Geofencing bitte Benachrichtigungen erlauben und Standort „<em>immer zulassen</em>“ auswählen.</div>
-            <div>♻️ Updates: Bei neuen Versionen die APK einfach erneut installieren (wird überschrieben).</div>
-          </div>
+          <ul style={styles.installList}>
+            <li><strong>Zugang in der Testphase:</strong> Nach „Akzeptieren &amp; fortfahren“ gelangst du direkt in die App-Preview.</li>
+            <li><strong>Benachrichtigungen &amp; Standort:</strong> Für Push &amp; Geofencing bitte Benachrichtigungen erlauben und Standort „immer zulassen“ auswählen.</li>
+          </ul>
         </section>
-        {/* ===== Ende Installations-Anleitung ===== */}
+        {/* ===== Ende Hinweise ===== */}
 
         <section style={styles.scrollWrap} ref={containerRef} onScroll={onScroll} aria-label="NDA Text">
           <NDAContent />
@@ -210,18 +191,6 @@ export default function NDA() {
       </div>
     </div>
   );
-}
-
-function appendApkParam(pathOrUrl) {
-  try {
-    // Falls bereits eine absolute URL/Query drin ist
-    const hasQuery = pathOrUrl.includes("?");
-    const hasApkParam = /(\?|&)apk=1(\b|&|$)/.test(pathOrUrl);
-    if (hasApkParam) return pathOrUrl;
-    return `${pathOrUrl}${hasQuery ? "&" : "?"}apk=1`;
-  } catch {
-    return "/home?apk=1";
-  }
 }
 
 function NDAContent() {
@@ -397,7 +366,7 @@ const styles = {
   },
   metaNote: { fontSize: 12, color: "#6b7280" },
 
-  // Installations-Card
+  // Hinweise-Card (früher Installationskarte mit Download-Link)
   installCard: {
     border: "1px solid #e5e7eb",
     borderRadius: 14,
@@ -428,24 +397,6 @@ const styles = {
     lineHeight: 1.6,
     fontSize: 14,
     color: "#1f2937",
-  },
-  downloadBtn: {
-    display: "inline-block",
-    textDecoration: "none",
-    height: 44,
-    borderRadius: 12,
-    background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
-    color: "#fff",
-    fontWeight: 700,
-    fontSize: 15,
-    border: "none",
-    padding: "0 16px",
-    lineHeight: "44px",
-  },
-  installNotes: {
-    marginTop: 10,
-    fontSize: 12,
-    color: "#374151",
   },
 
   scrollWrap: {
