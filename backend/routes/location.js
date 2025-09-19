@@ -102,6 +102,10 @@ const ACCURACY_TOKEN_CAP = Number(process.env.PUSH_ACCURACY_TOKEN_CAP ?? 60);
 const DEFAULT_RADIUS_M = Number(process.env.DEFAULT_OFFER_RADIUS_M ?? 120);
 const TZ = 'Europe/Vienna';
 
+// Mindest-Booster & Toleranz an den Client angeglichen
+const SERVER_MIN_ACCURACY_BOOST_M = Number(process.env.SERVER_MIN_ACCURACY_BOOST_M ?? 60);
+const SERVER_TOLERANCE_M = Number(process.env.SERVER_TOLERANCE_M ?? 5);
+
 // Fresh-Token Retry Delays (ms), default: 90s, 5min
 const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000,300000')
   .split(',')
@@ -291,7 +295,6 @@ router.post('/heartbeat', async (req, res) => {
 
     // ───── server-side geofence check (edge-triggered on heartbeat) ─────
     try {
-      const accEff = Math.max(0, Math.min(Number(accuracy || 0), ACCURACY_TOKEN_CAP));
       const nearMax = Math.max(100, HB_MAX_CHECK_DISTANCE_M);
 
       let rows = [];
@@ -358,9 +361,18 @@ router.post('/heartbeat', async (req, res) => {
           if (!interestsMatch(o, pushTokenDoc)) continue;
 
           const baseR = Number(o.radius || 0) || DEFAULT_RADIUS_M;
-          const effR = baseR + accEff;
+          const accClamped = Math.max(0, Math.min(Number(accuracy || 0), ACCURACY_TOKEN_CAP));
+          const effR = baseR + Math.max(accClamped, SERVER_MIN_ACCURACY_BOOST_M) + SERVER_TOLERANCE_M;
+
           const d = distanceMeters(lng, lat, olng, olat);
-          if (d <= effR) activeCandidates.push({ offer: o, d, effR });
+          if (d <= effR) {
+            activeCandidates.push({ offer: o, d, effR });
+            // optionales Diagnoselog
+            console.log(`[hb-geofence-diag] inside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
+          } else {
+            // optionales Diagnoselog
+            console.log(`[hb-geofence-diag] outside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
+          }
         } catch {}
       }
 
