@@ -102,6 +102,10 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
                 Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den
                 APK-Download. iOS folgt im Beta-Programm.
               </p>
+              {/* NEW: Release-Hinweis unter dem erklärenden Text */}
+              <p className="mt-1 text-xs text-gray-500">
+                Test-Version <b>1.1</b> released, <b>19. 09. 2025</b>
+              </p>
             </div>
           </div>
 
