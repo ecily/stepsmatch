@@ -6,7 +6,7 @@ import axiosInstance from "../api/axios";
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const GOOGLE_LIBRARIES = ["places", "marker"]; // ← fix: statisch, vermeidet Reload-Warnung
+const GOOGLE_LIBRARIES = ["places", "marker"]; // statisch halten → kein Reload-Warnung
 
 const mapContainerStyle = { width: "100%", height: "340px" };
 const fallbackCenter = { lat: 47.0707, lng: 15.4395 }; // Graz fallback
@@ -26,9 +26,14 @@ export default function EditProviderForm() {
     contact: "",
     address: "",
   });
+  const [initialFormData, setInitialFormData] = useState(null);
 
   const [markerPosition, setMarkerPosition] = useState(fallbackCenter);
+  const [initialMarker, setInitialMarker] = useState(fallbackCenter);
+
   const [radius, setRadius] = useState(300);
+  const [initialRadius, setInitialRadius] = useState(300);
+
   const [mapType, setMapType] = useState("roadmap");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,6 +44,9 @@ export default function EditProviderForm() {
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false); // Änderungen vorhanden?
 
+  const [redirectAfterSave, setRedirectAfterSave] = useState(false); // UX: optionaler Redirect
+  const [toast, setToast] = useState(null); // { message, type: 'success'|'error'|'info' }
+
   const autocompleteRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
@@ -47,6 +55,13 @@ export default function EditProviderForm() {
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: GOOGLE_LIBRARIES,
   });
+
+  // Helper: Toast
+  const showToast = useCallback((message, type = "info", ms = 2500) => {
+    setToast({ message, type });
+    window.clearTimeout((showToast)._t);
+    (showToast)._t = window.setTimeout(() => setToast(null), ms);
+  }, []);
 
   // Provider laden (URL-Param bevorzugt, sonst via userId)
   useEffect(() => {
@@ -110,21 +125,28 @@ export default function EditProviderForm() {
 
         if (!isActive) return;
 
-        // Prefill form
-        setFormData({
+        // Prefill form + Snapshots für Reset/Dirty-Check
+        const initial = {
           name: p.name || "",
           category: p.category || "",
           description: p.description || "",
           contact: p.contact || "",
           address: p.address || "",
-        });
+        };
+        setFormData(initial);
+        setInitialFormData(initial);
 
         const coords = Array.isArray(p.location?.coordinates)
           ? { lat: p.location.coordinates[1], lng: p.location.coordinates[0] }
           : fallbackCenter;
 
         setMarkerPosition(coords);
-        setRadius(typeof p.radiusMeters === "number" ? p.radiusMeters : 300);
+        setInitialMarker(coords);
+
+        const r = typeof p.radiusMeters === "number" ? p.radiusMeters : 300;
+        setRadius(r);
+        setInitialRadius(r);
+
         setDirty(false);
 
         if (mapRef.current) {
@@ -198,6 +220,7 @@ export default function EditProviderForm() {
     const place = autocompleteRef.current?.getPlace?.();
     if (!place || !place.geometry) {
       setError("Adresse konnte nicht erkannt werden. Bitte erneut versuchen.");
+      showToast("Adresse konnte nicht erkannt werden.", "error");
       return;
     }
     const { lat, lng } = place.geometry.location;
@@ -228,7 +251,9 @@ export default function EditProviderForm() {
     setError("");
     const addr = (formData.address || "").trim();
     if (!addr) {
-      setError("Bitte zuerst eine Adresse eingeben.");
+      const msg = "Bitte zuerst eine Adresse eingeben.";
+      setError(msg);
+      showToast(msg, "error");
       return;
     }
     try {
@@ -244,7 +269,9 @@ export default function EditProviderForm() {
       }
     } catch (err) {
       console.error(err);
-      setError("Adresse konnte nicht geokodiert werden.");
+      const msg = "Adresse konnte nicht geokodiert werden.";
+      setError(msg);
+      showToast(msg, "error");
     } finally {
       setIsGeocoding(false);
     }
@@ -252,7 +279,9 @@ export default function EditProviderForm() {
 
   const locateMe = () => {
     if (!navigator?.geolocation) {
-      setError("Geolokalisierung wird nicht unterstützt.");
+      const msg = "Geolokalisierung wird nicht unterstützt.";
+      setError(msg);
+      showToast(msg, "error");
       return;
     }
     setIsLocating(true);
@@ -269,7 +298,9 @@ export default function EditProviderForm() {
       },
       (err) => {
         console.error(err);
-        setError("Standort konnte nicht ermittelt werden.");
+        const msg = "Standort konnte nicht ermittelt werden.";
+        setError(msg);
+        showToast(msg, "error");
         setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -282,6 +313,22 @@ export default function EditProviderForm() {
     const { name, value } = e.target || {};
     setFormData((prev) => ({ ...prev, [name]: value }));
     setDirty(true);
+  };
+
+  // Reset auf geladenen Zustand
+  const handleReset = () => {
+    if (!initialFormData) return;
+    setFormData(initialFormData);
+    setMarkerPosition(initialMarker);
+    setRadius(initialRadius);
+    if (mapRef.current) {
+      mapRef.current.panTo(initialMarker);
+      mapRef.current.setZoom(15);
+    }
+    setDirty(false);
+    setSuccess(false);
+    setError("");
+    showToast("Änderungen zurückgesetzt", "info");
   };
 
   // Zentrale Save-Funktion → versucht PATCH, fällt bei 404/405/400 auf PUT zurück
@@ -323,19 +370,62 @@ export default function EditProviderForm() {
 
       setSuccess(true);
       setDirty(false);
-      // Optional: auf Dashboard zurück
-      setTimeout(() => navigate(`/dashboard/${providerId}`), 450);
+      setInitialFormData({ ...formData });
+      setInitialMarker({ ...markerPosition });
+      setInitialRadius(radius);
+      showToast("Änderungen gespeichert", "success");
+
+      if (redirectAfterSave) {
+        setTimeout(() => navigate(`/dashboard/${providerId}`), 400);
+      }
     } catch (err) {
       console.error("[EditProviderForm] Update fehlgeschlagen:", err);
-      setError(err?.response?.data?.error || "Fehler beim Speichern der Stammdaten");
+      const msg = err?.response?.data?.error || "Fehler beim Speichern der Stammdaten";
+      setError(msg);
+      showToast(msg, "error", 4000);
     } finally {
       setIsSubmitting(false);
     }
-  }, [providerId, formData, markerPosition, radius, isSubmitting, navigate]);
+  }, [providerId, formData, markerPosition, radius, isSubmitting, navigate, redirectAfterSave, showToast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await doSave();
+  };
+
+  // UX: Warnung beim Schließen/Reload, wenn unsaved changes
+  useEffect(() => {
+    const handler = (e) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  // UX: Ctrl/Cmd+S speichert
+  useEffect(() => {
+    const onKey = (e) => {
+      const isSaveShortcut =
+        (e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S");
+      if (isSaveShortcut) {
+        e.preventDefault();
+        if (!isSubmitting && !isGeocoding && !isLocating && providerId && dirty) {
+          doSave();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [doSave, isSubmitting, isGeocoding, isLocating, providerId, dirty]);
+
+  // Back-Button mit Confirm bei unsaved changes
+  const handleBack = () => {
+    if (dirty) {
+      if (!window.confirm("Es gibt ungespeicherte Änderungen. Trotzdem zurück?")) return;
+    }
+    navigate(`/dashboard/${providerId || ""}`);
   };
 
   if (loadError) return <p className="text-red-600 p-4">Fehler beim Laden der Karte.</p>;
@@ -347,28 +437,91 @@ export default function EditProviderForm() {
     isSubmitting || isGeocoding || isLocating || !providerId || !dirty;
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white shadow-md rounded-lg mt-8">
+    <div className="max-w-2xl mx-auto p-6 bg-white shadow-md rounded-lg mt-8 relative">
+      {/* Toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed right-4 top-4 z-50 px-4 py-2 rounded shadow text-white ${
+            toast.type === "success"
+              ? "bg-emerald-600"
+              : toast.type === "error"
+              ? "bg-red-600"
+              : "bg-slate-700"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-semibold text-gray-800">Anbieter-Stammdaten bearbeiten</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-semibold text-gray-800">
+            Anbieter-Stammdaten bearbeiten
+          </h2>
+          {dirty && (
+            <span className="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+              nicht gespeichert
+            </span>
+          )}
+          {success && !dirty && (
+            <span className="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-700">
+              gespeichert
+            </span>
+          )}
+        </div>
+
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 mr-2">
+            <input
+              type="checkbox"
+              checked={redirectAfterSave}
+              onChange={(e) => setRedirectAfterSave(e.target.checked)}
+            />
+            nach Speichern zurück zum Dashboard
+          </label>
+
           <button
             type="button"
-            onClick={() => navigate(`/dashboard/${providerId || ""}`)}
+            onClick={handleBack}
             className="px-3 py-2 rounded text-white bg-slate-700 hover:bg-slate-800"
           >
             Zurück
           </button>
-          {/* ⬇️ Prominenter Speichern-Button in der Kopfzeile */}
+
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!dirty || isSubmitting}
+            className={`px-3 py-2 rounded text-white ${
+              !dirty || isSubmitting ? "bg-gray-300" : "bg-gray-600 hover:bg-gray-700"
+            }`}
+            title="Änderungen zurücksetzen"
+          >
+            Zurücksetzen
+          </button>
+
+          {/* Prominenter Speichern-Button in der Kopfzeile */}
           <button
             type="button"
             onClick={doSave}
             disabled={disableSave}
-            className={`px-4 py-2 rounded text-white ${
+            className={`px-4 py-2 rounded text-white flex items-center gap-2 ${
               disableSave ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"
             }`}
-            title={dirty ? "Änderungen speichern" : "Keine Änderungen"}
+            title={dirty ? "Änderungen speichern (Strg/Cmd+S)" : "Keine Änderungen"}
           >
-            {isSubmitting ? "Speichere…" : dirty ? "Speichern" : "Gespeichert"}
+            {isSubmitting ? (
+              <>
+                <span className="inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Speichere…
+              </>
+            ) : dirty ? (
+              "Speichern"
+            ) : (
+              "Gespeichert"
+            )}
           </button>
         </div>
       </div>
@@ -527,6 +680,7 @@ export default function EditProviderForm() {
             className={`px-4 py-2 rounded text-white ${
               isSubmitting ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"
             }`}
+            title="Änderungen speichern (Submit)"
           >
             {isSubmitting ? "Speichere…" : "Änderungen speichern"}
           </button>
