@@ -25,6 +25,8 @@ const EditOfferForm = () => {
     description: '',
     radius: 100,
     validDays: [],
+    // UI-intern verwenden wir "start"/"end".
+    // In der DB liegen die Felder als "from"/"to". Mapping siehe Laden/Speichern.
     validTimes: { start: '', end: '' },
     validDates: { from: '', to: '' },
     contact: '',
@@ -38,12 +40,10 @@ const EditOfferForm = () => {
   const isGoogleLoaded =
     typeof window !== 'undefined' && typeof window.google !== 'undefined' && window.google.maps;
 
-  // —— Helpers ———————————————————————————————————————————————————————
+  // ——— Helpers ————————————————————————————————————————————————
   const formatDateInput = (dateString) => {
     if (!dateString) return '';
-    // already YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return dateString;
-    // ISO / other → normalize to YYYY-MM-DD (local)
     const d = new Date(dateString);
     if (Number.isNaN(d.getTime())) return '';
     const yyyy = d.getFullYear();
@@ -52,14 +52,10 @@ const EditOfferForm = () => {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  /** Normalize diverse time inputs to HTML time "HH:MM" (24h).
-   * Accepts: "8:0", "8:00", "08:00", "08:00:00", "20:15:30",
-   * "2025-09-20T08:00:00.000Z", "8 PM", "20", "800"
-   */
+  /** Normalize to HTML time "HH:MM" (24h). */
   const formatTimeInput = (val) => {
-    if (!val && val !== 0) return '';
+    if (val === null || val === undefined || val === '') return '';
     if (typeof val === 'number') {
-      // interpret as minutes-from-midnight or HH (e.g., 8 => 08:00)
       if (val >= 0 && val < 24) return `${String(val).padStart(2, '0')}:00`;
       const h = Math.floor(val / 60);
       const m = val % 60;
@@ -67,10 +63,8 @@ const EditOfferForm = () => {
     }
     const s = String(val).trim();
 
-    // already HH:MM
     if (/^\d{2}:\d{2}$/.test(s)) return s;
 
-    // H:MM / HH:M / H:M / with optional :SS -> pad
     const m1 = s.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
     if (m1) {
       const hh = Math.min(23, parseInt(m1[1], 10));
@@ -78,7 +72,6 @@ const EditOfferForm = () => {
       return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     }
 
-    // Bare digits like "800" -> 08:00, "915" -> 09:15
     if (/^\d{3,4}$/.test(s)) {
       const mm = s.slice(-2);
       const hh = s.slice(0, -2);
@@ -87,7 +80,6 @@ const EditOfferForm = () => {
       ).padStart(2, '0')}`;
     }
 
-    // AM/PM
     const ampm = s.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM)$/i);
     if (ampm) {
       let h = parseInt(ampm[1], 10);
@@ -98,7 +90,6 @@ const EditOfferForm = () => {
       return `${String(Math.min(23, h)).padStart(2, '0')}:${String(Math.min(59, m)).padStart(2, '0')}`;
     }
 
-    // ISO or Date-like → local HH:MM
     const asDate = new Date(s);
     if (!Number.isNaN(asDate.getTime())) {
       return `${String(asDate.getHours()).padStart(2, '0')}:${String(asDate.getMinutes()).padStart(2, '0')}`;
@@ -121,6 +112,12 @@ const EditOfferForm = () => {
       try {
         const res = await axiosInstance.get(`offers/${offerId}`);
         const d = res.data || {};
+
+        // 💡 Hier das wichtige Mapping:
+        // DB hat validTimes.{from,to}, UI will {start,end}
+        const startTime = d?.validTimes?.start ?? d?.validTimes?.from ?? '';
+        const endTime = d?.validTimes?.end ?? d?.validTimes?.to ?? '';
+
         setFormData({
           name: d.name || '',
           category: d.category || '',
@@ -129,8 +126,8 @@ const EditOfferForm = () => {
           radius: d.radius ?? 100,
           validDays: Array.isArray(d.validDays) ? d.validDays : [],
           validTimes: {
-            start: formatTimeInput(d.validTimes?.start),
-            end: formatTimeInput(d.validTimes?.end),
+            start: formatTimeInput(startTime),
+            end: formatTimeInput(endTime),
           },
           validDates: {
             from: formatDateInput(d.validDates?.from),
@@ -140,9 +137,9 @@ const EditOfferForm = () => {
           images: Array.isArray(d.images) ? d.images : [],
           provider: d.provider || '',
         });
+
         setProviderLocation(Array.isArray(d.location?.coordinates) ? d.location.coordinates : null);
-      } catch (e) {
-        console.error(e);
+      } catch {
         setError('Angebot konnte nicht geladen werden.');
       }
     };
@@ -163,7 +160,6 @@ const EditOfferForm = () => {
     const { name, value } = e.target;
 
     if (name === 'validTimes.start' || name === 'validTimes.end') {
-      // Always keep HH:MM to avoid losing time in HTML input
       const normalized = formatTimeInput(value);
       const [, child] = name.split('.');
       setFormData((prev) => ({
@@ -256,10 +252,10 @@ const EditOfferForm = () => {
     try {
       const payload = {
         ...formData,
-        // ensure time strings are HH:MM on save as well
+        // 💾 Beim Speichern zurück auf DB-Format "from"/"to" mappen
         validTimes: {
-          start: formatTimeInput(formData.validTimes?.start),
-          end: formatTimeInput(formData.validTimes?.end),
+          from: formatTimeInput(formData.validTimes?.start),
+          to: formatTimeInput(formData.validTimes?.end),
         },
         radius: Number(formData.radius) || 0,
         location: { type: 'Point', coordinates: providerLocation },
@@ -391,6 +387,7 @@ const EditOfferForm = () => {
             name="validTimes.start"
             value={formData.validTimes.start}
             onChange={handleChange}
+            step="60"
             className="p-2 border rounded w-full"
           />
           <input
@@ -398,6 +395,7 @@ const EditOfferForm = () => {
             name="validTimes.end"
             value={formData.validTimes.end}
             onChange={handleChange}
+            step="60"
             className="p-2 border rounded w-full"
           />
         </div>
