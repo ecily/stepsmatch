@@ -1,12 +1,8 @@
+// C:\Users\Lenovo\stepsmatch\frontend\src\components\ProviderDashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axiosInstance from "../api/axios";
-import {
-  CheckCircle,
-  Clock,
-  XCircle,
-  Ruler,
-} from "lucide-react";
+import { CheckCircle, Clock, XCircle, Ruler } from "lucide-react";
 import { GoogleMap, Circle, useJsApiLoader } from "@react-google-maps/api";
 
 const ProviderDashboard = () => {
@@ -42,12 +38,12 @@ const ProviderDashboard = () => {
     };
 
     fetchProviderAndOffers();
-  }, []);
+  }, [navigate]);
 
   const handleDelete = async (offerId) => {
     try {
       await axiosInstance.delete(`/offers/${offerId}`);
-      setOffers(offers.filter((o) => o._id !== offerId));
+      setOffers((prev) => prev.filter((o) => o._id !== offerId));
     } catch (err) {
       console.error(err);
       alert("Fehler beim Löschen");
@@ -102,7 +98,11 @@ const ProviderDashboard = () => {
         <h2 className="text-2xl font-semibold text-gray-800">Deine Angebote</h2>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate("/add-provider")}
+            onClick={() => {
+              if (!providerId) return;
+              // ✅ Fix: korrektes Template-Literal statt String-Literal
+              navigate(`/edit-provider/${providerId}`);
+            }}
             className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
           >
             Stammdaten
@@ -178,7 +178,7 @@ const ProviderDashboard = () => {
 
                     <div className="mt-2 flex items-center text-sm text-gray-600">
                       <Ruler className="w-4 h-4 mr-1" />
-                      Dein Angebot gilt im Umkreis von {offer.radius} m
+                      Dein Angebot gilt im Umkreis von {offer.radius} m
                     </div>
 
                     <div className="mt-4 flex gap-2">

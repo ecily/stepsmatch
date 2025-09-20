@@ -25,6 +25,30 @@ function isForeground() {
   try { return AppState.currentState === 'active'; } catch { return false; }
 }
 
+/**
+ * Polyfill/Absicherung: auf manchen Plattformen existiert setBadgeCountAsync nicht.
+ * Wir hängen eine no-op Implementierung an, damit nachfolgende Aufrufe nicht craschen.
+ */
+function ensureBadgePolyfill() {
+  try {
+    const anyNotif: any = Notifications as any;
+    if (typeof anyNotif.setBadgeCountAsync !== 'function') {
+      anyNotif.setBadgeCountAsync = async (_n: number) => {};
+    }
+  } catch {}
+}
+
+/** Sicherer Badge-Reset, wirft nie */
+async function resetBadgeCountSafe(n: number = 0) {
+  try {
+    ensureBadgePolyfill();
+    const anyNotif: any = Notifications as any;
+    if (typeof anyNotif.setBadgeCountAsync === 'function') {
+      await anyNotif.setBadgeCountAsync(n);
+    }
+  } catch {}
+}
+
 // ────────────────────────────────────────────────────────────
 // Ensure TaskManager tasks are registered ONCE (guards Hot Reload)
 // ────────────────────────────────────────────────────────────
@@ -50,7 +74,7 @@ async function ensureTasksRegisteredOnce() {
 }
 
 // ────────────────────────────────────────────────────────────
-// Permission helper
+/** Permission helper */
 // ────────────────────────────────────────────────────────────
 async function askNotificationPermission() {
   const pre = await Notifications.getPermissionsAsync();
@@ -100,7 +124,7 @@ async function registerTokenWithBackend({
     console.log('[push] register =>', res.status, JSON.stringify(json));
     if (res.ok) {
       try {
-        await kickstartBackgroundLocation();                    // startet NUR im FG
+        await kickstartBackgroundLocation();                             // startet NUR im FG
         await refreshGeofencesAroundUser({ force: true, silent: true }); // silent beim App-Open
       } catch (e: any) {
         console.warn('[BGLOC] auto-start or geofence-sync after register failed', String(e));
@@ -112,6 +136,10 @@ async function registerTokenWithBackend({
 }
 
 async function initPush() {
+  // Badge-API absichern + gleich auf 0 setzen (OEM-Badges wegräumen)
+  ensureBadgePolyfill();
+  await resetBadgeCountSafe(0);
+
   // ──────────────────────────────────────────────────────────
   // FG HARD SUPPRESS: setze den Handler *hier*, damit er der
   // zuletzt registrierte ist und ALLES im FG stumm schaltet.
@@ -182,7 +210,8 @@ async function initPush() {
       if (data?.kind === 'offers-refresh') {
         try {
           console.log('[push] offers-refresh → force geofence refresh');
-          await refreshGeofencesAroundUser(true);
+          // konsistent mit übrigen Aufrufern: Objekt-API verwenden
+          await refreshGeofencesAroundUser({ force: true });
         } catch (e: any) {
           console.log('[push] offers-refresh failed', String(e?.message || e));
         }
@@ -236,6 +265,10 @@ export default function PushInitializer() {
       await ensureTasksRegisteredOnce();
 
       await ensureChannels();
+
+      // Vor Init Badges sicher auf 0 (verhindert OEM/Cache-Anzeigen)
+      await resetBadgeCountSafe(0);
+
       await initPush();
 
       // Mark as globally initialized (survives Hot-Reload)
@@ -251,6 +284,8 @@ export default function PushInitializer() {
 
         // 🔒 Zusätzlich: Sofort alle sichtbaren Notifs schließen, falls OEM sie dennoch zeigt.
         try { await Notifications.dismissAllNotificationsAsync(); } catch {}
+        // Badge immer auf 0, sicher & ohne Crash
+        await resetBadgeCountSafe(0);
 
         try {
           // Silent-Refresh beim Öffnen der App → KEIN lokaler Push
@@ -266,7 +301,7 @@ export default function PushInitializer() {
             });
           }
 
-          // ⚠️ NEU: Kurzer Delay + FG-Recheck, um Race zu vermeiden
+          // ⚠️ Kurzer Delay + FG-Recheck, um Race zu vermeiden
           await new Promise((r) => setTimeout(r, 800));
           if (AppState.currentState !== 'active') {
             console.log('[BGLOC] appstate(fg) → aborted (no longer foreground)');

@@ -1,4 +1,4 @@
-// src/App.jsx
+// C:\Users\Lenovo\stepsmatch\frontend\src\App.jsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { HelmetProvider } from '@dr.pogodin/react-helmet';
@@ -13,6 +13,7 @@ import Login from './pages/Login';
 import LandingPage from './pages/LandingPage';
 import AdminCategoryPage from './pages/AdminCategoryPage';
 import AdminOffersMap from './pages/AdminOffersMap';
+import EditProviderForm from './components/EditProviderForm'; // ✅ Neu: Stammdaten bearbeiten
 
 // ✅ Gate + NDA
 import TesterGate from './pages/TesterGate';
@@ -90,6 +91,10 @@ const AppRoutes = () => {
         <Route path="/admin/categories" element={<AdminCategoryPage />} />
         <Route path="/admin/offers" element={<AdminOffersMap />} />
         <Route path="/pitch" element={<Pitch />} />
+
+        {/* ✅ Neu: Provider-Stammdaten bearbeiten */}
+        <Route path="/edit-provider/:providerId" element={<EditProviderForm />} />
+        <Route path="/edit-provider" element={<EditProviderForm />} />
 
         {/* 404 */}
         <Route path="*" element={<p className="p-8 text-center text-red-500">404 – Seite nicht gefunden</p>} />
