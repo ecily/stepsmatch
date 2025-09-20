@@ -25,8 +25,7 @@ const EditOfferForm = () => {
     description: '',
     radius: 100,
     validDays: [],
-    // UI-intern verwenden wir "start"/"end".
-    // In der DB liegen die Felder als "from"/"to". Mapping siehe Laden/Speichern.
+    // UI-intern: start/end (DB: from/to)
     validTimes: { start: '', end: '' },
     validDates: { from: '', to: '' },
     contact: '',
@@ -108,15 +107,16 @@ const EditOfferForm = () => {
         console.error('Fehler Kategorien:', err);
       }
     };
+
     const fetchOffer = async () => {
       try {
         const res = await axiosInstance.get(`offers/${offerId}`);
         const d = res.data || {};
 
-        // 💡 Hier das wichtige Mapping:
-        // DB hat validTimes.{from,to}, UI will {start,end}
-        const startTime = d?.validTimes?.start ?? d?.validTimes?.from ?? '';
-        const endTime = d?.validTimes?.end ?? d?.validTimes?.to ?? '';
+        // ⚠️ WICHTIG: Manche alten Datensätze enthalten leere Strings für "start"/"end".
+        // Mit "||" (nicht ??) fallen wir in solchen Fällen auf "from"/"to" zurück.
+        const startRaw = (d?.validTimes?.start || d?.validTimes?.from || '').trim();
+        const endRaw   = (d?.validTimes?.end   || d?.validTimes?.to   || '').trim();
 
         setFormData({
           name: d.name || '',
@@ -126,8 +126,8 @@ const EditOfferForm = () => {
           radius: d.radius ?? 100,
           validDays: Array.isArray(d.validDays) ? d.validDays : [],
           validTimes: {
-            start: formatTimeInput(startTime),
-            end: formatTimeInput(endTime),
+            start: formatTimeInput(startRaw),
+            end: formatTimeInput(endRaw),
           },
           validDates: {
             from: formatDateInput(d.validDates?.from),
@@ -139,10 +139,12 @@ const EditOfferForm = () => {
         });
 
         setProviderLocation(Array.isArray(d.location?.coordinates) ? d.location.coordinates : null);
-      } catch {
+      } catch (e) {
+        console.error(e);
         setError('Angebot konnte nicht geladen werden.');
       }
     };
+
     fetchCategories();
     fetchOffer();
   }, [offerId]);
@@ -252,10 +254,10 @@ const EditOfferForm = () => {
     try {
       const payload = {
         ...formData,
-        // 💾 Beim Speichern zurück auf DB-Format "from"/"to" mappen
+        // DB verlangt from/to
         validTimes: {
           from: formatTimeInput(formData.validTimes?.start),
-          to: formatTimeInput(formData.validTimes?.end),
+          to:   formatTimeInput(formData.validTimes?.end),
         },
         radius: Number(formData.radius) || 0,
         location: { type: 'Point', coordinates: providerLocation },
@@ -385,7 +387,7 @@ const EditOfferForm = () => {
           <input
             type="time"
             name="validTimes.start"
-            value={formData.validTimes.start}
+            value={formData.validTimes.start || ''}
             onChange={handleChange}
             step="60"
             className="p-2 border rounded w-full"
@@ -393,7 +395,7 @@ const EditOfferForm = () => {
           <input
             type="time"
             name="validTimes.end"
-            value={formData.validTimes.end}
+            value={formData.validTimes.end || ''}
             onChange={handleChange}
             step="60"
             className="p-2 border rounded w-full"
