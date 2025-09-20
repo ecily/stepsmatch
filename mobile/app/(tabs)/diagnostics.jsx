@@ -2,19 +2,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Clipboard from 'expo-clipboard';
-import * as Location from 'expo-location';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 
-import { sendRoundtripTest, sendHeartbeat, kickstartBackgroundLocation } from '../../components/PushInitializer';
+import { sendHeartbeat, kickstartBackgroundLocation } from '../../components/PushInitializer';
+import { getPersistentDeviceId, resolveExpoTokenAuthoritative } from '../../components/push/push-state';
+import { API_BASE, RESOLVED_PROJECT_ID, BG_LOCATION_TASK, GEOFENCE_TASK } from '../../components/push/push-constants';
 
-// =========================
-// Lightweight Log Capture
-// =========================
-const MAX_LOG_LINES = 1500;
-const TAG_RE = /\[(push|BGLOC|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i;
+// ────────────────────────────────────────────────────────────
+// Minimal Diagnostics – fokussiert auf Canary + Identity + Kernaktionen
+// Zusätzlich: „Export/Share“ → erzeugt ein JSON mit allen relevanten Parametern
+// und (optional) POST an ein Backend-Endpoint, falls vorhanden.
+// ────────────────────────────────────────────────────────────
+
+// Lightweight Log Capture (nur relevante Tags)
+const MAX_LOG_LINES = 600;
+const TAG_RE = /\[(push|BGLOC|GEOFENCE|LOCAL_PUSH_SHOWN)\]/i;
 
 function formatArg(a) {
   if (a == null) return String(a);
@@ -28,10 +32,10 @@ function ts() {
 }
 /** Install once */
 function ensureGlobalLogWrap() {
-  if (globalThis.__SM_LOG_WRAP__) return;
+  if (globalThis.__SM_LOG_WRAP_MIN__) return;
   const ensureBuffer = () => {
-    if (!globalThis.__SM_LOGS__) globalThis.__SM_LOGS__ = [];
-    return globalThis.__SM_LOGS__;
+    if (!globalThis.__SM_LOGS_MIN__) globalThis.__SM_LOGS_MIN__ = [];
+    return globalThis.__SM_LOGS_MIN__;
   };
   const wrap = (orig, level) => (...args) => {
     try {
@@ -45,269 +49,125 @@ function ensureGlobalLogWrap() {
   console.log   = wrap(console.log.bind(console),   'LOG');
   console.warn  = wrap(console.warn?.bind(console)  || console.log.bind(console), 'WARN');
   console.error = wrap(console.error?.bind(console) || console.log.bind(console), 'ERROR');
-  globalThis.__SM_LOG_WRAP__ = true;
+  globalThis.__SM_LOG_WRAP_MIN__ = true;
 }
-function getLogs() { return Array.isArray(globalThis.__SM_LOGS__) ? globalThis.__SM_LOGS__ : []; }
-function clearLogs() { if (Array.isArray(globalThis.__SM_LOGS__)) globalThis.__SM_LOGS__.length = 0; }
+function getLogs() { return Array.isArray(globalThis.__SM_LOGS_MIN__) ? globalThis.__SM_LOGS_MIN__ : []; }
+function clearLogs() { if (Array.isArray(globalThis.__SM_LOGS_MIN__)) globalThis.__SM_LOGS_MIN__.length = 0; }
 
-// =========================
-// Helpers (Diagnostics Data)
-// =========================
-const TOKEN_KEY = 'expoPushToken.v2';
-const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
-const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHeartbeatAt, lastGeofenceSyncAt? }
-
-const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
-const DEFAULT_CHANNEL_ID = 'stepsmatch-default-v2';
-const OFFERS_CHANNEL_ID = 'offers-v2';          // ✅ konsolidiert
-const OFFERS_CATEGORY_ID = 'offer-go-v2';       // ✅ konsolidiert
-
-const fmtMsAge = (t) => {
+const take = (s, n = 28) => (s ? String(s).slice(0, n) + (String(s).length > n ? '…' : '') : '–');
+const fmtAgo = (t) => {
   if (!t) return '–';
   const age = Date.now() - Number(t);
   const s = Math.floor(age / 1000);
-  return `${s}s ago`;
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h`;
 };
 
-const take = (s, n=28) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
+// Canary Persistenz (wie PushInitializer)
+const CANARY_KEY = 'push.canary.lastAt';
+const CANARY_STATUS_KEY = 'push.canary.lastStatus'; // 'ok' | 'fail' | 'skipped'
+const CANARY_ERR_KEY = 'push.canary.lastError';     // optionaler Fehlerstring
 
-// Haversine
-const R_EARTH_M = 6371000;
-const toRad = (d) => (d * Math.PI) / 180;
-function distM(aLat, aLng, bLat, bLng) {
-  if ([aLat,aLng,bLat,bLng].some((v)=>typeof v!=='number'||Number.isNaN(v))) return NaN;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
-  const aa = s1*s1 + Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*s2*s2;
-  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
-  return Math.round(R_EARTH_M * c);
-}
+// Global State (Heartbeat/Geofence-Sync Timestamps)
+const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHeartbeatAt, lastGeofenceSyncAt? }
 
-// =========================
-// Diagnostics Screen
-// =========================
 export default function Diagnostics() {
+  // Logs
   const [logs, setLogs] = useState(() => getLogs());
   const [onlyTagged, setOnlyTagged] = useState(true);
   const logScrollerRef = useRef(null);
 
-  const [notifPerm, setNotifPerm] = useState('unknown');
-  const [locPerm, setLocPerm] = useState({ fg: 'unknown', bg: 'unknown' });
-
-  const [bgStarted, setBgStarted] = useState(false);
-  const [gfStarted, setGfStarted] = useState(false);
-
-  const [lastFixAt, setLastFixAt] = useState(0);
-  const [lastHeartbeatAt, setLastHeartbeatAt] = useState(0);
-  const [lastGeofenceSyncAt, setLastGeofenceSyncAt] = useState(0);
-
-  const [lastKnown, setLastKnown] = useState(null);
-  const [providerStatus, setProviderStatus] = useState(null);
-
+  // Identity
   const [token, setToken] = useState(null);
   const [deviceId, setDeviceId] = useState(null);
 
-  const [channels, setChannels] = useState([]);
+  // Canary
+  const [lastAt, setLastAt] = useState(0);
+  const [lastStatus, setLastStatus] = useState(null); // 'ok'|'fail'|'skipped'|null
+  const [lastError, setLastError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  // Local geofence snapshot (from AsyncStorage)
-  const [gfSnapshot, setGfSnapshot] = useState({ count: 0, items: [], accCapM: 0 });
+  // Export JSON Preview
+  const [jsonPreview, setJsonPreview] = useState('');
 
-  // ---- poll logs every 500ms
+  // Init
   useEffect(() => {
     ensureGlobalLogWrap();
     const iv = setInterval(() => setLogs(getLogs().slice(-MAX_LOG_LINES)), 500);
     return () => clearInterval(iv);
   }, []);
 
-  const filtered = useMemo(() => (onlyTagged ? logs.filter((l) => TAG_RE.test(l)) : logs), [logs, onlyTagged]);
-
-  const onCopy = async () => {
-    try { await Clipboard.setStringAsync((filtered || []).join('\n') || '(keine Logs)'); } catch {}
-  };
-  const onClear = () => { clearLogs(); setLogs([]); };
-
-  async function loadGeofenceSnapshot(pos) {
-    try {
-      const allKeys = await AsyncStorage.getAllKeys();
-      const metaKeys = allKeys.filter(k => k.startsWith('offerMeta.'));
-      const stateKeys = allKeys.filter(k => k.startsWith('offerPushState.') && k !== GLOBAL_STATE_KEY);
-
-      const kv = await AsyncStorage.multiGet([...metaKeys, ...stateKeys]);
-      const metaById = {};
-      const stateById = {};
-
-      for (const [k, v] of kv) {
-        if (!v) continue;
-        if (k.startsWith('offerMeta.')) {
-          const id = k.slice('offerMeta.'.length);
-          try {
-            const j = JSON.parse(v);
-            // Try to normalize coordinates
-            let lat=null, lng=null, radiusM=null;
-            if (j?.location?.coordinates && Array.isArray(j.location.coordinates)) {
-              lng = Number(j.location.coordinates[0]);
-              lat = Number(j.location.coordinates[1]);
-            } else if (typeof j?.lat === 'number' && typeof j?.lng === 'number') {
-              lat = j.lat; lng = j.lng;
-            }
-            if (typeof j?.radiusM === 'number') radiusM = j.radiusM;
-            metaById[id] = { lat, lng, radiusM, raw: j };
-          } catch {}
-        } else if (k.startsWith('offerPushState.')) {
-          const id = k.slice('offerPushState.'.length);
-          try {
-            const j = JSON.parse(v);
-            stateById[id] = { inside: !!j?.inside, lastPushedAt: Number(j?.lastPushedAt || 0), raw: j };
-          } catch {}
-        }
-      }
-
-      const lat = pos?.coords?.latitude;
-      const lng = pos?.coords?.longitude;
-      const acc = pos?.coords?.accuracy;
-      const accCapM = Math.min(Math.max(0, Number(acc || 999)), 60); // cap at 60 m like runtime
-
-      const items = [];
-      for (const id of Object.keys(metaById)) {
-        const m = metaById[id];
-        const s = stateById[id] || {};
-        const d = (typeof lat === 'number' && typeof lng === 'number' && typeof m.lat === 'number' && typeof m.lng === 'number')
-          ? distM(lat, lng, m.lat, m.lng)
-          : NaN;
-        const r = Number(m.radiusM || 0);
-        const effective = (isFinite(d) ? r + accCapM + 5 : NaN);
-        const wouldEnter = isFinite(d) ? d <= effective : false;
-        items.push({
-          id,
-          distM: d,
-          radiusM: r,
-          effectiveM: isFinite(d) ? effective : NaN,
-          insideFlag: s.inside === true,
-          lastPushedAt: s.lastPushedAt || 0,
-        });
-      }
-
-      // sort nearest first
-      items.sort((a, b) => {
-        const da = isFinite(a.distM) ? a.distM : 1e12;
-        const db = isFinite(b.distM) ? b.distM : 1e12;
-        return da - db;
-      });
-
-      setGfSnapshot({
-        count: items.length,
-        items: items.slice(0, 30),
-        accCapM,
-      });
-    } catch (e) {
-      setGfSnapshot({ count: 0, items: [], accCapM: 0 });
-      console.warn('[diag] geofence snapshot error', String(e));
-    }
-  }
-
-  // ---- refresh diagnostics snapshot
+  // Snapshot Identity + Canary
   const snapshot = async () => {
     try {
-      const pre = await Notifications.getPermissionsAsync();
-      setNotifPerm(pre?.status || 'unknown');
-    } catch {}
-
-    try {
-      const fg = await Location.getForegroundPermissionsAsync();
-      const bg = await Location.getBackgroundPermissionsAsync();
-      setLocPerm({ fg: fg?.status || 'unknown', bg: bg?.status || 'unknown' });
-    } catch {}
-
-    try {
-      setBgStarted(await Location.hasStartedLocationUpdatesAsync('stepsmatch-bg-location-task'));
-    } catch { setBgStarted(false); }
-    try {
-      setGfStarted(await Location.hasStartedGeofencingAsync('stepsmatch-geofence-task'));
-    } catch { setGfStarted(false); }
-
-    try {
-      const lf = Number(await AsyncStorage.getItem('lastFixAt') || 0);
-      setLastFixAt(lf);
-    } catch { setLastFixAt(0); }
-    try {
-      const g = JSON.parse((await AsyncStorage.getItem(GLOBAL_STATE_KEY)) || '{}');
-      setLastHeartbeatAt(Number(g?.lastHeartbeatAt || 0));
-      setLastGeofenceSyncAt(Number(g?.lastGeofenceSyncAt || 0));
-    } catch { setLastHeartbeatAt(0); setLastGeofenceSyncAt(0); }
-
-    try {
-      const pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 400 });
-      setLastKnown(pos || null);
-      await loadGeofenceSnapshot(pos || null);
-    } catch {
-      setLastKnown(null);
-      await loadGeofenceSnapshot(null);
-    }
-
-    try {
-      const prov = await Location.getProviderStatusAsync();
-      setProviderStatus(prov || null);
-    } catch { setProviderStatus(null); }
-
-    try {
-      const cached = await AsyncStorage.getItem(TOKEN_KEY);
-      setToken(cached || null);
-    } catch {}
-
-    try {
-      const did = await SecureStore.getItemAsync(DEVICE_ID_SECURE_KEY);
+      const did = await getPersistentDeviceId();
       setDeviceId(did || null);
     } catch {}
-
-    if (Platform.OS === 'android') {
-      try {
-        const list = await Notifications.getNotificationChannelsAsync();
-        setChannels(Array.isArray(list) ? list : []);
-      } catch { setChannels([]); }
-    }
-  };
-
-  useEffect(() => {
-    snapshot();
-    const iv = setInterval(snapshot, 3000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const localNow = async () => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'StepsMatch – Local Test',
-        body: 'Sofortige Local-Notification',
-        data: { offerId: 'LOCAL_TEST' },
-        android: { channelId: OFFERS_CHANNEL_ID },
-        categoryIdentifier: OFFERS_CATEGORY_ID,
-      },
-      trigger: null,
-    });
-    console.log('[diag] scheduled local notification');
-  };
-
-  const roundtrip = async () => {
     try {
-      if (typeof sendRoundtripTest === 'function') {
-        await sendRoundtripTest({ offerId: 'ROUNDTRIP_TEST' });
-      } else {
-        console.log('[diag] sendRoundtripTest not available (no-op)');
-      }
-    } catch (e) {
-      console.log('[diag] roundtrip error', String(e));
-    }
+      const tk = await resolveExpoTokenAuthoritative();
+      setToken(tk || null);
+    } catch {}
+    try {
+      const la = Number((await AsyncStorage.getItem(CANARY_KEY)) || 0);
+      setLastAt(la);
+      const st = await AsyncStorage.getItem(CANARY_STATUS_KEY);
+      setLastStatus(st || null);
+      const err = await AsyncStorage.getItem(CANARY_ERR_KEY);
+      setLastError(err || null);
+    } catch {}
   };
 
+  useEffect(() => { snapshot(); }, []);
+
+  // Canary Button
+  const runCanary = async () => {
+    setBusy(true);
+    let status = 'fail';
+    let errMsg = null;
+    try {
+      const did = deviceId || (await getPersistentDeviceId());
+      const tk = token || (await resolveExpoTokenAuthoritative());
+
+      console.log('[diag.canary] POST /push/canary …');
+      const res = await fetch(`${API_BASE}/push/canary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tk, deviceId: did, projectId: RESOLVED_PROJECT_ID }),
+      });
+      const json = await res.json().catch(() => ({}));
+      console.log('[diag.canary] result =>', res.status, JSON.stringify(json));
+
+      status = res.ok && json?.ok === true ? 'ok' : 'fail';
+      errMsg = status === 'ok' ? null : (json?.error || `HTTP ${res.status}`);
+    } catch (e) {
+      errMsg = String(e);
+    }
+
+    const now = Date.now();
+    setLastAt(now);
+    setLastStatus(status);
+    setLastError(errMsg);
+
+    try {
+      await AsyncStorage.multiSet([
+        [CANARY_KEY, String(now)],
+        [CANARY_STATUS_KEY, String(status)],
+        [CANARY_ERR_KEY, errMsg || ''],
+      ]);
+    } catch {}
+
+    setBusy(false);
+  };
+
+  // Actions
   const heartbeatNow = async () => {
     try {
       if (typeof sendHeartbeat === 'function') {
         await sendHeartbeat('manual');
-        console.log('[diag] manual heartbeat sent (also triggers geofence refresh)');
-        await snapshot();
-      } else {
-        console.log('[diag] sendHeartbeat not available');
+        console.log('[diag] manual heartbeat sent (→ Geofence-Refresh)');
       }
     } catch (e) {
       console.log('[diag] heartbeat error', String(e));
@@ -319,9 +179,6 @@ export default function Diagnostics() {
       if (typeof kickstartBackgroundLocation === 'function') {
         await kickstartBackgroundLocation();
         console.log('[diag] kickstartBackgroundLocation invoked');
-        await snapshot();
-      } else {
-        console.log('[diag] kickstartBackgroundLocation not available');
       }
     } catch (e) {
       console.log('[diag] restartBg error', String(e));
@@ -336,7 +193,7 @@ export default function Diagnostics() {
       try {
         await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
       } catch {
-        Linking.openSettings().catch(()=>{});
+        Linking.openSettings().catch(() => {});
       }
     }
   };
@@ -354,73 +211,151 @@ export default function Diagnostics() {
         },
       });
     } catch {
-      Linking.openSettings().catch(()=>{});
+      Linking.openSettings().catch(() => {});
     }
   };
 
+  // Build a compact diagnostics payload you can copy-paste to me (or into Mongo)
+  const buildDiagPayload = async () => {
+    const now = new Date().toISOString();
+
+    // read global heartbeats/geofence timestamps
+    let gs = {};
+    try { gs = JSON.parse((await AsyncStorage.getItem(GLOBAL_STATE_KEY)) || '{}'); } catch {}
+
+    // ask runtime service state lazily (no import costs in UI)
+    let bgStarted = false, gfStarted = false;
+    try {
+      const Location = (await import('expo-location'));
+      bgStarted = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+      gfStarted = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
+    } catch {}
+
+    // identity
+    const did = deviceId || (await getPersistentDeviceId());
+    const tk = token || (await resolveExpoTokenAuthoritative());
+
+    // logs (tagged only)
+    const taggedLogs = (onlyTagged ? logs.filter((l) => TAG_RE.test(l)) : logs).slice(-400);
+
+    return {
+      _schema: 'stepsmatch.diagnostics.v1',
+      createdAt: now,
+      env: {
+        platform: Platform.OS,
+        projectId: RESOLVED_PROJECT_ID,
+        apiBase: API_BASE,
+      },
+      identity: {
+        deviceId: did || null,
+        expoToken: tk || null, // wenn gewünscht, vor dem Teilen lokal kürzen
+      },
+      canary: {
+        lastAt: lastAt || 0,
+        lastStatus: lastStatus || null,
+        lastError: lastError || null,
+      },
+      runtime: {
+        bgLocationStarted: !!bgStarted,
+        geofencingStarted: !!gfStarted,
+      },
+      storage: {
+        lastAnyPushAt: Number(gs?.lastAnyPushAt || 0),
+        lastHeartbeatAt: Number(gs?.lastHeartbeatAt || 0),
+        lastGeofenceSyncAt: Number(gs?.lastGeofenceSyncAt || 0),
+      },
+      logs: taggedLogs,
+    };
+  };
+
+  const exportJSON = async () => {
+    try {
+      const payload = await buildDiagPayload();
+      const str = JSON.stringify(payload, null, 2);
+      setJsonPreview(str);
+      await Clipboard.setStringAsync(str);
+      console.log('[diag] JSON payload copied to clipboard');
+    } catch (e) {
+      console.log('[diag] exportJSON error', String(e));
+    }
+  };
+
+  // Optional: send to backend for Mongo insertion (if you add a route)
+  // Expected backend route: POST /api/diag/ingest { payload }
+  const postToBackend = async () => {
+    try {
+      const payload = await buildDiagPayload();
+      const res = await fetch(`${API_BASE}/diag/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      });
+      const json = await res.json().catch(() => ({}));
+      console.log('[diag] ingest =>', res.status, JSON.stringify(json));
+      if (!res.ok) {
+        console.warn('[diag] ingest failed');
+      }
+    } catch (e) {
+      console.log('[diag] ingest error', String(e));
+    }
+  };
+
+  // Helper: show a ready-to-run cURL you can paste in a shell (if POST endpoint exists)
+  const logCurl = async () => {
+    try {
+      const p = await buildDiagPayload();
+      const body = JSON.stringify({ payload: p }).replace(/"/g, '\\"');
+      const curl = `curl -X POST "${API_BASE}/diag/ingest" -H "Content-Type: application/json" -d "${body}"`;
+      console.log('[diag] curl:\n', curl);
+      await Clipboard.setStringAsync(curl);
+    } catch {}
+  };
+
+  const filtered = useMemo(() => (onlyTagged ? logs.filter((l) => TAG_RE.test(l)) : logs), [logs, onlyTagged]);
   const atBottom = () => { requestAnimationFrame(() => logScrollerRef.current?.scrollToEnd?.({ animated: false })); };
   useEffect(() => { atBottom(); }, [filtered.length]);
 
-  // ===== Derived Checks / Verdict =====
-  const chById = useMemo(() => {
-    const map = {};
-    for (const c of channels) map[c.id] = c;
-    return map;
-  }, [channels]);
-
-  const chOffers = chById[OFFERS_CHANNEL_ID];
-  const chBg     = chById[BG_CHANNEL_ID];
-
-  // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo Doku)
-  const offersIsMax = !!chOffers && Number(chOffers.importance) >= 6;
-  const offersHasSound = !!chOffers && !!chOffers.sound; // "arrival" erwartet
-  const bgIsPresent = !!chBg;
-
-  const notifOk = notifPerm === 'granted';
-  const locOk = (locPerm.fg === 'granted') && (locPerm.bg === 'granted');
-  const tasksOk = bgStarted && gfStarted;
-
-  // Haupt-Verdikt (grün, gelb, rot)
-  const verdictOK =
-    notifOk && locOk && tasksOk && offersIsMax && offersHasSound && bgIsPresent;
-
-  const verdictWarn =
-    // z.B. alles ok, aber Sound fehlt oder Importance < MAX → funktioniert, aber evtl. leiser/später
-    (notifOk && locOk && tasksOk) && (!verdictOK);
-
-  // ===== Render =====
   return (
     <View style={s.root}>
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
         {/* Header */}
         <View style={s.header}>
-          <Text style={s.h}>Diagnostics</Text>
+          <Text style={s.h}>Diagnostics (Minimal)</Text>
           <View style={s.row}>
             <TouchableOpacity style={[s.btn, s.bGray]} onPress={() => setOnlyTagged((v) => !v)}>
               <Text style={s.bt}>{onlyTagged ? 'Alle Logs' : 'Nur Tags'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.btn, s.bGray]} onPress={onClear}>
-              <Text style={s.bt}>Clear</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.btn, s.bBlue]} onPress={onCopy}>
-              <Text style={s.bt}>Copy</Text>
+            <TouchableOpacity style={[s.btn, s.bGray]} onPress={() => { clearLogs(); setLogs([]); }}>
+              <Text style={s.bt}>Logs leeren</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Actions – nach oben gezogen, sofort sichtbar */}
-        <View style={s.actions}>
+        {/* Identity */}
+        <Card title="Identity">
+          <KV k="DeviceId" v={take(deviceId)} />
+          <KV k="Expo Token" v={take(token)} />
+          <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={snapshot}>
+            <Text style={s.bt}>Aktualisieren</Text>
+          </TouchableOpacity>
+        </Card>
+
+        {/* Canary */}
+        <Card title="Canary Push (End-to-End)">
+          <Row verdict={lastStatus === 'ok'} label="Zuletzt" value={lastStatus ? `${lastStatus.toUpperCase()} • ${fmtAgo(lastAt)}` : '–'} />
+          {lastStatus === 'fail' && !!lastError && <KV k="Fehler" v={take(lastError, 64)} />}
+          <TouchableOpacity style={[s.btnFull, s.bBlue, busy && s.bDisabled]} onPress={busy ? undefined : runCanary}>
+            <Text style={s.bt}>{busy ? 'Test läuft…' : 'Canary testen'}</Text>
+          </TouchableOpacity>
+        </Card>
+
+        {/* Actions */}
+        <Card title="Aktionen">
           <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={heartbeatNow}>
             <Text style={s.bt}>Heartbeat jetzt (→ Geofence-Refresh)</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={restartBg}>
             <Text style={s.bt}>BG Location (re)starten</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={localNow}>
-            <Text style={s.bt}>Lokale Notification (sofort)</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={roundtrip}>
-            <Text style={s.bt}>Roundtrip an Backend</Text>
           </TouchableOpacity>
 
           {Platform.OS === 'android' && (
@@ -433,97 +368,37 @@ export default function Diagnostics() {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </Card>
 
-        {/* Verdict */}
-        <View style={s.cards}>
-          <Card title="Gesamtstatus">
-            {verdictOK ? (
-              <Verdict ok label="Alles OK – Push sollte überall zuverlässig feuern." />
-            ) : verdictWarn ? (
-              <Verdict warn label="Läuft grundsätzlich – Feintuning empfohlen (Kanal/Sound/Tasks)." />
-            ) : (
-              <Verdict ok={false} warn={false} label="Fehler – mindestens eine Kernvoraussetzung fehlt." />
-            )}
-          </Card>
+        {/* Export / Share */}
+        <Card title="Export / Share (JSON)">
+          <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={exportJSON}>
+            <Text style={s.bt}>JSON kopieren & Vorschau aktualisieren</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={logCurl}>
+            <Text style={s.bt}>cURL in Zwischenablage (optional /diag/ingest)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={postToBackend}>
+            <Text style={s.bt}>An Backend senden (optional)</Text>
+          </TouchableOpacity>
 
-          <Card title="Permissions">
-            <Row verdict={notifOk} label="Notifications" value={notifPerm} />
-            <Row verdict={locPerm.fg === 'granted'} label="Location (Foreground)" value={locPerm.fg} />
-            <Row verdict={locPerm.bg === 'granted'} label="Location (Background)" value={locPerm.bg} />
-          </Card>
-
-          <Card title="Background Services">
-            <Row verdict={bgStarted} label="BG Location started" value={String(bgStarted)} />
-            <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
-            <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
-            <KV k="lastHeartbeatAt" v={fmtMsAge(lastHeartbeatAt)} />
-            <KV k="lastGeofenceSyncAt" v={fmtMsAge(lastGeofenceSyncAt)} />
-          </Card>
-
-          <Card title="Position (lastKnown)">
-            <KV k="lat" v={lastKnown?.coords?.latitude?.toFixed?.(5) ?? '–'} />
-            <KV k="lng" v={lastKnown?.coords?.longitude?.toFixed?.(5) ?? '–'} />
-            <KV k="acc" v={lastKnown?.coords?.accuracy != null ? `${Math.round(lastKnown.coords.accuracy)} m` : '–'} />
-            <KV k="age" v={lastKnown?.timestamp ? fmtMsAge(lastKnown.timestamp) : '–'} />
-          </Card>
-
-          <Card title="Location Provider">
-            <KV k="GPS enabled" v={providerStatus?.gpsAvailable === true ? 'true' : 'false'} />
-            <KV k="Network enabled" v={providerStatus?.networkAvailable === true ? 'true' : 'false'} />
-            <KV k="Location services" v={providerStatus?.locationServicesEnabled === true ? 'true' : 'false'} />
-          </Card>
-
-          <Card title="Identity">
-            <KV k="Expo Token" v={take(token)} />
-            <KV k="DeviceId" v={take(deviceId)} />
-          </Card>
-
-          {Platform.OS === 'android' && (
-            <Card title="Android Channels">
-              {channels.length === 0 ? (
-                <Text style={s.kvV}>–</Text>
-              ) : (
-                channels.map((c) => (
-                  <Text key={c.id} style={s.kvV}>
-                    {c.id}{'  '}
-                    <Text style={s.kvDim}>
-                      importance={c.importance} sound={c.sound || 'none'} bypassDnd={String(c.bypassDnd || false)}
-                    </Text>
-                  </Text>
-                ))
-              )}
-              <Text style={s.hintSmall}>
-                Erwartet: {BG_CHANNEL_ID} present; {OFFERS_CHANNEL_ID} importance=MAX &amp; sound≠none
-              </Text>
-            </Card>
+          {/* Kompakte JSON-Vorschau, komplett selektierbar */}
+          {jsonPreview ? (
+            <View style={s.jsonBox}>
+              <Text selectable style={s.jsonText}>{jsonPreview}</Text>
+            </View>
+          ) : (
+            <Text style={s.hint}>Drücke „JSON kopieren“, um eine teilbare Diagnose zu erzeugen.</Text>
           )}
 
-          <Card title="Local Geofence Snapshot (aus AsyncStorage)">
-            <KV k="registrierte Offers (lokal)" v={String(gfSnapshot.count)} />
-            <KV k="accCap (m)" v={String(gfSnapshot.accCapM)} />
-            {gfSnapshot.items.length === 0 ? (
-              <Text style={s.kvV}>–</Text>
-            ) : (
-              gfSnapshot.items.map((it) => (
-                <Text key={it.id} style={s.kvV}>
-                  {take(it.id, 16)} · d={Number.isFinite(it.distM) ? `${it.distM}m` : '–'} · r={it.radiusM ?? '–'} · eff={Number.isFinite(it.effectiveM) ? `${it.effectiveM}m` : '–'} · insideFlag={String(it.insideFlag)} · lastPush={fmtMsAge(it.lastPushedAt)}
-                </Text>
-              ))
-            )}
-            <Text style={s.hintSmall}>
-              ENTER-Schwelle: distance ≤ radius + min(accuracy, 60m) + 5m
-            </Text>
-            <View style={{ marginTop: 8, gap: 8 }}>
-              <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={snapshot}>
-                <Text style={s.bt}>Snapshot aktualisieren</Text>
-              </TouchableOpacity>
-            </View>
-          </Card>
-        </View>
+          <Text style={s.hintSmall}>
+            Tipp: Dieses JSON kannst du mir hier per Copy/Paste schicken – oder in MongoDB (Compass) als Dokument einfügen.
+          </Text>
+        </Card>
 
-        {/* Logs – eigene Scroll-Area mit begrenzter Höhe */}
+        {/* Logs – kompakt */}
         <View style={s.logWrapper}>
+          <Text style={s.cardTitle}>Logs</Text>
           <ScrollView
             ref={logScrollerRef}
             style={s.logBox}
@@ -540,21 +415,18 @@ export default function Diagnostics() {
               ))
             )}
           </ScrollView>
+          <Text style={s.hint}>
+            Gefilterte Tags: [push], [BGLOC], [GEOFENCE], [LOCAL_PUSH_SHOWN].
+          </Text>
         </View>
-
-        <Text style={s.hint}>
-          Gefilterte Tags: [push], [BGLOC], [GEOFENCE], [RECONCILE], [LOCAL_PUSH_SHOWN]. Umschalten über „Nur Tags/Alle Logs“.
-        </Text>
       </ScrollView>
     </View>
   );
 }
 
-// ===== UI Bits
-function Verdict({ ok, warn, label }) {
-  const style = ok ? v.ok : warn ? v.warn : v.fail;
-  return <Text style={[v.badge, style]}>{label}</Text>;
-}
+// ────────────────────────────────────────────────────────────
+// UI Bits
+// ────────────────────────────────────────────────────────────
 function Row({ verdict, label, value }) {
   return (
     <View style={s.kvRow}>
@@ -575,19 +447,21 @@ function Card({ title, children }) {
   return (
     <View style={s.card}>
       <Text style={s.cardTitle}>{title}</Text>
-      <View style={{ marginTop: 8, gap: 4 }}>{children}</View>
+      <View style={{ marginTop: 8, gap: 8 }}>{children}</View>
     </View>
   );
 }
 function lineStyle(line) {
   if (/\[ERROR\]/.test(line)) return s.logErr;
   if (/\[WARN\]/.test(line)) return s.logWarn;
-  if (/\[(GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i.test(line)) return s.logHot;
+  if (/\[(GEOFENCE|LOCAL_PUSH_SHOWN)\]/i.test(line)) return s.logHot;
   if (/\[(push|BGLOC)\]/i.test(line)) return s.logInfo;
   return s.log;
 }
 
-// ===== Styles
+// ────────────────────────────────────────────────────────────
+/** Styles */
+// ────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0b0f17' },
   scroll: { flex: 1 },
@@ -597,34 +471,40 @@ const s = StyleSheet.create({
   h: { fontSize: 20, fontWeight: '800', color: 'white' },
   row: { flexDirection: 'row', gap: 8, marginTop: 10 },
 
-  actions: { padding: 16, gap: 10, backgroundColor: '#0b0f17' },
-
   btn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
   btnFull: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' },
-
   bBlue: { backgroundColor: '#2c6bed' },
   bGray: { backgroundColor: '#1b2433' },
+  bDisabled: { opacity: 0.6 },
 
   bt: { color: 'white', fontWeight: '700' },
 
-  cards: { paddingHorizontal: 16, paddingTop: 8, gap: 12 },
-  card: { backgroundColor: '#101827', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#13203a' },
-  cardTitle: { color: 'white', fontWeight: '800', fontSize: 14, marginBottom: 2 },
+  card: { backgroundColor: '#101827', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#13203a', marginHorizontal: 16, marginTop: 12 },
+  cardTitle: { color: 'white', fontWeight: '800', fontSize: 14, marginHorizontal: 16, marginTop: 16 },
 
   kvRow: { flexDirection: 'row', justifyContent: 'space-between' },
   kvK: { color: '#93a4bd' },
   kvV: { color: '#e4ecf7', fontWeight: '700' },
-  kvDim: { color: '#93a4bd' },
   good: { color: '#9ae6b4' },
   bad: { color: '#ff8b8b' },
 
-  logWrapper: { paddingHorizontal: 16, paddingTop: 8 },
+  jsonBox: {
+    backgroundColor: '#0e1421',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#13203a',
+    padding: 12,
+    maxHeight: 260,
+  },
+  jsonText: { color: '#c9d1d9', fontFamily: 'monospace' },
+
+  logWrapper: { paddingHorizontal: 16, paddingTop: 12, gap: 8 },
   logBox: {
     backgroundColor: '#0e1421',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#13203a',
-    maxHeight: 360,
+    maxHeight: 320,
   },
   logContent: { padding: 12 },
   log: { color: '#c9d1d9', fontFamily: 'monospace', marginBottom: 4 },
@@ -632,15 +512,8 @@ const s = StyleSheet.create({
   logHot: { color: '#9ae6b4', fontFamily: 'monospace', marginBottom: 4 },
   logWarn: { color: '#ffd580', fontFamily: 'monospace', marginBottom: 4 },
   logErr: { color: '#ff8b8b', fontFamily: 'monospace', marginBottom: 4 },
-  logEmpty: { color: '#7f8ea3', fontStyle: 'italic' },
+  logEmpty: { color: '#7f8ea3', fontStyle: 'italic', padding: 12 },
 
-  hint: { color: '#7f8ea3', padding: 12, fontSize: 12 },
-  hintSmall: { color: '#7f8ea3', paddingTop: 8, fontSize: 11 },
-});
-
-const v = StyleSheet.create({
-  badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, fontWeight: '800', alignSelf: 'flex-start' },
-  ok:   { backgroundColor: '#11391d', color: '#7CFCA7', borderWidth: 1, borderColor: '#1f7040' },
-  warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
-  fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
+  hint: { color: '#7f8ea3', paddingTop: 6, fontSize: 12 },
+  hintSmall: { color: '#7f8ea3', paddingTop: 6, fontSize: 11 },
 });

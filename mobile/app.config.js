@@ -1,3 +1,4 @@
+// stepsmatch/mobile/app.config.js
 import 'dotenv/config';
 
 /**
@@ -5,16 +6,21 @@ import 'dotenv/config';
  * - Für Release-Builds müssen die ENV-Variablen in EAS gesetzt sein:
  *   EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY
  *   EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY
- * - Diese Datei sorgt dafür, dass
- *   1) der Maps-SDK-Key ins AndroidManifest geschrieben wird (react-native-maps)
- *   2) der Directions-Key unter extra.directionsKey im Bundle landet (NavigationScreen liest ihn)
+ *   (optional) EXPO_PUBLIC_API_BASE_URL
+ *   (optional) EXPO_PUBLIC_PUSH_CANARY_FORCE   ← "true" aktiviert Startup-Canary-Forcing
+ *
+ * Diese Datei sorgt dafür, dass
+ *  1) der Maps-SDK-Key ins AndroidManifest geschrieben wird (react-native-maps)
+ *  2) der Directions-Key unter extra.directionsKey im Bundle landet (NavigationScreen liest ihn)
+ *  3) das optionale Canary-Flag im Build sichtbar ist (zur Kontrolle in extra.pushCanaryForce)
  */
 
-const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ?? '';
+const MAPS_KEY       = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ?? '';
 const DIRECTIONS_KEY = process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ?? '';
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const API_BASE       = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const CANARY_FORCE   = (process.env.EXPO_PUBLIC_PUSH_CANARY_FORCE === 'true'); // wird in JS via process.env gelesen
 
-// Build-time Hinweis (erscheint in den EAS-Logs, hilft die Ursache schnell zu sehen)
+// Build-time Hinweise (erscheinen in den EAS-Logs)
 if (!MAPS_KEY) {
   // eslint-disable-next-line no-console
   console.warn('⚠️  EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ist leer – Google Maps wird im Release nicht funktionieren.');
@@ -22,6 +28,10 @@ if (!MAPS_KEY) {
 if (!DIRECTIONS_KEY) {
   // eslint-disable-next-line no-console
   console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist leer – Google Directions (Routen) funktionieren im Release nicht.');
+}
+if (CANARY_FORCE) {
+  // eslint-disable-next-line no-console
+  console.warn('ℹ️  EXPO_PUBLIC_PUSH_CANARY_FORCE="true" → Canary wird beim App-Start erzwungen (nur für Tests).');
 }
 
 export default {
@@ -56,11 +66,9 @@ export default {
       // Für Firebase/Push
       googleServicesFile: './google-services.json',
 
-      // >>> Hier wird der Google Maps SDK Key ins Manifest geschrieben <<<
+      // >>> Google Maps SDK Key ins Manifest schreiben <<<
       config: {
-        googleMaps: {
-          apiKey: MAPS_KEY,
-        },
+        googleMaps: { apiKey: MAPS_KEY },
       },
 
       permissions: [
@@ -94,23 +102,23 @@ export default {
       ['expo-notifications', { sounds: ['./assets/sounds/arrival.mp3'] }],
       'expo-location',
       'expo-secure-store',
-      // react-native-maps benötigt kein separates Plugin im Managed Workflow (SDK 50),
-      // alles Wesentliche kommt über android.config.googleMaps.apiKey.
+      // react-native-maps benötigt im Managed Workflow (SDK 50) kein eigenes Plugin.
     ],
 
     experiments: { typedRoutes: true },
 
-    // Laufzeit-Config, wird in JS via Constants.expoConfig.extra.* gelesen
+    // Laufzeit-Config – zusätzlich zu EXPO_PUBLIC_* als Sichtkontrolle im Client
     extra: {
       eas: { projectId: '08559a29-b307-47e9-a130-d3b31f73b4ed' },
       directionsKey: DIRECTIONS_KEY, // NavigationScreen.js liest diese Property
       apiBase: API_BASE,
-      // Optional für Diagnostics im Client:
+      // Diagnose-Flags:
       mapsKeyPresent: !!MAPS_KEY,
       directionsKeyPresent: !!DIRECTIONS_KEY,
+      pushCanaryForce: CANARY_FORCE ? 'true' : 'false', // rein informativ; Logik liest process.env.*
     },
 
-    // OTA-Updates sind bewusst aus (Builds via EAS)
+    // OTA-Updates aus → Builds via EAS
     updates: { enabled: false },
   },
 };
