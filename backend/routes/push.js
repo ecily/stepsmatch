@@ -149,7 +149,7 @@ router.post('/roundtrip', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
-      token: target.token,                // <─ optional: Token explizit mitgeben
+      token: target.token,
       message: { title, body, data: payload },
     });
 
@@ -162,6 +162,11 @@ router.post('/roundtrip', async (req, res) => {
 
 router.post('/test', async (req, res) => {
   return router.handle({ ...req, url: '/roundtrip', method: 'POST' }, res, () => {});
+});
+
+// 🔁 auch als GET verfügbar (praktisch für curl/health)
+router.get('/ping', async (_req, res) => {
+  res.json({ success: true, projectId: PROJECT_ID || null, t: Date.now() });
 });
 
 router.post('/ping', async (_req, res) => {
@@ -181,7 +186,7 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
-      token: target.token,                // <─ optional
+      token: target.token,
       message: { title, body, data: payload },
     });
 
@@ -193,10 +198,54 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 });
 
 /* ────────────────────────────────────────────────────────────
-   Canary endpoint – nutzt (token|deviceId|projectId) aus req.body.
-   Antwortschema ist { ok: true|false } um mit der App zu matchen.
-   Invalide Tokens werden bei DeviceNotRegistered automatisch untauglich markiert.
+   Canary endpoints
    ──────────────────────────────────────────────────────────── */
+
+// GET /canary → Reachability-Check (optional: ?token=ExponentPushToken[...] für echten Test-Push)
+router.get('/canary', async (req, res) => {
+  try {
+    const tokenParam = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    if (!tokenParam || !Expo.isExpoPushToken(tokenParam)) {
+      return res.json({
+        ok: true,
+        route: 'push',
+        message: 'push canary up',
+        projectId: PROJECT_ID || null,
+        requiresTokenParam: 'optional: add ?token=ExponentPushToken[xxx] to send a real test push',
+        ts: Date.now(),
+      });
+    }
+
+    // optional: echter Test-Push
+    const title = 'StepsMatch Canary';
+    const body  = 'If you see this, Expo push works end-to-end.';
+    const payload = { type: 'canary', source: 'api/push/canary', t: Date.now() };
+
+    const resp = await sendToDevice({
+      deviceId: null,
+      token: tokenParam,
+      message: { title, body, data: payload },
+    });
+
+    const tickets = Array.isArray(resp?.tickets) ? resp.tickets : [];
+    const sentOk = tickets.some(t => (t?.status || '').toLowerCase() === 'ok');
+
+    return res.json({
+      ok: sentOk,
+      route: 'push',
+      projectId: PROJECT_ID || null,
+      sentOk,
+      result: resp || null,
+      ts: Date.now(),
+    });
+  } catch (e) {
+    console.error('[push/canary][GET] error', e?.message || e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+/* Bestehender POST /canary: nutzt (token|deviceId|projectId) aus req.body
+   und markiert DeviceNotRegistered-Tokens automatisch als invalid. */
 router.post('/canary', async (req, res) => {
   try {
     const { token, deviceId, projectId } = req.body || {};
