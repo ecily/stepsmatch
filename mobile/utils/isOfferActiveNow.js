@@ -16,38 +16,15 @@
  * Zusätzliche Kurzschlüsse (optional, falls vorhanden):
  *  - offer.active === false → inaktiv
  *  - offer.disabled === true → inaktiv
- *  - offer.status === 'archived' | 'inactive' | 'disabled' → inaktiv
- *
- * Aufruf-Varianten (robust):
- *  - isOfferActiveNow(offer)
- *  - isOfferActiveNow(offer, 'Europe/Vienna')
- *  - isOfferActiveNow(offer, new Date())
- *  - isOfferActiveNow(offer, 'Europe/Vienna', new Date())
+ *  - offer.status === 'archived' | 'inactive' → inaktiv
  *
  * @param {object} offer
- * @param {string|Date} [tzOrNow='Europe/Vienna']   IANA TZ ODER Date (wird automatisch erkannt)
- * @param {Date} [maybeNow]                         Referenzzeit (optional)
+ * @param {string} timeZone  IANA TZ, default 'Europe/Vienna'
+ * @param {Date}   now       Referenzzeit (optional)
  * @return {boolean}
  */
-export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
+export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Date()) {
   if (!offer || typeof offer !== 'object') return false;
-
-  // Flexible Param-Handhabung:
-  // - 2. Param kann TZ-String ODER Date sein
-  // - 3. Param ist optionales Date
-  let timeZone = 'Europe/Vienna';
-  let now = new Date();
-
-  if (tzOrNow instanceof Date) {
-    timeZone = 'Europe/Vienna';
-    now = tzOrNow;
-  } else if (typeof tzOrNow === 'string' && tzOrNow) {
-    timeZone = tzOrNow;
-    if (maybeNow instanceof Date) now = maybeNow;
-  } else {
-    // Fallback: wenn 2. Param weder String noch Date ist, ignoriere ihn
-    if (maybeNow instanceof Date) now = maybeNow;
-  }
 
   // optionale Kurzschlüsse
   if (offer.active === false) return false;
@@ -84,7 +61,7 @@ export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
     const n = Number(x);
     if (Number.isFinite(n) && n >= 0 && n <= 6) return n;
     const s = String(x || '').trim().toLowerCase();
-    return Object.prototype.hasOwnProperty.call(WEEKDAY_MAP, s) ? WEEKDAY_MAP[s] : null;
+    return WEEKDAY_MAP.hasOwnProperty(s) ? WEEKDAY_MAP[s] : null;
   };
 
   const getLocalNowParts = (d) => {
@@ -103,7 +80,6 @@ export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
       const minutes = Number.isFinite(hh) && Number.isFinite(mm) ? hh * 60 + mm : 0;
       return { weekdayIdx: wd, minutes };
     } catch {
-      // Fallback ohne TZ (sollte selten sein)
       const jsDay = (d.getDay?.() ?? 0); // JS: 0=So … 6=Sa
       const weekdayIdx = (jsDay + 6) % 7; // wir wollen 0=Mo … 6=So
       const hh = d.getHours?.() ?? 0;
@@ -185,8 +161,8 @@ export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
       null;
 
     if (fromMin != null || toMin != null) {
-      const sMin = fromMin ?? 0;           // default 00:00
-      const eMin = toMin ?? 23 * 60 + 59;  // default 23:59
+      const sMin = fromMin ?? 0;       // default 00:00
+      const eMin = toMin ?? 23 * 60 + 59; // default 23:59
 
       if (sMin !== eMin) {
         if (sMin < eMin) {
@@ -196,7 +172,7 @@ export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
           if (!(minutes >= sMin || minutes <= eMin)) return false;
         }
       }
-      // sMin === eMin → ganztägig, kein Zeitfilter
+      // sMin === eMin → ganztägig, kein Filter
     }
   }
 
@@ -222,7 +198,7 @@ export function isOfferActiveNow(offer, tzOrNow = 'Europe/Vienna', maybeNow) {
  * Testet einen beliebigen Zeitpunkt (TZ-bewusst).
  * @param {object} offer
  * @param {Date|string|number} when
- * @param {string} [timeZone='Europe/Vienna']
+ * @param {string} timeZone
  */
 export function isOfferActiveAt(offer, when, timeZone = 'Europe/Vienna') {
   return isOfferActiveNow(offer, timeZone, when instanceof Date ? when : new Date(when));

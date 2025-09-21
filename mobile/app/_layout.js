@@ -1,17 +1,9 @@
 // stepsmatch/mobile/app/_layout.js
 import React, { useEffect, useRef } from 'react';
-import { Platform, AppState } from 'react-native';
+import { Platform } from 'react-native';
 import { Slot, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// ✅ Schritt 2/3 Bootstrap: zentral hier importieren
-import { ensureChannels } from '../components/push/push-notifications';
-import {
-  kickstartBackgroundLocation,
-  useLocationWatchdog,
-} from '../components/push/push-location';
-
 import PushInitializer from '../components/PushInitializer';
 import ThemeProvider from '../theme/ThemeProvider';
 import LocationAlwaysGate from '../components/permissions/LocationAlwaysGate';
@@ -40,8 +32,8 @@ async function markOfferRemotePushed(offerId) {
     const prev = prevRaw ? JSON.parse(prevRaw) : {};
     const next = {
       ...prev,
-      lastPushedAt: ts,          // generisch: „zuletzt gepusht“
-      lastPushedAtRemote: ts,    // explizit: Remote/Server-Push
+      lastPushedAt: ts,           // generisch: „zuletzt gepusht“ (egal ob remote/local)
+      lastPushedAtRemote: ts,     // explizit: Remote/Server-Push Zeitstempel
       lastSource: 'remote',
     };
     await AsyncStorage.setItem(key, JSON.stringify(next));
@@ -60,27 +52,31 @@ async function markOfferRemotePushed(offerId) {
    ──────────────────────────────────────────────────────────── */
 async function configureNotificationUI() {
   try {
-    // Kategorie / Actions
+    // Kategorien / Actions (plattformübergreifend)
+    // Kategorie für Angebots-Pushes mit GO/DISMISS
     await Notifications.setNotificationCategoryAsync('offer-go', [
       {
         identifier: 'GO',
         buttonTitle: 'LOS',
-        options: { opensAppToForeground: true },
+        options: { opensAppToForeground: true }, // iOS relevant; auf Android ok
       },
       {
         identifier: 'DISMISS',
         buttonTitle: 'AUSBLENDEN',
-        options: { isDestructive: true },
+        options: { isDestructive: true }, // iOS Styling; auf Android ok
       },
     ]);
 
     if (Platform.OS === 'android') {
+      // Gemeinsames Vibrationsmuster: kräftig & markant (Branding)
+      // Format: [delay, on, off, on, off, on]
       const brandVibration = [0, 350, 120, 350, 180, 500];
 
+      // Offers-Channel: Maximale Sichtbarkeit + Sound + Vibrationsmuster
       await Notifications.setNotificationChannelAsync('offers', {
         name: 'Offers',
         importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',
+        sound: 'default',               // System-Standard
         enableVibrate: true,
         vibrationPattern: brandVibration,
         enableLights: true,
@@ -89,6 +85,7 @@ async function configureNotificationUI() {
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
 
+      // Default-App-Channel: normal, dezenter
       await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
         name: 'StepsMatch',
         importance: Notifications.AndroidImportance.DEFAULT,
@@ -100,17 +97,15 @@ async function configureNotificationUI() {
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       });
 
-      await Notifications.setNotificationChannelAsync(
-        'com.ecily.mobile:stepsmatch-bg-location-task',
-        {
-          name: 'StepsMatch Hintergrund',
-          importance: Notifications.AndroidImportance.LOW,
-          sound: null,
-          enableVibrate: false,
-          enableLights: false,
-          lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
-        }
-      );
+      // BG-Location-Channel: ruhig, kein Sound
+      await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
+        name: 'StepsMatch Hintergrund',
+        importance: Notifications.AndroidImportance.LOW,
+        sound: null,
+        enableVibrate: false,
+        enableLights: false,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
+      });
     }
   } catch (e) {
     console.warn('[push-ui] configure failed', e?.message || e);
@@ -120,35 +115,19 @@ async function configureNotificationUI() {
 export default function RootLayout() {
   const receiveSub = useRef(null);
   const tapSub = useRef(null);
-  const appStateRef = useRef(AppState.currentState);
-
-  // ✅ Watchdog Hook mounten (läuft dauerhaft im Root)
-  useLocationWatchdog();
 
   useEffect(() => {
-    // Kaltstart-Bootstrap: UI/Channels + BG-Location
+    // Zuerst zentrale UI/Branding-Einstellungen (Channels/Kategorien)
     configureNotificationUI();
-    ensureChannels();
-    kickstartBackgroundLocation();
 
-    // AppState-Resume-Guard: bei Rückkehr in den Vordergrund neu „anstupsen“
-    const sub = AppState.addEventListener('change', (state) => {
-      const wasBg = /inactive|background/.test(appStateRef.current || '');
-      if (wasBg && state === 'active') {
-        // Idempotent; sorgt dafür, dass nach Doze/Standby sofort wieder Puls anliegt
-        ensureChannels();
-        kickstartBackgroundLocation();
-      }
-      appStateRef.current = state;
-    });
-
-    // Notification-Empfang → Remote-Dedupe markieren
+    // Nur Listener – die Mechanik (Geofences/Heartbeat/Dedupe) bleibt im PushInitializer
     receiveSub.current = Notifications.addNotificationReceivedListener((n) => {
       try {
         const c = n?.request?.content || {};
         const data = c?.data || {};
         const offerId = data?.offerId;
 
+        // Log
         console.log(
           '[push] received',
           JSON.stringify({
@@ -159,6 +138,7 @@ export default function RootLayout() {
           })
         );
 
+        // Remote-Push für Offer merken → Dedupe ggü. lokalem Geofence-Push
         if (offerId) {
           // fire-and-forget
           markOfferRemotePushed(offerId);
@@ -168,7 +148,6 @@ export default function RootLayout() {
       }
     });
 
-    // Notification-Tap / GO → in Offer-Detail navigieren
     tapSub.current = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const actionId = response?.actionIdentifier;
@@ -176,7 +155,7 @@ export default function RootLayout() {
         const offerId = data?.offerId;
         const route = data?.route || (offerId ? `/offers/${offerId}` : null);
 
-        // Nur Standardtap oder GO → navigieren
+        // Nur Standardtap oder GO → navigieren (SNOOZE existiert nicht; DISMISS nur ausblenden)
         if (
           actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER &&
           actionId?.toUpperCase?.() !== 'GO'
@@ -199,15 +178,12 @@ export default function RootLayout() {
     return () => {
       receiveSub.current?.remove?.();
       tapSub.current?.remove?.();
-      sub?.remove?.();
     };
   }, []);
 
   return (
     <ThemeProvider>
-      {/* Mechanik (Tasks/Geofence/Heartbeat/Dedupe) bleibt zentral hier gemountet */}
       <PushInitializer />
-      {/* Permission-Gate für „Immer erlauben“ */}
       <LocationAlwaysGate />
       <Slot />
     </ThemeProvider>

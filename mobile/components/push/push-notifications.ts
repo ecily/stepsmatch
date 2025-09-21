@@ -40,7 +40,6 @@ const PREFERRED_OFFERS_CHANNEL = 'offers-v2';
 function isForeground() {
   try { return AppState.currentState === 'active'; } catch { return false; }
 }
-
 function isOfferNotification(c: any) {
   const ch = c?.android?.channelId || c?.channelId;
   const kind = c?.data?.kind;
@@ -49,7 +48,7 @@ function isOfferNotification(c: any) {
   const knownOfferChannels = new Set<string>(
     [
       PREFERRED_OFFERS_CHANNEL,          // 'offers-v2'
-      CHANNELS?.offers,                  // aktueller Fallback-Kanal aus config
+      CHANNELS?.offers,                  // was auch immer hier aktuell konfiguriert ist
       CHANNELS?.offersLegacy,            // Legacy
       'offers',                          // ganz alte Legacy-ID
     ].filter(Boolean) as string[]
@@ -75,8 +74,6 @@ async function isOfferThrottled(offerId: string, now: number) {
 
 /* ────────────────────────────────────────────────────────────
    Zentrales DEDUPE-GATE
-   - Gibt {ok:false, reason} zurück, wenn wir unterdrücken sollen
-   - Quelle (source) ist wichtig für synthetische ENTERs
 ──────────────────────────────────────────────────────────── */
 export async function shouldNotify(
   offerId: string,
@@ -84,11 +81,11 @@ export async function shouldNotify(
   now = Date.now(),
 ): Promise<{ ok: boolean; reason?: string }> {
   if (await isGlobalThrottled(now)) {
-    if (DEDUPE_LOG_GUARD()) console.log('DEDUPE[throttle-global]', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[throttle-global]', { offerId, source });
     return { ok: false, reason: 'throttle-global' };
   }
   if (await isOfferThrottled(offerId, now)) {
-    if (DEDUPE_LOG_GUARD()) console.log('DEDUPE[throttle-offer]', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[throttle-offer]', { offerId, source });
     return { ok: false, reason: 'throttle-offer' };
   }
 
@@ -98,27 +95,25 @@ export async function shouldNotify(
   const lastSyntheticEnterAt = Number(st?.lastSyntheticEnterAt || 0);
 
   if (lastRemoteAt && (now - lastRemoteAt) < REMOTE_DEDUPE_WINDOW_MS) {
-    if (DEDUPE_LOG_GUARD()) console.log('DEDUPE[remote-recent]', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[remote-recent]', { offerId, source });
     return { ok: false, reason: 'remote-recent' };
   }
   if (lastLocalAt && (now - lastLocalAt) < LOCAL_EVENT_DEDUP_WINDOW_MS) {
-    if (DEDUPE_LOG_GUARD()) console.log('DEDUPE[local-recent]', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[local-recent]', { offerId, source });
     return { ok: false, reason: 'local-recent' };
   }
   if (source === 'synthetic-enter' && lastSyntheticEnterAt && (now - lastSyntheticEnterAt) < SYNTHETIC_ENTER_COOLDOWN_MS) {
-    if (DEDUPE_LOG_GUARD()) console.log('DEDUPE[synthetic-skip]', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[synthetic-skip]', { offerId, source });
     return { ok: false, reason: 'synthetic-skip' };
   }
 
   return { ok: true };
 }
 
-/** interne Guard-Funktion (vereinheitlicht alle alten Tippfehler auf DEDUPE_LOG) */
-function DEDUPE_LOG_GUARD() {
+/** interne Guard-Funktion, um alle bisherigen Tippfehler auf DEDUPE_LOG zu harmonisieren */
+function DEDUE_LOG_FIX_GUARD() {
   return DEDUPE_LOG === true;
 }
-// Alias für bestehenden Tippfehler-Aufrufstellen (falls irgendwo noch genutzt)
-const DEDUE_LOG_FIX_GUARD = DEDUPE_LOG_GUARD;
 
 /* ────────────────────────────────────────────────────────────
    Globaler Notification-Handler (einmalig)
@@ -128,7 +123,7 @@ Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const c: any = notification?.request?.content || {};
     if (isForeground() && isOfferNotification(c)) {
-      if (DEDUPE_LOG_GUARD()) console.log('[FG-SUPPRESS] remote offer suppressed in foreground');
+      if (DEDUE_LOG_FIX_GUARD()) console.log('[FG-SUPPRESS] remote offer suppressed in foreground');
       // keine Haptik, kein In-App-Signal, kein Banner
       return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
     }
@@ -150,12 +145,12 @@ try {
 
     if (offerId) {
       await setOfferPushState(offerId, { lastRemoteAt: Date.now() });
-      if (DEDUPE_LOG_GUARD()) console.log('[remote-push][recorded]', { offerId, kind });
+      if (DEDUE_LOG_FIX_GUARD()) console.log('[remote-push][recorded]', { offerId, kind });
     }
 
     if (kind === 'offers-refresh') {
-      DeviceEventEmitter.emit('offers:refresh'); // UI refresh
-      if (DEDUPE_LOG_GUARD()) console.log('[offers:refresh][emit] (remote)');
+      DeviceEventEmitter.emit('offers:refresh'); // EMIT UI REFRESH
+      if (DEDUE_LOG_FIX_GUARD()) console.log('[offers:refresh][emit] (remote)');
     }
   });
 } catch { /* noop */ }
@@ -269,24 +264,19 @@ export async function presentLocalOfferNotification(
   // Gate trotzdem prüfen (nützlich für BG & Doppelvermeidung)
   const gate = await shouldNotify(offerId, source, now);
   if (!gate.ok) {
-    if (DEDUPE_LOG_GUARD()) console.log('[DEDUPE] presentLocalOfferNotification skip', offerId, source, gate.reason);
+    if (DEDUE_LOG_FIX_GUARD()) console.log('[DEDUPE] presentLocalOfferNotification skip', offerId, source, gate.reason);
     return;
   }
 
   // ── FG: komplett unterdrücken ─────────────────────────────
   if (isForeground()) {
-    if (DEDUPE_LOG_GUARD()) console.log('[FG-SUPPRESS] local offer suppressed in foreground', { offerId, source });
+    if (DEDUE_LOG_FIX_GUARD()) console.log('[FG-SUPPRESS] local offer suppressed in foreground', { offerId, source });
     await setOfferPushState(offerId, {
       lastLocalNotifiedAt: now,
       ...(source === 'synthetic-enter' ? { lastSyntheticEnterAt: now } : null),
     });
     return;
   }
-
-  // ── Haptik (BG) – leichtes „wake up“ vor Anzeige (best effort)
-  try {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  } catch {}
 
   // ── BG: reguläre OS-Notification ──────────────────────────
   // (Details fetchen – wie gehabt)
@@ -347,9 +337,3 @@ export async function presentLocalOfferNotification(
     await setGroupState(groupId, { lastPushedAt: now, lastSummaryAt: now, events: pruned });
   }
 }
-
-/* ────────────────────────────────────────────────────────────
-   Kompatibler Default-Export
-   (damit sowohl default als auch named-Import funktioniert)
-──────────────────────────────────────────────────────────── */
-export default presentLocalOfferNotification;

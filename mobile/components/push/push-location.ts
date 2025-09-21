@@ -1,4 +1,3 @@
-// stepsmatch/mobile/components/push/push-location.ts
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import {
@@ -45,23 +44,6 @@ function isForeground(): boolean {
 // kleine Sleep-Hilfe
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-// ────────────────────────────────────────────────────────────
-// Permission helpers (minimal-invasiv, aber robust)
-// ────────────────────────────────────────────────────────────
-async function haveForegroundAndBackgroundPerms(): Promise<boolean> {
-  try {
-    const fg = await Location.getForegroundPermissionsAsync();
-    const bg = await Location.getBackgroundPermissionsAsync();
-    const ok = fg?.status === 'granted' && bg?.status === 'granted';
-    if (!ok) {
-      console.log('[BGLOC] permissions missing', { fg: fg?.status, bg: bg?.status });
-    }
-    return ok;
-  } catch {
-    return false;
-  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -148,7 +130,7 @@ export async function _sendHeartbeatWithCoords({
         }),
       }
     );
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json();
     console.log('[BGLOC] Heartbeat', res.status, JSON.stringify(json));
   } catch (e: any) {
     console.log('[BGLOC] Heartbeat error', String(e));
@@ -262,17 +244,10 @@ export async function startAggressiveBgLocation() {
     return;
   }
 
-  // Channels sicherstellen (defensiv; Fehler dürfen Flow nicht stoppen)
-  try { await ensureChannels(); } catch {}
+  await ensureChannels(); // make sure channels exist
 
   try {
     __bgLocStarting = true;
-
-    // Permissions prüfen, bevor wir starten (minimiert Fehlpfade)
-    if (!(await haveForegroundAndBackgroundPerms())) {
-      console.log('[BGLOC] start: missing permissions → skip');
-      return;
-    }
 
     const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     const now = Date.now();
@@ -280,6 +255,7 @@ export async function startAggressiveBgLocation() {
     // NEU: Neustarts nur, wenn wirklich notwendig und außerhalb Debounce-Fenster
     if (started) {
       __bgLocArmed = true;
+      // Bereits laufend → kein Stop/Start (Binder-Schonung)
       console.log('[BGLOC] start: already running → no-op');
       return;
     }
@@ -300,15 +276,13 @@ export async function startAggressiveBgLocation() {
       deferredUpdatesInterval: 0,
       deferredUpdatesDistance: 0,
       pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: false, // iOS only (harmlos hier)
+      showsBackgroundLocationIndicator: false,
       mayShowUserSettingsDialog: true,
       foregroundService: {
         notificationTitle: 'StepsMatch ist aktiv',
         notificationBody: 'Standort wird im Hintergrund aktualisiert.',
         notificationChannelId: channelId, // safe
-        // Hinweis: expo-location ignoriert unbekannte Keys. killServiceOnDestroy ist harmlos,
-        // aber nicht auf allen SDKs beachtet – lassen wir drin, es schadet nicht.
-        killServiceOnDestroy: false as any,
+        killServiceOnDestroy: false,
       },
     });
 
@@ -319,20 +293,21 @@ export async function startAggressiveBgLocation() {
       // Warmer Fix ohne harten Neustart – reduziert Binder-Last
       const warm = await getFreshBestFixOrNull(5000);
       if (warm?.coords) {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem('lastFixAt', String(Date.now()));
+        await (
+          await import('@react-native-async-storage/async-storage')
+        ).default.setItem('lastFixAt', String(Date.now()));
         await _sendHeartbeatWithCoords({
           latitude: warm.coords.latitude,
           longitude: warm.coords.longitude,
           accuracy: warm.coords.accuracy,
-          // Im FG leise, im BG normal – hält Geofences frisch
           refreshMode: isForeground() ? 'silent' : 'normal',
         });
       }
     } catch {}
 
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    await AsyncStorage.setItem('lastFixAt', String(Date.now()));
+    await (
+      await import('@react-native-async-storage/async-storage')
+    ).default.setItem('lastFixAt', String(Date.now()));
     console.log('[BGLOC] startLocationUpdatesAsync → armed (aggressive)');
   } catch (e: any) {
     const msg = String(e?.message || e);
@@ -355,20 +330,6 @@ export async function startAggressiveBgLocation() {
     }
   } finally {
     __bgLocStarting = false;
-  }
-}
-
-export async function stopAggressiveBgLocation() {
-  try {
-    const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
-    if (started) {
-      await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK);
-      console.log('[BGLOC] stopLocationUpdatesAsync → stopped');
-    }
-  } catch (e: any) {
-    console.log('[BGLOC] stop error', String(e?.message || e));
-  } finally {
-    __bgLocArmed = false;
   }
 }
 

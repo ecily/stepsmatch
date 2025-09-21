@@ -149,7 +149,7 @@ router.post('/roundtrip', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
-      token: target.token,
+      token: target.token,                // <─ optional: Token explizit mitgeben
       message: { title, body, data: payload },
     });
 
@@ -162,11 +162,6 @@ router.post('/roundtrip', async (req, res) => {
 
 router.post('/test', async (req, res) => {
   return router.handle({ ...req, url: '/roundtrip', method: 'POST' }, res, () => {});
-});
-
-// 🔁 auch als GET verfügbar (praktisch für curl/health)
-router.get('/ping', async (_req, res) => {
-  res.json({ success: true, projectId: PROJECT_ID || null, t: Date.now() });
 });
 
 router.post('/ping', async (_req, res) => {
@@ -186,7 +181,7 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 
     const resp = await sendToDevice({
       deviceId: deviceId,
-      token: target.token,
+      token: target.token,                // <─ optional
       message: { title, body, data: payload },
     });
 
@@ -198,60 +193,13 @@ router.post('/roundtrip-diagnose', async (req, res) => {
 });
 
 /* ────────────────────────────────────────────────────────────
-   Canary endpoints
+   NEW: Canary endpoint – prüft gültigen Token & invalidiert bei Fehler
    ──────────────────────────────────────────────────────────── */
-
-// GET /canary → Reachability-Check (optional: ?token=ExponentPushToken[...] für echten Test-Push)
-router.get('/canary', async (req, res) => {
+router.post('/canary', async (_req, res) => {
   try {
-    const tokenParam = typeof req.query.token === 'string' ? req.query.token.trim() : '';
-    if (!tokenParam || !Expo.isExpoPushToken(tokenParam)) {
-      return res.json({
-        ok: true,
-        route: 'push',
-        message: 'push canary up',
-        projectId: PROJECT_ID || null,
-        requiresTokenParam: 'optional: add ?token=ExponentPushToken[xxx] to send a real test push',
-        ts: Date.now(),
-      });
-    }
-
-    // optional: echter Test-Push
-    const title = 'StepsMatch Canary';
-    const body  = 'If you see this, Expo push works end-to-end.';
-    const payload = { type: 'canary', source: 'api/push/canary', t: Date.now() };
-
-    const resp = await sendToDevice({
-      deviceId: null,
-      token: tokenParam,
-      message: { title, body, data: payload },
-    });
-
-    const tickets = Array.isArray(resp?.tickets) ? resp.tickets : [];
-    const sentOk = tickets.some(t => (t?.status || '').toLowerCase() === 'ok');
-
-    return res.json({
-      ok: sentOk,
-      route: 'push',
-      projectId: PROJECT_ID || null,
-      sentOk,
-      result: resp || null,
-      ts: Date.now(),
-    });
-  } catch (e) {
-    console.error('[push/canary][GET] error', e?.message || e);
-    return res.status(500).json({ ok: false, error: 'server_error' });
-  }
-});
-
-/* Bestehender POST /canary: nutzt (token|deviceId|projectId) aus req.body
-   und markiert DeviceNotRegistered-Tokens automatisch als invalid. */
-router.post('/canary', async (req, res) => {
-  try {
-    const { token, deviceId, projectId } = req.body || {};
-    const target = await chooseTargetToken({ token, deviceId, projectId });
-    if (!target.token) {
-      return res.status(404).json({ ok: false, error: 'no-valid-token' });
+    const latest = await getLatestActiveTokenPreferProject();
+    if (!latest?.token) {
+      return res.status(404).json({ success: false, error: 'no-valid-token' });
     }
 
     const title = 'StepsMatch Canary';
@@ -259,43 +207,37 @@ router.post('/canary', async (req, res) => {
     const payload = { route: '/canary', source: 'canary', t: Date.now() };
 
     const resp = await sendToDevice({
-      deviceId: deviceId ?? null,
-      token: target.token,
+      deviceId: latest.deviceId ?? null,
+      token: latest.token,                // <─ wir adressieren exakt diesen Token
       message: { title, body, data: payload },
     });
 
     // DeviceNotRegistered heuristisch erkennen
-    const dnrFromReceipts =
-      (resp?.receipts && resp.receipts.errors && Number(resp.receipts.errors.DeviceNotRegistered || 0) > 0);
-    const dnrFromTickets =
-      (Array.isArray(resp?.tickets) && resp.tickets.some(t =>
-        (t?.status || '').toLowerCase() === 'error' &&
-        String(t?.details?.error || '').toLowerCase() === 'devicenotregistered'
-      ));
-    const hasDNR = Boolean(dnrFromReceipts || dnrFromTickets);
+    const hasDNR =
+      (resp?.receipts && resp.receipts.errors && Number(resp.receipts.errors.DeviceNotRegistered || 0) > 0) ||
+      (Array.isArray(resp?.tickets) && resp.tickets.some(t => (t?.status || '').toLowerCase() === 'error' && String(t?.details?.error || '').toLowerCase() === 'devicenotregistered'));
 
     let autoInvalidated = false;
     if (hasDNR) {
       const upd = await PushToken.updateOne(
-        { token: target.token },
+        { token: latest.token },
         { $set: { valid: false, lastError: 'DeviceNotRegistered', updatedAt: new Date() } }
       );
       autoInvalidated = upd.modifiedCount > 0;
-      console.warn('[push][canary] DeviceNotRegistered – token invalidated:', target.token.slice(0, 22) + '…');
+      console.warn('[push][canary] DeviceNotRegistered – token invalidated:', latest.token.slice(0, 22) + '…');
     }
 
     res.json({
-      ok: true,
-      projectId: PROJECT_ID || target.projectId || null,
-      token: target.token,
-      tokenSource: target.source,
-      deviceId: deviceId ?? null,
+      success: true,
+      projectId: PROJECT_ID || latest.projectId || null,
+      token: latest.token,
+      deviceId: latest.deviceId ?? null,
       result: resp,
       autoInvalidated,
     });
   } catch (e) {
     console.error('[push][canary] error', e);
-    res.status(500).json({ ok: false, error: 'server-error' });
+    res.status(500).json({ success: false, error: 'server-error' });
   }
 });
 

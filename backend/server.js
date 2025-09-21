@@ -18,13 +18,6 @@ import locationRoutes from './routes/location.js';
 import testerRoutes from './routes/testers.js';
 import { startOfferPoller, stopOfferPoller } from './jobs/offerPoller.js';
 
-// ➕ Diagnostics-Ingest (robust gegen ESM/CJS/named export)
-import * as diagModule from './routes/diag.js';
-const diagRoutes = diagModule.default ?? diagModule.router ?? diagModule;
-
-// ➕ [NEU 6b] Token Sweeper
-import { startTokenSweeper, stopTokenSweeper } from './jobs/tokenSweeper.js';
-
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
 
@@ -119,9 +112,6 @@ app.use('/api/location', locationRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/testers', testerRoutes);
 
-// ➕ Diagnostics-Ingest mounten
-app.use('/api/diag', diagRoutes);
-
 // Healthchecks
 app.get('/api/ping', (_req, res) => res.status(200).send('pong'));
 app.get('/api/_healthz', (_req, res) => res.json({ ok: true }));
@@ -129,21 +119,26 @@ app.get('/api/_readyz', (_req, res) => res.json({ ok: true }));
 
 /* ─────────────────────────────────────────────────────────────
    APK Redirect (Frontend-QR zeigt auf /apk?src=qr)
+   - Liest Ziel-URL aus ENV APK_TARGET_URL
+   - Unterstützt GET & HEAD (curl -I) und /apk wie auch /api/apk
    ───────────────────────────────────────────────────────────── */
 const DEFAULT_APK_URL =
   'https://stepsmatch.fra1.digitaloceanspaces.com/Stepsmatch_Alpha_V1_1.apk';
 
-function buildRedirectTarget(_baseUrl, req) {
+function buildRedirectTarget(baseUrl, req) {
+  // Base aus ENV oder Default
   const targetBase = (process.env.APK_TARGET_URL || DEFAULT_APK_URL).trim();
   try {
     const u = new URL(targetBase);
+    // Query aus Anfrage durchreichen (z. B. src=qr)
     const incoming = new URL(req.protocol + '://' + req.get('host') + req.originalUrl);
     for (const [k, v] of incoming.searchParams.entries()) {
+      // bestehende Keys nicht überschreiben
       if (!u.searchParams.has(k)) u.searchParams.set(k, v);
     }
     return u.toString();
   } catch {
-    return targetBase;
+    return targetBase; // Fallback: ungeprüft
   }
 }
 
@@ -154,9 +149,11 @@ function apkRedirectHandler(req, res) {
       .status(503)
       .json({ ok: false, error: 'apk_target_unset', hint: 'Setze ENV APK_TARGET_URL auf die Spaces-URL.' });
   }
+  // 302 Found – explizit, damit Browser Download-Flow starten
   return res.redirect(302, target);
 }
 
+// Beide Pfade anbieten (robust gg. Frontend-Varianten)
 app.all('/apk', apkRedirectHandler);
 app.all('/api/apk', apkRedirectHandler);
 
@@ -196,9 +193,6 @@ connectDB()
       startOfferPoller();
     }
 
-    // ➕ [NEU 6b] TokenSweeper starten (risikoarm, rein auf DB-Ebene)
-    startTokenSweeper();
-
     serverInstance = app.listen(PORT, '0.0.0.0', () => {
       const local = `http://localhost:${PORT}`;
       const lan = `http://10.0.0.34:${PORT}`;
@@ -221,10 +215,6 @@ connectDB()
    ───────────────────────────────────────────────────────────── */
 async function shutdown(signal = 'SIGTERM') {
   console.log(`[shutdown] ${signal} received → shutting down…`);
-  try {
-    // ➕ [NEU 6b] Sweeper stoppen
-    stopTokenSweeper?.();
-  } catch {}
   try {
     stopOfferPoller?.();
   } catch {}
