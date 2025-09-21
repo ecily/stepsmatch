@@ -1,4 +1,15 @@
 // stepsmatch/mobile/components/push/push-location.ts
+// Stabilisiert Heartbeats & Geofence-Refresh (Debounce/Idempotenz) und verhindert UI-Flackern.
+// Exporte:
+//   - useLocationWatchdog
+//   - kickstartBackgroundLocation
+//   - startAggressiveBgLocation / stopAggressiveBgLocation
+//   - _sendHeartbeatWithCoords / sendHeartbeat
+//
+// ⚠️ WICHTIG: Stelle sicher, dass ALLE Importe auf GENAU DIESEN Pfad zeigen,
+// damit das Modul nicht doppelt gebundled wird (sonst greifen die Guards nicht):
+//   import { useLocationWatchdog, kickstartBackgroundLocation, _sendHeartbeatWithCoords } from 'components/push/push-location';
+
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import {
@@ -23,28 +34,53 @@ import {
   refreshGeofencesAroundUser,
 } from './push-geofence';
 
+// ────────────────────────────────────────────────────────────
+// Interne, konservative Limits & State
+// ────────────────────────────────────────────────────────────
+
+/** Mindestabstand zwischen Heartbeats – harte Untergrenze 15s, selbst wenn ENV kleiner ist. */
+const HB_MIN_MS = Math.max(HEARTBEAT_MIN_SECONDS * 1000, 15_000);
+/** Frühzeitiger Heartbeat, wenn sich die Position stark geändert hat (auch wenn HB_MIN_MS noch nicht um). */
+const HB_MIN_MOVE_M = 20;
+/** Geofence-Refresh durch Heartbeat höchstens alle 20s. */
+const GF_FROM_HB_MIN_MS = 20_000;
+
 let lastHeartbeatAt = 0;
+let __hbInFlight = false;
+let __lastHbLat: number | null = null;
+let __lastHbLng: number | null = null;
+
+let __lastGeofenceRefreshFromHb = 0;
 
 /** 🔒 NEU: Idempotenz-/Debounce-Guards gegen Doppelstarts & Binder-Flut */
 let __bgLocStarting = false;           // verhindert parallele Starts
 let __bgLocArmed = false;              // merkt, ob wir selbst „armed“ haben
 let __lastStartAt = 0;                 // letztes erfolgreiches Start-Zeitstempel
-const RESTART_DEBOUNCE_MS = 60_000;    // NEU: kein Restart < 60s
-const STALE_WARM_FIX_MS = 10_000;      // NEU: Warm-Fix-Frist, ohne Restart
-let __fgServiceRetryDone = false;      // NEU: einmaliger Retry-Guard
+const RESTART_DEBOUNCE_MS = 60_000;    // kein Restart < 60s
+const STALE_WARM_FIX_MS = 10_000;      // Warm-Fix-Frist, ohne Restart
+let __fgServiceRetryDone = false;      // einmaliger Retry-Guard
 
 export type HeartbeatRefreshMode = 'normal' | 'silent' | 'none';
 
 // ────────────────────────────────────────────────────────────
-// App state helper
+// Helpers
 // ────────────────────────────────────────────────────────────
 function isForeground(): boolean {
   try { return AppState.currentState === 'active'; } catch { return false; }
 }
 
-// kleine Sleep-Hilfe
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function toRad(d: number) { return (d * Math.PI) / 180; }
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
 // ────────────────────────────────────────────────────────────
@@ -70,7 +106,7 @@ async function haveForegroundAndBackgroundPerms(): Promise<boolean> {
 export async function getFreshBestFixOrNull(timeoutMs = FRESH_FIX_TIMEOUT_MS) {
   try {
     const fix = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.BestForNavigation,
+      accuracy: Location.Accuracy.Balanced, // genügt, verhindert Battery-Drain
       maximumAge: 0,
       timeout: timeoutMs,
     });
@@ -98,10 +134,7 @@ export async function ensureGoodAccuracyCoords(
       ((coords as any).accuracy as number) > MIN_GOOD
     ) {
       const fresh = await getFreshBestFixOrNull();
-      if (
-        fresh?.coords &&
-        fresh.coords.accuracy < (((coords as any).accuracy) ?? 1e9)
-      ) {
+      if (fresh?.coords && (fresh.coords.accuracy ?? 9e9) < (((coords as any).accuracy) ?? 9e9)) {
         return fresh.coords;
       }
     }
@@ -112,7 +145,20 @@ export async function ensureGoodAccuracyCoords(
 }
 
 // ────────────────────────────────────────────────────────────
-// Heartbeat
+/** Debounced Geofence-Refresh, zentral verwendet von Heartbeats. */
+// ────────────────────────────────────────────────────────────
+async function maybeRefreshGeofencesDebounced(silent: boolean) {
+  const now = nowMs();
+  if (now - __lastGeofenceRefreshFromHb < GF_FROM_HB_MIN_MS) return;
+  try {
+    await refreshGeofencesAroundUser({ force: true, silent });
+  } finally {
+    __lastGeofenceRefreshFromHb = now;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Heartbeat (gedrosselt & entprellt)
 // ────────────────────────────────────────────────────────────
 export async function _sendHeartbeatWithCoords({
   latitude,
@@ -125,13 +171,33 @@ export async function _sendHeartbeatWithCoords({
   accuracy?: number;
   refreshMode?: HeartbeatRefreshMode;
 }) {
+  // Anti-Sturm: nur bei signifikanter Bewegung ODER nach Zeitfenster
   const now = nowMs();
-  if (now - lastHeartbeatAt < HEARTBEAT_MIN_SECONDS * 1000) return;
-  lastHeartbeatAt = now;
+  const movedEnough =
+    __lastHbLat == null || __lastHbLng == null
+      ? true
+      : haversineMeters(__lastHbLat, __lastHbLng, latitude, longitude) >= HB_MIN_MOVE_M;
+
+  const timeOk = now - lastHeartbeatAt >= HB_MIN_MS;
+
+  if (__hbInFlight || (!timeOk && !movedEnough)) {
+    // trotzdem (leise) Geofences frisch halten – aber debounced
+    if (refreshMode === 'normal' || refreshMode === 'silent') {
+      await maybeRefreshGeofencesDebounced(true);
+    }
+    return;
+  }
+
+  __hbInFlight = true;
+  lastHeartbeatAt = now;         // früh setzen → schützt bei parallelen Aufrufen
+  __lastHbLat = latitude;
+  __lastHbLng = longitude;
 
   try {
     const token = await getCurrentExpoToken();
     const deviceId = await getPersistentDeviceId();
+    if (!token || !deviceId) return;
+
     const res = await fetch(
       `https://lobster-app-ie9a5.ondigitalocean.app/api/location/heartbeat`,
       {
@@ -152,28 +218,28 @@ export async function _sendHeartbeatWithCoords({
     console.log('[BGLOC] Heartbeat', res.status, JSON.stringify(json));
   } catch (e: any) {
     console.log('[BGLOC] Heartbeat error', String(e));
+  } finally {
+    __hbInFlight = false;
   }
 
+  // Leichtgewichtige, lokale Korrektur der Inside-Flags
   try {
     await reconcileInsideFlagsWithPosition({ latitude, longitude, accuracy });
   } catch (e: any) {
     console.log('[RECONCILE] failed after heartbeat', String(e));
   }
 
+  // Geofences updaten – aber sauber gedrosselt
   try {
     if (refreshMode === 'normal') {
-      console.log('[geofence] heartbeat-triggered refresh (force=true)');
-      await refreshGeofencesAroundUser(true);
+      await maybeRefreshGeofencesDebounced(false);
     } else if (refreshMode === 'silent') {
-      console.log(
-        '[geofence] heartbeat-triggered refresh (force=true, silent=true)'
-      );
-      await refreshGeofencesAroundUser({ force: true, silent: true });
+      await maybeRefreshGeofencesDebounced(true);
     } else {
-      console.log('[geofence] heartbeat-triggered refresh skipped (mode=none)');
+      // none → explizit nichts tun
     }
   } catch (e: any) {
-    console.log('[geofence] heartbeat-triggered refresh failed', String(e));
+    console.log('[geofence] heartbeat-refresh failed', String(e));
   }
 
   await setGlobalState({ lastHeartbeatAt: now });
@@ -181,35 +247,6 @@ export async function _sendHeartbeatWithCoords({
 
 export async function sendHeartbeat(arg?: any) {
   try {
-    if (typeof arg === 'string') {
-      const pos = await Location.getLastKnownPositionAsync({});
-      if (!pos?.coords) {
-        try {
-          const fresh = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.BestForNavigation,
-            maximumAge: 0,
-            timeout: FRESH_FIX_TIMEOUT_MS,
-          });
-          if (fresh?.coords) {
-            return _sendHeartbeatWithCoords({
-              latitude: fresh.coords.latitude,
-              longitude: fresh.coords.longitude,
-              accuracy: fresh.coords.accuracy,
-              refreshMode: 'silent',
-            });
-          }
-        } catch {}
-        console.log('[BGLOC] sendHeartbeat(token) no position available');
-        return;
-      }
-      return _sendHeartbeatWithCoords({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-        refreshMode: 'silent',
-      });
-    }
-
     if (
       arg &&
       typeof arg === 'object' &&
@@ -219,13 +256,17 @@ export async function sendHeartbeat(arg?: any) {
       return _sendHeartbeatWithCoords({ ...arg, refreshMode: 'normal' });
     }
 
-    const pos = await Location.getLastKnownPositionAsync({});
+    // fallback: letztes Fix oder kurzer Fresh-Fix
+    const pos =
+      (await Location.getLastKnownPositionAsync({})) ??
+      (await getFreshBestFixOrNull(5_000));
+
     if (pos?.coords) {
       return _sendHeartbeatWithCoords({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
         accuracy: pos.coords.accuracy,
-        refreshMode: 'normal',
+        refreshMode: 'silent',
       });
     }
   } catch (e: any) {
@@ -234,10 +275,10 @@ export async function sendHeartbeat(arg?: any) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Background Location start (with Foreground Service)
+// Background Location start (mit Foreground Service)
 // ────────────────────────────────────────────────────────────
 
-// Safe resolver for the background notification channel ID
+// Safe resolver für die Background-Notification-Channel-ID
 function getBgChannelId(): string {
   try {
     const id = (CHANNELS as any)?.bg;
@@ -277,7 +318,6 @@ export async function startAggressiveBgLocation() {
     const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     const now = Date.now();
 
-    // NEU: Neustarts nur, wenn wirklich notwendig und außerhalb Debounce-Fenster
     if (started) {
       __bgLocArmed = true;
       console.log('[BGLOC] start: already running → no-op');
@@ -294,30 +334,28 @@ export async function startAggressiveBgLocation() {
     console.log('[BGLOC] using bg channel', channelId);
 
     await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
-      accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 30 * 1000,
-      distanceInterval: 0,
+      // Konservative, batteriefreundliche Defaults
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 10_000,   // Android: min. 10s
+      distanceInterval: 15,   // mind. 15m Bewegung
       deferredUpdatesInterval: 0,
       deferredUpdatesDistance: 0,
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: false, // iOS only (harmlos hier)
+      pausesUpdatesAutomatically: true,
+      showsBackgroundLocationIndicator: false, // iOS-only (harmlos)
       mayShowUserSettingsDialog: true,
       foregroundService: {
         notificationTitle: 'StepsMatch ist aktiv',
         notificationBody: 'Standort wird im Hintergrund aktualisiert.',
-        notificationChannelId: channelId, // safe
-        // Hinweis: expo-location ignoriert unbekannte Keys. killServiceOnDestroy ist harmlos,
-        // aber nicht auf allen SDKs beachtet – lassen wir drin, es schadet nicht.
-        killServiceOnDestroy: false as any,
+        notificationChannelId: channelId,
       },
     });
 
     __bgLocArmed = true;
     __lastStartAt = now;
 
+    // Optionaler „warm fix“ ohne harten Neustart – reduziert Binder-Last
     try {
-      // Warmer Fix ohne harten Neustart – reduziert Binder-Last
-      const warm = await getFreshBestFixOrNull(5000);
+      const warm = await getFreshBestFixOrNull(5_000);
       if (warm?.coords) {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
         await AsyncStorage.setItem('lastFixAt', String(Date.now()));
@@ -325,7 +363,6 @@ export async function startAggressiveBgLocation() {
           latitude: warm.coords.latitude,
           longitude: warm.coords.longitude,
           accuracy: warm.coords.accuracy,
-          // Im FG leise, im BG normal – hält Geofences frisch
           refreshMode: isForeground() ? 'silent' : 'normal',
         });
       }
@@ -338,14 +375,11 @@ export async function startAggressiveBgLocation() {
     const msg = String(e?.message || e);
     console.log('[BGLOC] startLocationUpdatesAsync error', msg);
 
-    // ⚠️ NEU: Einmaliger Retry, wenn das FG-Service zu früh gestartet wurde
-    if (
-      !__fgServiceRetryDone &&
-      /Foreground service cannot be started/i.test(msg)
-    ) {
+    // Einmaliger Retry, wenn das FG-Service zu früh gestartet wurde
+    if (!__fgServiceRetryDone && /Foreground service cannot be started/i.test(msg)) {
       __fgServiceRetryDone = true;
       console.log('[BGLOC] retry: foreground service race → wait 1s & retry');
-      await sleep(1000);
+      await sleep(1_000);
       if (isForeground()) {
         __bgLocStarting = false; // Reset, damit Retry nicht geblockt wird
         await startAggressiveBgLocation();
@@ -419,12 +453,13 @@ export function useLocationWatchdog() {
   const React = require('react');
   const { useEffect, useRef } = React as typeof import('react');
   const timerRef = useRef<any>(null);
+
   useEffect(() => {
     async function tick() {
       try {
         // Kein Start-Versuch, wenn die App im Hintergrund ist
         if (!isForeground()) {
-          // optional: kurzen, stillen Heartbeat schicken
+          // optional: kurzen, stillen Heartbeat schicken (debounced in _sendHeartbeatWithCoords)
           const pos = await Location.getLastKnownPositionAsync({});
           if (pos?.coords) {
             await _sendHeartbeatWithCoords({
@@ -437,31 +472,21 @@ export function useLocationWatchdog() {
           return;
         }
 
-        const locStarted = await Location.hasStartedLocationUpdatesAsync(
-          BG_LOCATION_TASK
-        );
+        const locStarted = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
 
-        // Falls nicht gestartet → EINMAL starten (idempotent)
         if (!locStarted) {
           console.log('[BGLOC] watchdog → BG task not running → start');
           await startAggressiveBgLocation();
         }
 
-        const AsyncStorage = (
-          await import('@react-native-async-storage/async-storage')
-        ).default;
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
         const lastFixAt = Number((await AsyncStorage.getItem('lastFixAt')) || 0);
         const age = Date.now() - lastFixAt;
 
-        // NEU: Bei stale Fix NICHT blind neustarten, zuerst warm fix + heartbeat
+        // Bei stale Fix KEIN harter Neustart, zuerst warm fix + heartbeat
         if (!lastFixAt || age > LOC_STALE_MS) {
-          console.log(
-            '[BGLOC] watchdog → stale fix (age=',
-            age,
-            'ms) → warm-fix + heartbeat'
-          );
+          console.log('[BGLOC] watchdog → stale fix (age=', age, 'ms) → warm-fix + heartbeat');
 
-          // Warm-Fix versuchen (ohne Restart)
           try {
             const warm = await getFreshBestFixOrNull(STALE_WARM_FIX_MS);
             const pos = warm?.coords
@@ -490,26 +515,32 @@ export function useLocationWatchdog() {
         const mod = await import('./push-geofence');
         const gfAge = Date.now() - (mod as any).lastGeofenceSyncAt;
         if (!gfStarted) {
-          console.log(
-            '[GEOFENCE] watchdog → geofencing not running → force refresh'
-          );
-          await refreshGeofencesAroundUser(true);
+          console.log('[GEOFENCE] watchdog → geofencing not running → force refresh');
+          await refreshGeofencesAroundUser({ force: true, silent: true });
         } else if (!(mod as any).lastGeofenceSyncAt || gfAge > GF_STALE_MS) {
-          console.log(
-            '[GEOFENCE] watchdog → geofence stale (age=',
-            gfAge,
-            'ms) → force refresh'
-          );
-          await refreshGeofencesAroundUser(true);
+          console.log('[GEOFENCE] watchdog → geofence stale (age=', gfAge, 'ms) → force refresh');
+          await refreshGeofencesAroundUser({ force: true, silent: true });
         }
       } catch (e: any) {
         console.log('[WD] tick error', String(e?.message || e));
       }
     }
+
+    // Sofort ein erster Tick, dann zyklisch
+    tick();
     // @ts-ignore
     timerRef.current = setInterval(tick, WD_TICK_MS);
+
+    // Re-arm beim Wechsel in den Vordergrund
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        setTimeout(() => { kickstartBackgroundLocation(); }, 800);
+      }
+    });
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      try { if (timerRef.current) clearInterval(timerRef.current); } catch {}
+      try { sub?.remove?.(); } catch {}
     };
   }, []);
 }
