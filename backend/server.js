@@ -18,8 +18,9 @@ import locationRoutes from './routes/location.js';
 import testerRoutes from './routes/testers.js';
 import { startOfferPoller, stopOfferPoller } from './jobs/offerPoller.js';
 
-// ➕ Diagnostics-Ingest
-import diagRoutes from './routes/diag.js';
+// ➕ Diagnostics-Ingest (robust gegen ESM/CJS/named export)
+import * as diagModule from './routes/diag.js';
+const diagRoutes = diagModule.default ?? diagModule.router ?? diagModule;
 
 // ➕ [NEU 6b] Token Sweeper
 import { startTokenSweeper, stopTokenSweeper } from './jobs/tokenSweeper.js';
