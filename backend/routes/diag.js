@@ -4,22 +4,28 @@
 //   POST /api/diag/ingest  -> speichert ein Diagnostics-JSON in Mongo (Collection: diagnostics)
 //   GET  /api/diag/ping    -> einfacher Health/Ping-Check
 //
-// Einbindung (im nächsten Schritt in deiner Express-App):
-//   const diagRouter = require('./routes/diag');
-//   app.use('/api/diag', diagRouter);
+// Einbindung (in server.js mit ESM):
+//   import diagRoutes from './routes/diag.js';
+//   app.use('/api/diag', diagRoutes);
 
-const express = require('express');
-const router = express.Router();
-const mongoose = require('mongoose');
+import { Router } from 'express';
+import mongoose from 'mongoose';
+
+const router = Router();
 
 // Helper: sichere Accessor
 function safeObj(v) {
-  return v && typeof v === 'object' ? v : {};
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
 }
 
 // Health/Ping
 router.get('/ping', (_req, res) => {
   res.json({ ok: true, service: 'diag', ts: new Date().toISOString() });
+});
+
+// Optionaler Canary für schnellen Check dieser Route (unabhängig vom Push-Canary)
+router.get('/canary', (_req, res) => {
+  res.json({ ok: true, route: 'diag', message: 'diag canary up' });
 });
 
 // Ingest: nimmt { payload } an und speichert 1:1 in Mongo + _meta Felder
@@ -28,12 +34,11 @@ router.post('/ingest', async (req, res) => {
     const body = safeObj(req.body);
     const payload = safeObj(body.payload);
 
-    if (!payload || Array.isArray(payload) || Object.keys(payload).length === 0) {
+    if (Object.keys(payload).length === 0) {
       return res.status(400).json({ ok: false, error: 'invalid payload (object required)' });
     }
 
-    // Minimale Validierung auf erwartetes Schema-Feld (optional, nicht hart)
-    // payload._schema sollte z. B. "stepsmatch.diagnostics.v1" sein (aus Diagnostics Screen)
+    // optionales Schema-Tag (z. B. "stepsmatch.diagnostics.v1")
     const schemaTag = typeof payload._schema === 'string' ? payload._schema : 'unknown';
 
     // Request-Metadaten
@@ -52,7 +57,6 @@ router.post('/ingest', async (req, res) => {
         ip,
         ua,
         schema: schemaTag,
-        // Du kannst hier später Build/Commit-Infos anreichern (z. B. aus ENV)
         app: 'stepsmatch',
         source: 'mobile.diagnostics',
       },
@@ -68,4 +72,4 @@ router.post('/ingest', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
