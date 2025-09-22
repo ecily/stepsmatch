@@ -20,14 +20,24 @@ import {
   pruneObsoleteOfferStates, nowMs,
   getInterestSet, acquirePushLock,
 } from './push-state';
-import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
-import { matchesInterests } from '../../utils/interests';
-import { presentLocalOfferNotification } from './push-notifications';
+import { isOfferActiveNow as _isOfferActiveNow } from '../../utils/isOfferActiveNow';
+import { matchesInterests as _matchesInterests } from '../../utils/interests';
+import { presentLocalOfferNotification as _presentLocalOfferNotification } from './push-notifications';
 
-// ⬇️ Neu: zentrales Dedupe-Gate (wird in push-notifications.ts implementiert)
+// ⬇️ Neu/Sicher: Fallbacks & Wrappers, damit „undefined is not a function“ nicht mehr auftreten kann
+const isOfferActiveNow: typeof _isOfferActiveNow =
+  typeof _isOfferActiveNow === 'function' ? _isOfferActiveNow : ((o: any) => true);
+
+const matchesInterests: typeof _matchesInterests =
+  typeof _matchesInterests === 'function' ? _matchesInterests : (() => true);
+
+const presentLocalOfferNotification: typeof _presentLocalOfferNotification =
+  typeof _presentLocalOfferNotification === 'function'
+    ? _presentLocalOfferNotification
+    : (async () => { console.log('[warn] presentLocalOfferNotification noop'); });
+
+// ⬇️ zentrales Dedupe-Gate (falls export fehlt → No-Op, nie crashen)
 import { shouldNotify as _shouldNotify } from './push-notifications';
-
-// Fallback, falls shouldNotify (noch) nicht exportiert ist → niemals crashen
 const shouldNotify: (offerId: string, reason: string) => Promise<{ ok: boolean; reason?: string }> =
   typeof _shouldNotify === 'function'
     ? _shouldNotify
@@ -39,7 +49,7 @@ let CURRENT_REGIONS: Array<{identifier:string, latitude:number, longitude:number
 // Geofence sync guards
 let GEOFENCE_REFRESH_IN_FLIGHT = false;
 let LAST_REFRESH_TS = 0;
-// ⬇️ leicht erhöht, um Netz-Noise zu reduzieren
+// leicht erhöht, um Netz-Noise zu reduzieren
 const REFRESH_MIN_GAP_MS = 5000;
 
 // Track zuletzt bekannte Sync-Zeit (für Watchdog)
@@ -105,7 +115,6 @@ async function httpGetJsonWithRetry(url: string, {
 ──────────────────────────────────────────────────────────── */
 let _offersFetchErrorOnce = false; // Log-Noise-Guard
 async function fetchCandidateOffers() {
-  // sichere Basis: Fallback falls API_BASE leer/undefined (sollte nicht nötig sein, aber harmless)
   const base = (typeof API_BASE === 'string' && API_BASE) ? API_BASE : 'https://lobster-app-ie9a5.ondigitalocean.app/api';
   const url = `${base}/offers?withProvider=1&activeNow=1&fields=_id,name,location,provider,radius,validTimes,validDays,validDates`;
 
@@ -119,11 +128,10 @@ async function fetchCandidateOffers() {
       }
       return Array.isArray(list) ? list : [];
     }
-    // Recovery-Log und UI-Refresh bei erster Genesung
     if (_offersFetchErrorOnce) {
       console.log('[geofence] fetch offers recovered', 'count=', (list?.length ?? 0));
       _offersFetchErrorOnce = false;
-      DeviceEventEmitter.emit('offers:refresh'); // EMIT UI REFRESH: nach Recovery sofort Liste ziehen
+      DeviceEventEmitter.emit('offers:refresh');
     }
     return list || [];
   } catch (e: any) {
@@ -240,21 +248,30 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
         for (const r of regions) {
           const offerId = parseOfferIdFromIdentifier(r.identifier);
           if (!offerId) continue;
-          const { inside, d } = effectiveInside({
+
+          const { inside, d, accCap } = effectiveInside({
             hereLat: latitude, hereLng: longitude,
             regionLat: r.latitude, regionLng: r.longitude,
             radius: Number(r.radius) || DEFAULT_RADIUS_M, acc: hereAcc
           });
+
+          // Zusatz-Diagnose
+          if (inside) {
+            console.log('[INSTANT_CHECK]', JSON.stringify({
+              offerId, d: Math.round(d), radius: r.radius, accCap, eff: Math.round((r.radius ?? 0) + accCap + ENTER_SANITY_BUFFER_M)
+            }));
+          }
+
           if (!inside) continue;
 
           const st = await getOfferPushState(offerId);
           if (st?.inside) continue;
 
-          // Aktivität check
+          // Aktivität check (defensiv)
           let active = true;
           try {
             const res = await fetch(`${API_BASE}/offers/${offerId}?withProvider=1`, { method: 'GET' });
-            const offerForChecks = await res.json();
+            const offerForChecks = await res.json().catch(() => null);
             active = res.ok ? !!isOfferActiveNow(offerForChecks, EUROPE_VIENNA) : true;
           } catch {}
 
@@ -264,29 +281,32 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
           }
 
           if (acquirePushLock(offerId)) {
-            // ⬇️ DEDUPE-GATE vor der lokalen Notification (synthetic-enter)
-            const gate = await shouldNotify(offerId, 'synthetic-enter');
+            // DEDUPE-GATE vor der lokalen Notification (synthetic-enter)
+            const gate = await shouldNotify(offerId, 'synthetic-enter').catch((e:any) => ({ ok: true, reason: 'gate-error:'+String(e?.message || e) }));
             if (!gate?.ok) {
               console.log('[DEDUPE] skip synthetic-enter', offerId, gate?.reason);
               await setOfferPushState(offerId, { inside: true, lastPushedAt: st?.lastPushedAt || 0 });
               continue;
             }
 
-            const meta = await getOfferMeta(offerId);
+            const meta = await getOfferMeta(offerId).catch(() => ({} as any));
             try {
-              if (typeof Notifications.setBadgeCountAsync === 'function') {
-                await Notifications.setBadgeCountAsync(0).catch(() => {});
+              if (typeof (Notifications as any)?.setBadgeCountAsync === 'function') {
+                await (Notifications as any).setBadgeCountAsync(0).catch(() => {});
               }
             } catch {}
-            const distanceBadge = await computeDistanceBadge(offerId);
+
+            const distanceBadge = await computeDistanceBadge(offerId).catch(() => null);
             await presentLocalOfferNotification(offerId, meta, 'synthetic-enter', distanceBadge || null);
+
             console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({
               offerId, d: Math.round(d) + 'm', source: 'INSTANT_AFTER_SYNC'
             }));
+
             const ts = nowMs();
             await setOfferPushState(offerId, { inside: true, lastPushedAt: ts });
             await setGlobalState({ lastAnyPushAt: ts });
-            // reportEnterToBackend handled in tasks Enter path only (unchanged behavior for synthetic enter)
+            // reportEnterToBackend bleibt im Task-ENTER Pfad
           }
         }
       }
@@ -304,7 +324,6 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
       lastGeofenceSyncAt = now;
       LAST_REFRESH_TS = nowMs();
 
-      // ⬇️ EMIT UI REFRESH: keine Regionen → Liste soll ggf. leeren/aktualisieren
       DeviceEventEmitter.emit('offers:refresh');
       console.log('[offers:refresh][emit] (no regions)');
 
@@ -315,11 +334,9 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
       CURRENT_REGIONS = regions.slice();
       lastGeofenceSyncAt = now;
       LAST_REFRESH_TS = nowMs();
-      // WICHTIG: Erlaube First-Ever-Push auch bei "silent" Refresh (einmalig), um Inside-Ohne-Enter abzudecken
       await markAlreadyInsideQuietly({ allowFirstEverPush: true });
       console.log('[geofence] regions unchanged -> no restart]');
 
-      // ⬇️ EMIT UI REFRESH: nach stillem/normalem Sync
       DeviceEventEmitter.emit('offers:refresh');
       console.log('[offers:refresh][emit] (regions unchanged)');
 
@@ -344,15 +361,15 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
 
     try { await pruneObsoleteOfferStates(regions.map(r => r.identifier)); } catch {}
 
-    // WICHTIG: Auch nach (Re)Start einmaligen First-Ever-Push zulassen
+    // Auch nach (Re)Start einmaligen First-Ever-Push zulassen
     await markAlreadyInsideQuietly({ allowFirstEverPush: true });
 
-    // ⬇️ EMIT UI REFRESH: nach Restart/Neu-Setzen der Regionen
     DeviceEventEmitter.emit('offers:refresh');
     console.log('[offers:refresh][emit] (regions started/restarted)');
   } catch (e:any) {
     console.log('[geofence] refresh error', String(e));
   } finally {
+    GEOFENCE_REFRESH_IN_FLIGHT = GEOFENCE_REFRESH_IN_FLIGHT && false; // ensure reset even if re-entrancy tried
     GEOFENCE_REFRESH_IN_FLIGHT = false;
   }
 }
@@ -407,20 +424,18 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
       if (d <= effective) {
         const st = await getOfferPushState(offerId);
         if (!st.inside) {
-          // Interessen/aktiv
-          let offerForChecks:any = null;
+          // Interessen/aktiv (defensiv)
           try {
             const [interestSet, fetchedOffer] = await Promise.all([
               getInterestSet(),
               fetch(`${API_BASE}/offers/${offerId}?withProvider=1`).then(r => r.ok ? r.json() : null).catch(()=>null)
             ]);
-            offerForChecks = fetchedOffer;
-            if (offerForChecks && !matchesInterests(offerForChecks, interestSet)) {
+            if (fetchedOffer && !matchesInterests(fetchedOffer, interestSet)) {
               await setOfferPushState(offerId, { inside: true, lastPushedAt: st.lastPushedAt || 0 });
               console.log('[GEOFENCE] QUIET-INSIDE skipped by interests', offerId);
               continue;
             }
-            if (offerForChecks && !isOfferActiveNow(offerForChecks, EUROPE_VIENNA)) {
+            if (fetchedOffer && !isOfferActiveNow(fetchedOffer, EUROPE_VIENNA)) {
               await setOfferPushState(offerId, { inside: true, lastPushedAt: st.lastPushedAt || 0 });
               console.log('[GEOFENCE] QUIET-INSIDE skipped (not active now)', offerId);
               continue;
@@ -430,21 +445,21 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
           const isFirstEver = !st.lastPushedAt;
           if (isFirstEver && allowFirstEverPush && acquirePushLock(offerId)) {
             try {
-              // ⬇️ DEDUPE-GATE vor der lokalen Notification (synthetic-enter)
-              const gate = await shouldNotify(offerId, 'synthetic-enter');
+              // DEDUPE-GATE vor der lokalen Notification (synthetic-enter)
+              const gate = await shouldNotify(offerId, 'synthetic-enter').catch((e:any) => ({ ok: true, reason: 'gate-error:'+String(e?.message || e) }));
               if (!gate?.ok) {
                 console.log('[DEDUPE] skip synthetic-enter (firstEver)', offerId, gate?.reason);
                 await setOfferPushState(offerId, { inside: true, lastPushedAt: st?.lastPushedAt || 0 });
                 continue;
               }
 
-              const meta = await getOfferMeta(offerId);
+              const meta = await getOfferMeta(offerId).catch(() => ({} as any));
               try {
-                if (typeof Notifications.setBadgeCountAsync === 'function') {
-                  await Notifications.setBadgeCountAsync(0).catch(() => {});
+                if (typeof (Notifications as any)?.setBadgeCountAsync === 'function') {
+                  await (Notifications as any).setBadgeCountAsync(0).catch(() => {});
                 }
               } catch {}
-              const distanceBadge = await computeDistanceBadge(offerId);
+              const distanceBadge = await computeDistanceBadge(offerId).catch(() => null);
               await presentLocalOfferNotification(offerId, meta, 'synthetic-enter', distanceBadge || null);
 
               const enteredDistanceM = await computeDistanceMeters(offerId, here.lat, here.lng);
@@ -458,8 +473,7 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
               await setOfferPushState(offerId, { inside: true, lastPushedAt: now });
               await setGlobalState({ lastAnyPushAt: now });
 
-              // reporting optional; original did it hier:
-              const acc = pos?.coords?.accuracy ?? null;
+              // optionales Reporting
               try {
                 const token = await (await import('./push-state')).getCurrentExpoToken();
                 const deviceId = await (await import('./push-state')).getPersistentDeviceId();
@@ -469,7 +483,7 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
                   projectId: (await import('./push-constants')).RESOLVED_PROJECT_ID,
                   source: 'local-geofence',
                   t: nowMs(),
-                  lat: here.lat, lng: here.lng, accuracy: acc,
+                  lat: here.lat, lng: here.lng, accuracy: pos?.coords?.accuracy ?? null,
                 };
                 fetch(`${API_BASE}/location/geofence-enter`, {
                   method: 'POST',
@@ -479,7 +493,7 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
               } catch {}
               continue;
             } catch (e:any) {
-              console.log('[GEOFENCE] QUIET-INSIDE synthetic-enter push failed, fallback to quiet', String(e));
+              console.log('[GEOFENCE] QUIET-INSIDE synthetic-enter push failed, fallback to quiet', String(e?.message || e));
             }
           }
 
@@ -489,7 +503,7 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
       }
     }
   } catch (e:any) {
-    console.log('[GEOFENCE] QUIET-INSIDE error', String(e));
+    console.log('[GEOFENCE] QUIET-INSIDE error', String(e?.message || e));
   }
 }
 

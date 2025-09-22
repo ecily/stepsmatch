@@ -31,6 +31,10 @@ const ACCURACY_BUFFER_MAX = Number(process.env.PUSH_ACCURACY_BUFFER_MAX ?? 15); 
 const ACCURACY_TOKEN_CAP  = Number(process.env.PUSH_ACCURACY_TOKEN_CAP  ?? 60); // m
 const SEARCH_BUFFER       = Math.max(ACCURACY_BUFFER_MAX, ACCURACY_TOKEN_CAP);
 
+// 🔁 Server-Formel angleichen an Mobile: +5 m Grundpuffer bei ENTER
+// (bewusst hart kodiert für Konsistenz mit Client)
+const ENTER_SANITY_BUFFER_M = 5;
+
 // Re-Notify nach Offer-Update erlauben? (Default: ON)
 const OFFER_NOTIFY_RESET_ON_UPDATE = !['0', 'false', 'off'].includes(
   String(process.env.OFFER_NOTIFY_RESET_ON_UPDATE ?? '1').toLowerCase()
@@ -322,17 +326,26 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       };
     }
 
-    // 4) Haversine + Accuracy-Cap
+    // 4) Haversine + Accuracy-Cap (+5 m Buffer wie Mobile)
     const diagDistances = GEOPUSH_DEBUG ? [] : null;
     matched = matched.filter((t) => {
       const [tlng, tlat] = (t?.lastLocation?.coordinates || []);
       if (!Number.isFinite(tlng) || !Number.isFinite(tlat)) return false;
       const acc = Number(t?.lastLocationAccuracy);
       const capAcc = Number.isFinite(acc) && acc > 0 ? Math.min(acc, ACCURACY_TOKEN_CAP) : 0;
-      const effForToken = baseRadiusM + capAcc;
+
+      // ⬇️ Align mit Mobile: radius + min(acc,60) + 5
+      const effForToken = baseRadiusM + capAcc + ENTER_SANITY_BUFFER_M;
+
       const d = haversineMeters(lng, lat, tlng, tlat);
       if (diagDistances && diagDistances.length < 8) {
-        diagDistances.push({ d: Math.round(d), acc: Math.round(acc || 0), capAcc, eff: Math.round(effForToken) });
+        diagDistances.push({
+          d: Math.round(d),
+          acc: Math.round(acc || 0),
+          capAcc,
+          eff: Math.round(effForToken),
+          rule: 'r+min(acc,60)+5'
+        });
       }
       return d <= effForToken;
     });
