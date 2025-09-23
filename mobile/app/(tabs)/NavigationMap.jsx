@@ -1,3 +1,4 @@
+// C:\Users\Lenovo\stepsmatch\mobile\app\(tabs)\NavigationMap.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -111,7 +112,7 @@ export default function NavigationMap() {
   const [rawOffers, setRawOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(true);
 
-  const [selected, setSelected] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
@@ -202,7 +203,7 @@ export default function NavigationMap() {
 
   useEffect(() => { loadOffers(); }, [loadOffers]);
 
-  // Rechenbasis
+  // Zeilen mit Geometrie/Entfernung/Status
   const computedRows = useMemo(() => {
     const user = userPos;
     return (rawOffers || []).map((offer) => {
@@ -216,10 +217,38 @@ export default function NavigationMap() {
     });
   }, [rawOffers, userPos]);
 
-  const markerRows = useMemo(
+  const visibleRows = useMemo(
     () => computedRows.filter((r) => r.include).sort((a, b) => a.distanceM - b.distanceM),
     [computedRows]
   );
+
+  // 🔗 NEU: Angebote pro Anbieter bündeln (selbe Location → ein Marker)
+  const providerGroups = useMemo(() => {
+    const map = new Map();
+    for (const row of visibleRows) {
+      const prov = row?.offer?.provider || {};
+      const key =
+        prov?._id ||
+        prov?.id ||
+        `${row.loc?.latitude?.toFixed(6)},${row.loc?.longitude?.toFixed(6)}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          provider: prov,
+          loc: row.loc,
+          rows: [],
+          minDistanceM: row.distanceM,
+          soonestEndMs: row.remainingMs ?? Infinity,
+        });
+      }
+      const g = map.get(key);
+      g.rows.push(row);
+      if (row.distanceM < g.minDistanceM) g.minDistanceM = row.distanceM;
+      if (row.remainingMs != null && row.remainingMs < g.soonestEndMs) g.soonestEndMs = row.remainingMs;
+    }
+    return Array.from(map.values()).sort((a, b) => a.minDistanceM - b.minDistanceM);
+  }, [visibleRows]);
 
   const onGoNavigate = useCallback((row) => {
     const id = row?.offer?._id || row?.offer?.id;
@@ -227,7 +256,7 @@ export default function NavigationMap() {
     router.push(`/NavigationScreen?id=${id}`);
   }, [router]);
 
-  const onMarkerPress = (row) => setSelected(row);
+  const onMarkerPress = (group) => setSelectedGroup(group);
 
   function categoryText(o) {
     const cat = o?.category || o?.provider?.category || '—';
@@ -246,12 +275,12 @@ export default function NavigationMap() {
   };
 
   /* ---------- RENDER ---------- */
-  const showEmpty = !loadingOffers && markerRows.length === 0;
+  const showEmpty = !loadingOffers && providerGroups.length === 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {/* Freundliche Meldung oben (Safe-Area) */}
+        {/* freundliche Meldung oben (Safe-Area) */}
         <View style={[styles.banner, { top: insets.top + 8 }]}>
           <Text style={styles.bannerText}>
             {showEmpty ? 'Zurzeit keine passenden Orte in deiner Nähe.' : 'Schau, was wir für dich gefunden haben.'}
@@ -275,35 +304,39 @@ export default function NavigationMap() {
           accessibilityLabel="Karte mit Angeboten in deiner Nähe"
           testID="navmap-map"
         >
-          {markerRows.map((row) => {
-            const { offer, loc, remainingMs, distanceM } = row;
-            if (!loc) return null;
-            const id = offer?._id || offer?.id || String(Math.random());
-            const { cat, sub } = categoryText(offer);
-            const accLabel = `${offer?.name || 'Angebot'} – ${cat}${sub ? `, ${sub}` : ''}${Number.isFinite(distanceM) ? `, in ${fmtDistance(distanceM)}` : ''}`;
+          {providerGroups.map((g) => {
+            const offers = g.rows.map(r => r.offer);
+            const providerName = g.provider?.name || offers[0]?.provider?.name || offers[0]?.name || 'Anbieter';
+            const count = offers.length;
+            const remainingMs = Number.isFinite(g.soonestEndMs) ? g.soonestEndMs : null;
+
+            // Barrierefrei
+            const accLabel = `${providerName} – ${count} Angebot${count > 1 ? 'e' : ''}${Number.isFinite(g.minDistanceM) ? `, in ${fmtDistance(g.minDistanceM)}` : ''}`;
+
             return (
               <Marker
-                key={id}
-                coordinate={loc}
-                onPress={() => onMarkerPress(row)}
-                title={offer?.name || 'Angebot'}
-                description={offer?.provider?.name || ''}
+                key={g.key}
+                coordinate={g.loc}
+                onPress={() => onMarkerPress(g)}
+                title={providerName}
+                description={count > 1 ? `${count} aktive Angebote` : (offers[0]?.name || 'Angebot')}
                 anchor={{ x: 0.5, y: 1.0 }}
                 accessibilityLabel={accLabel}
               >
-                {/* Custom Marker: Pin + immer sichtbare Mini-Badges */}
+                {/* Custom Marker: Name/Anzahl immer sichtbar – kein abgeschnittener Text */}
                 <View style={{ alignItems: 'center' }}>
-                  {/* Badge-Bubble */}
                   <View style={styles.badgeBubble}>
-                    <Text style={styles.badgeText} numberOfLines={1}>{cat || '—'}</Text>
-                    {!!sub && <Text style={[styles.badgeText, styles.dotMid]}>•</Text>}
-                    {!!sub && <Text style={styles.badgeText} numberOfLines={1}>{sub}</Text>}
-                    <Text style={[styles.badgeText, styles.dotMid]}>•</Text>
-                    <Text style={[styles.badgeText, styles.remain]} numberOfLines={1}>
-                      {formatRemaining(remainingMs)}
-                    </Text>
+                    <View style={{ maxWidth: 260, flexShrink: 1 }}>
+                      <Text style={styles.badgeTitle} /* keine numberOfLines → volle Anzeige, wrap */>
+                        {providerName}
+                      </Text>
+                      <Text style={styles.badgeSub} /* wrap */>
+                        {count > 1
+                          ? `${count} aktive Angebote • bis ${formatRemaining(remainingMs)}`
+                          : `${offers[0]?.name ?? 'Angebot'} • ${formatRemaining(remainingMs)}`}
+                      </Text>
+                    </View>
                   </View>
-                  {/* Simple Pin */}
                   <View style={styles.pin} />
                 </View>
               </Marker>
@@ -338,66 +371,67 @@ export default function NavigationMap() {
           </View>
         )}
 
-        {/* Bottom-Card bei Auswahl (Safe-Area unten respektieren) */}
-        {selected && (
+        {/* Bottom-Card bei Auswahl – zeigt gebündelte Angebote des Providers */}
+        {selectedGroup && (
           <View style={[styles.cardWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
             <View style={styles.card} accessibilityRole="summary">
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {selected.offer?.name || 'Angebot'}
+              <Text style={styles.cardTitle} numberOfLines={2}>
+                {selectedGroup.provider?.name || selectedGroup.rows?.[0]?.offer?.provider?.name || 'Anbieter'}
               </Text>
 
               <View style={{ height: 8 }} />
 
               <View style={styles.row}>
-                <Text style={styles.label}>Kategorie</Text>
-                <Text style={styles.value}>
-                  {categoryText(selected.offer).cat} • {categoryText(selected.offer).sub}
-                </Text>
-              </View>
-
-              <View style={styles.row}>
                 <Text style={styles.label}>Entfernung</Text>
                 <Text style={styles.value}>
-                  {Number.isFinite(selected.distanceM) ? fmtDistance(selected.distanceM) : '—'}
+                  {Number.isFinite(selectedGroup.minDistanceM) ? fmtDistance(selectedGroup.minDistanceM) : '—'}
                 </Text>
               </View>
 
-              <View style={styles.row}>
-                <Text style={styles.label}>Gültig bis</Text>
-                <Text style={styles.value}>{validUntilText(selected.offer)}</Text>
-              </View>
+              <View style={{ height: 12 }} />
 
-              {!!selected.offer?.description && (
-                <>
-                  <View style={{ height: 8 }} />
-                  <ScrollView style={{ maxHeight: 84 }}>
-                    <Text style={styles.desc} numberOfLines={4}>
-                      {selected.offer.description}
-                    </Text>
-                  </ScrollView>
-                </>
-              )}
+              <Text style={styles.sectionTitle}>
+                {selectedGroup.rows.length} aktive Angebot{selectedGroup.rows.length > 1 ? 'e' : ''}
+              </Text>
+
+              <View style={{ height: 6 }} />
+
+              <ScrollView style={{ maxHeight: 180 }}>
+                {selectedGroup.rows.map((r) => {
+                  const o = r.offer;
+                  const { cat, sub } = categoryText(o);
+                  return (
+                    <View key={o?._id || o?.id} style={styles.offerRow}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={styles.offerTitle}>{o?.name || 'Angebot'}</Text>
+                        <Text style={styles.offerMeta}>
+                          {cat}{sub ? ` • ${sub}` : ''} • gültig bis {validUntilText(o)}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => onGoNavigate(r)}
+                        style={[styles.btn, styles.btnPrimary]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Route starten"
+                      >
+                        <Text style={styles.btnPrimaryText}>GO</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
 
               <View style={{ height: 12 }} />
 
               <View style={styles.actions}>
                 <TouchableOpacity
-                  onPress={() => setSelected(null)}
+                  onPress={() => setSelectedGroup(null)}
                   style={[styles.btn, styles.btnGhost]}
                   accessibilityRole="button"
                   accessibilityLabel="Schließen"
                   testID="navmap-close-card"
                 >
                   <Text style={styles.btnGhostText}>Schließen</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onGoNavigate(selected)}
-                  style={[styles.btn, styles.btnPrimary]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Route starten"
-                  testID="navmap-go"
-                >
-                  <Text style={styles.btnPrimaryText}>GO</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -466,27 +500,25 @@ const styles = StyleSheet.create({
   },
   deniedBtnText: { color: '#fff', fontWeight: '700' },
 
-  /* Marker UI */
+  /* Marker UI – wrap, kein abgeschnittener Text */
   badgeBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     backgroundColor: 'rgba(16,18,22,0.92)',
     borderColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
+    paddingVertical: 6,
+    borderRadius: 12,
     marginBottom: 6,
   },
-  badgeText: { color: '#E9F1FF', fontSize: 11, fontWeight: '700' },
-  dotMid: { opacity: 0.7 },
-  remain: { color: '#9FE870', fontWeight: '800' },
+  badgeTitle: { color: '#E9F1FF', fontSize: 12, fontWeight: '800', lineHeight: 16 },
+  badgeSub: { color: '#cfe0ff', fontSize: 11, fontWeight: '600', lineHeight: 15 },
   pin: {
     width: 18, height: 18, borderRadius: 9,
-    backgroundColor: '#0d8bff',
+    backgroundColor: colors.primary,
     borderWidth: 2, borderColor: '#fff',
-    shadowColor: '#0d8bff',
+    shadowColor: colors.primary,
     shadowOpacity: 0.45, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
@@ -504,10 +536,21 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  sectionTitle: { color: '#E9F1FF', fontSize: 13, fontWeight: '800' },
+
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   label: { color: '#9fb0c6', fontSize: 12 },
   value: { color: '#e8f0ff', fontSize: 13, fontWeight: '600', marginLeft: 8 },
-  desc: { color: '#e8f0ff', fontSize: 13, lineHeight: 18 },
+
+  offerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  offerTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  offerMeta: { color: '#cfe0ff', fontSize: 12, marginTop: 2 },
 
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   btn: {

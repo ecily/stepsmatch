@@ -1,18 +1,18 @@
 // stepsmatch/mobile/app/_layout.js
 import React, { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { Slot, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import PushInitializer from '../components/PushInitializer';
 import ThemeProvider from '../theme/ThemeProvider';
 import LocationAlwaysGate from '../components/permissions/LocationAlwaysGate';
 import colors from '../theme/colors';
+import { refreshExpoPushTokenNow } from '../components/push/push-token-refresh';
 
 /* ────────────────────────────────────────────────────────────
-   Globaler Notification-Handler (reines UI/UX-Verhalten)
-   – Alert sichtbar, Sound an, kein Badge.
-   – Mechanik (Geofence/Heartbeat) bleibt unberührt.
+   Globaler Notification-Handler (UI/UX-Verhalten)
    ──────────────────────────────────────────────────────────── */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -22,7 +22,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Kleiner Helper fürs Mergen von Offer-Push-States
+/* ────────────────────────────────────────────────────────────
+   Remote-Push als „gesehen“ markieren (für Dedupe)
+   ──────────────────────────────────────────────────────────── */
 async function markOfferRemotePushed(offerId) {
   if (!offerId) return;
   const key = `offerPushState.${offerId}`;
@@ -32,60 +34,43 @@ async function markOfferRemotePushed(offerId) {
     const prev = prevRaw ? JSON.parse(prevRaw) : {};
     const next = {
       ...prev,
-      lastPushedAt: ts,           // generisch: „zuletzt gepusht“ (egal ob remote/local)
-      lastPushedAtRemote: ts,     // explizit: Remote/Server-Push Zeitstempel
+      lastPushedAt: ts,
+      lastPushedAtRemote: ts,
       lastSource: 'remote',
     };
     await AsyncStorage.setItem(key, JSON.stringify(next));
   } catch (e) {
-    console.warn('[push] persist remote ts failed', e?.message || e);
+    console.warn('[push] persist remote ts failed', e && e.message ? e.message : e);
   }
 }
 
 /* ────────────────────────────────────────────────────────────
-   Zentrale UI/Branding-Konfiguration der Notifications
-   - Android Channels (Farben, Importance, Sound, Vibration)
-   - Kategorien/Aktionen (GO, DISMISS) – ohne SNOOZE
-   Hinweis:
-   - Aufruf ist idempotent; erneutes Setzen aktualisiert nur.
-   - PushInitializer behält weiterhin die Mechanik (Tasks, Dedupe etc.).
+   Notification-Kanäle & Kategorien (idempotent)
    ──────────────────────────────────────────────────────────── */
 async function configureNotificationUI() {
   try {
-    // Kategorien / Actions (plattformübergreifend)
-    // Kategorie für Angebots-Pushes mit GO/DISMISS
+    // Kategorien / Actions
     await Notifications.setNotificationCategoryAsync('offer-go', [
-      {
-        identifier: 'GO',
-        buttonTitle: 'LOS',
-        options: { opensAppToForeground: true }, // iOS relevant; auf Android ok
-      },
-      {
-        identifier: 'DISMISS',
-        buttonTitle: 'AUSBLENDEN',
-        options: { isDestructive: true }, // iOS Styling; auf Android ok
-      },
+      { identifier: 'GO',      buttonTitle: 'LOS',        options: { opensAppToForeground: true } },
+      { identifier: 'DISMISS', buttonTitle: 'AUSBLENDEN', options: { isDestructive: true } },
     ]);
 
     if (Platform.OS === 'android') {
-      // Gemeinsames Vibrationsmuster: kräftig & markant (Branding)
-      // Format: [delay, on, off, on, off, on]
       const brandVibration = [0, 350, 120, 350, 180, 500];
 
-      // Offers-Channel: Maximale Sichtbarkeit + Sound + Vibrationsmuster
-      await Notifications.setNotificationChannelAsync('offers', {
+      // Wichtig: Kanal-ID muss zum Backend passen → 'offers-v2'
+      await Notifications.setNotificationChannelAsync('offers-v2', {
         name: 'Offers',
         importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',               // System-Standard
+        sound: 'default',
         enableVibrate: true,
         vibrationPattern: brandVibration,
         enableLights: true,
-        lightColor: colors?.primary || '#0d4ea6',
+        lightColor: (colors && colors.primary) || '#0d4ea6',
         bypassDnd: false,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
 
-      // Default-App-Channel: normal, dezenter
       await Notifications.setNotificationChannelAsync('stepsmatch-default-v2', {
         name: 'StepsMatch',
         importance: Notifications.AndroidImportance.DEFAULT,
@@ -93,11 +78,10 @@ async function configureNotificationUI() {
         enableVibrate: true,
         vibrationPattern: [0, 220],
         enableLights: true,
-        lightColor: colors?.primary || '#0d4ea6',
+        lightColor: (colors && colors.primary) || '#0d4ea6',
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       });
 
-      // BG-Location-Channel: ruhig, kein Sound
       await Notifications.setNotificationChannelAsync('com.ecily.mobile:stepsmatch-bg-location-task', {
         name: 'StepsMatch Hintergrund',
         importance: Notifications.AndroidImportance.LOW,
@@ -108,58 +92,70 @@ async function configureNotificationUI() {
       });
     }
   } catch (e) {
-    console.warn('[push-ui] configure failed', e?.message || e);
+    console.warn('[push-ui] configure failed', e && e.message ? e.message : e);
   }
 }
 
 export default function RootLayout() {
   const receiveSub = useRef(null);
   const tapSub = useRef(null);
+  const appStateSub = useRef(null);
 
   useEffect(() => {
-    // Zuerst zentrale UI/Branding-Einstellungen (Channels/Kategorien)
+    // 1) UI/Channels/Kategorien setzen
     configureNotificationUI();
 
-    // Nur Listener – die Mechanik (Geofences/Heartbeat/Dedupe) bleibt im PushInitializer
+    // 2) Token sofort aktualisieren (App-Start)
+    refreshExpoPushTokenNow('app-start').catch(() => {});
+
+    // 3) Bei Rückkehr in den Vordergrund nochmal refreshen
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') {
+        refreshExpoPushTokenNow('app-foreground').catch(() => {});
+      }
+    });
+    appStateSub.current = sub;
+
+    // 4) Listener für Empfang
     receiveSub.current = Notifications.addNotificationReceivedListener((n) => {
       try {
-        const c = n?.request?.content || {};
-        const data = c?.data || {};
-        const offerId = data?.offerId;
+        const c = (n && n.request && n.request.content) || {};
+        const data = c.data || {};
+        const offerId = data.offerId;
 
-        // Log
         console.log(
           '[push] received',
-          JSON.stringify({
-            title: c.title,
-            body: c.body,
-            channelId: c.channelId,
-            data: data,
-          })
+          JSON.stringify({ title: c.title, body: c.body, channelId: c.channelId, data })
         );
 
-        // Remote-Push für Offer merken → Dedupe ggü. lokalem Geofence-Push
         if (offerId) {
           // fire-and-forget
           markOfferRemotePushed(offerId);
         }
       } catch (e) {
-        console.warn('[push] receive handler error', e?.message || e);
+        console.warn('[push] receive handler error', e && e.message ? e.message : e);
       }
     });
 
+    // 5) Listener für Tap/Actions
     tapSub.current = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
-        const actionId = response?.actionIdentifier;
-        const data = response?.notification?.request?.content?.data || {};
-        const offerId = data?.offerId;
-        const route = data?.route || (offerId ? `/offers/${offerId}` : null);
+        const actionId = response && response.actionIdentifier;
+        const data =
+          (response &&
+            response.notification &&
+            response.notification.request &&
+            response.notification.request.content &&
+            response.notification.request.content.data) ||
+          {};
+        const offerId = data.offerId;
+        const route = data.route || (offerId ? `/offers/${offerId}` : null);
 
-        // Nur Standardtap oder GO → navigieren (SNOOZE existiert nicht; DISMISS nur ausblenden)
-        if (
-          actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER &&
-          actionId?.toUpperCase?.() !== 'GO'
-        ) {
+        const isDefaultTap =
+          actionId === Notifications.DEFAULT_ACTION_IDENTIFIER ||
+          (actionId && actionId.toUpperCase && actionId.toUpperCase() === 'GO');
+
+        if (!isDefaultTap) {
           console.log('[push-tap] ignore action:', actionId, JSON.stringify(data || {}));
           return;
         }
@@ -171,13 +167,14 @@ export default function RootLayout() {
           console.log('[push-tap] no route/offerId in data', JSON.stringify(data || {}));
         }
       } catch (e) {
-        console.warn('[push] nav error', e?.message || e);
+        console.warn('[push] nav error', e && e.message ? e.message : e);
       }
     });
 
     return () => {
-      receiveSub.current?.remove?.();
-      tapSub.current?.remove?.();
+      if (receiveSub.current && receiveSub.current.remove) receiveSub.current.remove();
+      if (tapSub.current && tapSub.current.remove) tapSub.current.remove();
+      if (appStateSub.current && appStateSub.current.remove) appStateSub.current.remove();
     };
   }, []);
 

@@ -1,4 +1,4 @@
-// backend/server.js
+// stepsmatch/backend/server.js
 import 'dotenv/config'; // ✅ ENV früh laden
 import express from 'express';
 import cors from 'cors';
@@ -100,6 +100,18 @@ app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 
 /* ─────────────────────────────────────────────────────────────
+   **Healthcheck (NEU)**
+   ───────────────────────────────────────────────────────────── */
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    route: 'health',
+    ts: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development',
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────
    API-Routen
    ───────────────────────────────────────────────────────────── */
 app.use('/api/users', userAuthRoutes);
@@ -112,7 +124,7 @@ app.use('/api/location', locationRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/testers', testerRoutes);
 
-// Healthchecks
+// Bestehende Health-Endpunkte bleiben erhalten
 app.get('/api/ping', (_req, res) => res.status(200).send('pong'));
 app.get('/api/_healthz', (_req, res) => res.json({ ok: true }));
 app.get('/api/_readyz', (_req, res) => res.json({ ok: true }));
