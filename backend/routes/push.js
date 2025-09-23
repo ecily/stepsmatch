@@ -73,20 +73,25 @@ async function chooseTargetToken({ token, deviceId, projectId }) {
     const trimmed = token.trim();
     if (Expo.isExpoPushToken(trimmed)) {
       const doc = await PushToken.findOne({ token: trimmed }).lean();
-      return { token: trimmed, projectId: doc?.projectId ?? projectId ?? null, source: 'explicit-token' };
+      return {
+        token: trimmed,
+        projectId: doc?.projectId ?? projectId ?? null,
+        deviceId: doc?.deviceId ?? null,   // ⬅️ deviceId mitnehmen, falls vorhanden
+        source: 'explicit-token',
+      };
     }
   }
   if (deviceId) {
     const doc = await getLatestActiveTokenForDevice(deviceId, projectId);
     if (doc?.token) {
-      return { token: doc.token, projectId: doc.projectId ?? projectId ?? null, source: 'device-latest' };
+      return { token: doc.token, projectId: doc.projectId ?? projectId ?? null, deviceId, source: 'device-latest' };
     }
   }
   const last = await getLatestActiveTokenPreferProject();
   if (last?.token) {
-    return { token: last.token, projectId: last.projectId ?? projectId ?? null, source: 'db-prefer-project' };
+    return { token: last.token, projectId: last.projectId ?? projectId ?? null, deviceId: last.deviceId ?? null, source: 'db-prefer-project' };
   }
-  return { token: null, projectId: projectId ?? null, source: 'none' };
+  return { token: null, projectId: projectId ?? null, deviceId: null, source: 'none' };
 }
 
 function hasDNR(resp) {
@@ -131,12 +136,19 @@ router.get('/canary', async (req, res) => {
       return res.status(404).json({ ok: false, success: false, error: 'no-token' });
     }
 
+    // DeviceId sicherstellen (falls nicht mitgegeben oder in target leer)
+    let resolvedDeviceId = target.deviceId ?? deviceId ?? null;
+    if (!resolvedDeviceId) {
+      const tokenDoc = await PushToken.findOne({ token: target.token }, { deviceId: 1 }).lean();
+      resolvedDeviceId = tokenDoc?.deviceId ?? null;
+    }
+
     const title = 'StepsMatch Canary';
     const body = 'Automatischer Test-Push zur Token-Validierung.';
     const payload = { route: '/canary', source: 'canary', t: Date.now() };
 
     const resp = await sendToDevice({
-      deviceId: deviceId ?? null,
+      deviceId: resolvedDeviceId,
       token: target.token,
       message: { title, body, data: payload },
     });
@@ -158,7 +170,7 @@ router.get('/canary', async (req, res) => {
       route: 'push',
       projectId: target.projectId || PROJECT_ID || null,
       token: target.token,
-      deviceId: deviceId ?? null,
+      deviceId: resolvedDeviceId,
       result: resp,
       autoInvalidated,
     });
