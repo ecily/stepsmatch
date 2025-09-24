@@ -104,7 +104,7 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
               </p>
               {/* NEW: Release-Hinweis unter dem erklärenden Text */}
               <p className="mt-1 text-xs text-gray-500">
-                Test-Version <b>1.1</b> released, <b>19. 09. 2025</b>
+                <b>Version 1.5 coming up, stabilizing background jobs!</b>
               </p>
             </div>
           </div>

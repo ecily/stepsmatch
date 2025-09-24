@@ -1,13 +1,12 @@
-// C:\Users\Lenovo\stepsmatch\mobile\app\(tabs)\NavigationMap.jsx
+// stepsmatch/mobile/app/(tabs)/NavigationMap.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
-
 import colors from '../../theme/colors';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
@@ -17,8 +16,8 @@ const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-a
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
 
 /* Geo helpers */
-function toRad(deg) { return (deg * Math.PI) / 180; }
-function haversineM(a, b) {
+const toRad = (deg) => (deg * Math.PI) / 180;
+const haversineM = (a, b) => {
   const R = 6371000;
   const dLat = toRad(b.latitude - a.latitude);
   const dLng = toRad(b.longitude - a.longitude);
@@ -26,10 +25,10 @@ function haversineM(a, b) {
   const s2 = Math.sin(dLng / 2);
   const aa = s1 * s1 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * s2 * s2;
   return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-}
-function fmtDistance(m) { return m < 995 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
+};
+const fmtDistance = (m) => (m < 995 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
-/* Location/Radius wie im OffersScreen */
+/* Location/Radius */
 function pickOfferLocation(offer) {
   const coords = offer?.location?.coordinates || offer?.provider?.location?.coordinates || null;
   if (Array.isArray(coords) && coords.length >= 2) {
@@ -39,43 +38,15 @@ function pickOfferLocation(offer) {
   }
   return null;
 }
-function pickRadiusMeters(offer) {
+const pickRadiusMeters = (offer) => {
   const r1 = Number(offer?.radius);
   if (Number.isFinite(r1) && r1 >= 0) return r1;
   const r2 = Number(offer?.provider?.radius);
   if (Number.isFinite(r2) && r2 >= 0) return r2;
   return null;
-}
+};
 
-/* „gültig bis“ & Restlaufzeit */
-function validUntilText(o) {
-  const keys = ['activeUntil','activeEnd','validUntil','endAt','validTo','dateTo','activeWindowEnd','endTime'];
-  const vd = o?.validDates;
-  if (vd && typeof vd === 'object') {
-    const toRaw = vd.to ?? vd.end ?? vd.toDate ?? vd.endDate;
-    if (toRaw) {
-      const d = new Date(toRaw);
-      if (!isNaN(d)) {
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mi = String(d.getMinutes()).padStart(2, '0');
-        return `${dd}.${mm}. ${hh}:${mi} Uhr`;
-      }
-    }
-  }
-  for (const k of keys) {
-    const v = o?.[k]; if (!v) continue;
-    const d = new Date(v); if (!isNaN(d)) {
-      const dd = String(d.getDate()).padStart(2, '0');
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mi = String(d.getMinutes()).padStart(2, '0');
-      return `${dd}.${mm}. ${hh}:${mi} Uhr`;
-    }
-  }
-  return '—';
-}
+/* „gültig bis“ & Restlaufzeit (kompakt) */
 function getRemainingMs(offer) {
   const keys = ['activeUntil','activeEnd','validUntil','endAt','validTo','dateTo','activeWindowEnd','endTime'];
   const vd = offer?.validDates;
@@ -102,6 +73,18 @@ function formatRemaining(diffMs) {
   return `${h}\u00A0h ${m}\u00A0min`;
 }
 
+/* Relaxter Aktiv-Check: gültig, wenn Zeitfenster-Datum passt (auch wenn validTimes edge cases hat) */
+function isInDateWindow(offer) {
+  const vd = offer?.validDates;
+  if (!vd) return false;
+  const now = Date.now();
+  const from = vd.from ?? vd.start ?? vd.dateFrom ?? vd.startDate;
+  const to   = vd.to   ?? vd.end   ?? vd.dateTo   ?? vd.endDate;
+  const f = from ? new Date(from).getTime() : -Infinity;
+  const t = to   ? new Date(to).getTime()   : +Infinity;
+  return now >= f && now <= t;
+}
+
 export default function NavigationMap() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -113,13 +96,14 @@ export default function NavigationMap() {
   const [loadingOffers, setLoadingOffers] = useState(true);
 
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
   const firstFixDoneRef = useRef(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
-  /* Standort laden + live verfolgen (Logik beibehalten) */
+  /* Standort laden + live verfolgen */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -168,7 +152,6 @@ export default function NavigationMap() {
     const url = `${API_BASE_URL}/offers?withProvider=1&page=1&limit=200`;
     try {
       setLoadingOffers(true);
-      // optional: Token mitsenden, falls vorhanden
       const tokenKeys = ['authToken', 'token', 'jwt', 'accessToken'];
       let token = null;
       for (const tk of tokenKeys) {
@@ -176,10 +159,7 @@ export default function NavigationMap() {
         if (t && String(t).trim()) { token = t.trim(); break; }
       }
       const res = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Accept': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       const text = await res.text();
       let json = null;
@@ -210,8 +190,13 @@ export default function NavigationMap() {
       const loc = pickOfferLocation(offer);
       const radiusM = pickRadiusMeters(offer);
       const distanceM = (user && loc) ? haversineM(user, loc) : Number.POSITIVE_INFINITY;
+
+      // <<< WICHTIG >>> Sichtbar, wenn:
+      // - Geokoordinate vorhanden, UND
+      // - ENTWEDER isOfferActiveNow(...) true ODER Date Window enthält "jetzt"
       const activeNow = isOfferActiveNow(offer, 'Europe/Vienna');
-      const include = !!loc && Number.isFinite(radiusM) && distanceM <= radiusM && activeNow;
+      const include = !!loc && (activeNow || isInDateWindow(offer));
+
       const remainingMs = getRemainingMs(offer);
       return { offer, loc, radiusM, distanceM, activeNow, include, remainingMs };
     });
@@ -222,15 +207,13 @@ export default function NavigationMap() {
     [computedRows]
   );
 
-  // 🔗 NEU: Angebote pro Anbieter bündeln (selbe Location → ein Marker)
+  // Angebote pro Anbieter bündeln (→ eigener Marker pro Provider!)
   const providerGroups = useMemo(() => {
     const map = new Map();
     for (const row of visibleRows) {
       const prov = row?.offer?.provider || {};
-      const key =
-        prov?._id ||
-        prov?.id ||
-        `${row.loc?.latitude?.toFixed(6)},${row.loc?.longitude?.toFixed(6)}`;
+      const provId = prov?._id || prov?.id;
+      const key = provId || `${row.loc?.latitude?.toFixed(6)},${row.loc?.longitude?.toFixed(6)}`;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -250,19 +233,42 @@ export default function NavigationMap() {
     return Array.from(map.values()).sort((a, b) => a.minDistanceM - b.minDistanceM);
   }, [visibleRows]);
 
-  const onGoNavigate = useCallback((row) => {
+  // Kamera: zeige Benutzer + alle Provider
+  const inViewFitAll = useCallback(() => {
+    if (!mapRef.current) return;
+    const coords = [
+      ...(providerGroups.map(g => g.loc).filter(Boolean)),
+      ...(userPos ? [userPos] : []),
+    ];
+    if (coords.length === 0) return;
+    try {
+      mapRef.current.fitToCoordinates(coords, {
+        edgePadding: { top: 80 + insets.top, right: 40, bottom: 220 + insets.bottom, left: 40 },
+        animated: true,
+      });
+    } catch {}
+  }, [providerGroups, userPos, insets]);
+
+  useEffect(() => {
+    if (firstFixDoneRef.current) inViewFitAll();
+  }, [inViewFitAll, firstFixDoneRef.current]);
+
+  const onMarkerPress = (group) => {
+    setSelectedGroup(group);
+    setShowDetails(false);
+  };
+
+  const onGoNavigateOffer = useCallback((row) => {
     const id = row?.offer?._id || row?.offer?.id;
     if (!id) return;
     router.push(`/NavigationScreen?id=${id}`);
   }, [router]);
 
-  const onMarkerPress = (group) => setSelectedGroup(group);
-
-  function categoryText(o) {
-    const cat = o?.category || o?.provider?.category || '—';
-    const sub = o?.subcategory || o?.subCategory || '—';
-    return { cat, sub };
-  }
+  const openExternalRoute = useCallback((coords) => {
+    if (!coords) return;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${coords.latitude},${coords.longitude}&travelmode=walking`;
+    Linking.openURL(url).catch(() => {});
+  }, []);
 
   const recenter = () => {
     const c = userPos || FALLBACK_CENTER;
@@ -277,16 +283,19 @@ export default function NavigationMap() {
   /* ---------- RENDER ---------- */
   const showEmpty = !loadingOffers && providerGroups.length === 0;
 
+  // DEV-HUD: zeigt sofort, ob z.B. "Hotel Moder" drin ist
+  const hud = useMemo(() => {
+    const names = providerGroups.map(g => g.provider?.name || g.rows?.[0]?.offer?.provider?.name).filter(Boolean);
+    return {
+      raw: rawOffers?.length || 0,
+      sichtbar: providerGroups.reduce((acc, g) => acc + g.rows.length, 0),
+      firstProviders: names.slice(0, 6),
+    };
+  }, [rawOffers, providerGroups]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {/* freundliche Meldung oben (Safe-Area) */}
-        <View style={[styles.banner, { top: insets.top + 8 }]}>
-          <Text style={styles.bannerText}>
-            {showEmpty ? 'Zurzeit keine passenden Orte in deiner Nähe.' : 'Schau, was wir für dich gefunden haben.'}
-          </Text>
-        </View>
-
         <MapView
           ref={mapRef}
           style={{ flex: 1 }}
@@ -304,45 +313,51 @@ export default function NavigationMap() {
           accessibilityLabel="Karte mit Angeboten in deiner Nähe"
           testID="navmap-map"
         >
+          {userPos && (
+            <Circle
+              center={userPos}
+              radius={120}
+              strokeColor="rgba(15,227,169,0.6)"
+              fillColor="rgba(15,227,169,0.08)"
+            />
+          )}
+
           {providerGroups.map((g) => {
-            const offers = g.rows.map(r => r.offer);
-            const providerName = g.provider?.name || offers[0]?.provider?.name || offers[0]?.name || 'Anbieter';
-            const count = offers.length;
-            const remainingMs = Number.isFinite(g.soonestEndMs) ? g.soonestEndMs : null;
-
-            // Barrierefrei
-            const accLabel = `${providerName} – ${count} Angebot${count > 1 ? 'e' : ''}${Number.isFinite(g.minDistanceM) ? `, in ${fmtDistance(g.minDistanceM)}` : ''}`;
-
+            const count = g.rows.length;
             return (
               <Marker
                 key={g.key}
                 coordinate={g.loc}
                 onPress={() => onMarkerPress(g)}
-                title={providerName}
-                description={count > 1 ? `${count} aktive Angebote` : (offers[0]?.name || 'Angebot')}
                 anchor={{ x: 0.5, y: 1.0 }}
-                accessibilityLabel={accLabel}
+                tracksViewChanges={false}
+                accessibilityLabel={`${count} Angebot${count>1?'e':''} an diesem Ort, tippen für Details`}
               >
-                {/* Custom Marker: Name/Anzahl immer sichtbar – kein abgeschnittener Text */}
                 <View style={{ alignItems: 'center' }}>
-                  <View style={styles.badgeBubble}>
-                    <View style={{ maxWidth: 260, flexShrink: 1 }}>
-                      <Text style={styles.badgeTitle} /* keine numberOfLines → volle Anzeige, wrap */>
-                        {providerName}
-                      </Text>
-                      <Text style={styles.badgeSub} /* wrap */>
-                        {count > 1
-                          ? `${count} aktive Angebote • bis ${formatRemaining(remainingMs)}`
-                          : `${offers[0]?.name ?? 'Angebot'} • ${formatRemaining(remainingMs)}`}
-                      </Text>
-                    </View>
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{count}</Text>
                   </View>
-                  <View style={styles.pin} />
+                  <Text style={styles.miniName} numberOfLines={1}>
+                    {g.provider?.name || g.rows?.[0]?.offer?.name || 'Ort'}
+                  </Text>
                 </View>
               </Marker>
             );
           })}
         </MapView>
+
+        {/* DEV-HUD */}
+        <View style={[styles.hud, { top: insets.top + 8 }]}>
+          <Text style={styles.hudTitle}>Offers sichtbar</Text>
+          <Text style={styles.hudLine}>raw: {hud.raw} · sichtbar: {hud.sichtbar}</Text>
+          {hud.firstProviders.map((n, i) => (
+            <Text key={i} style={styles.hudItem}>• {n}</Text>
+          ))}
+          <View style={{ height: 6 }} />
+          <TouchableOpacity onPress={inViewFitAll} style={styles.hudBtn}>
+            <Text style={styles.hudBtnText}>Fit</Text>
+          </TouchableOpacity>
+        </View>
 
         {(loadingPos || loadingOffers) && (
           <View style={[styles.loading, { top: insets.top + 12 }]}>
@@ -353,7 +368,7 @@ export default function NavigationMap() {
           </View>
         )}
 
-        {/* Hinweis: Standort abgelehnt */}
+        {/* Standort abgelehnt */}
         {permissionDenied && !loadingPos && (
           <View style={[styles.denied, { top: insets.top + 56 }]}>
             <Text style={styles.deniedText}>
@@ -371,10 +386,61 @@ export default function NavigationMap() {
           </View>
         )}
 
-        {/* Bottom-Card bei Auswahl – zeigt gebündelte Angebote des Providers */}
-        {selectedGroup && (
+        {/* Bottom-Sheet – kompakt */}
+        {selectedGroup && !showDetails && (
           <View style={[styles.cardWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
-            <View style={styles.card} accessibilityRole="summary">
+            <View style={styles.card}>
+              <View style={styles.peekHeader}>
+                <Text style={styles.peekTitle} numberOfLines={2}>
+                  {selectedGroup.provider?.name || selectedGroup.rows?.[0]?.offer?.provider?.name || 'Anbieter'}
+                </Text>
+                <Text style={styles.peekDistance}>
+                  {Number.isFinite(selectedGroup.minDistanceM) ? fmtDistance(selectedGroup.minDistanceM) : '—'}
+                </Text>
+              </View>
+
+              <Text style={styles.peekSubtitle}>
+                {selectedGroup.rows.length} aktive Angebot{selectedGroup.rows.length > 1 ? 'e' : ''}
+              </Text>
+
+              <View style={{ height: 10 }} />
+
+              <View style={styles.peekActions}>
+                <TouchableOpacity
+                  onPress={() => setShowDetails(true)}
+                  style={[styles.btn, styles.btnPrimaryWide]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Anzeigen"
+                >
+                  <Text style={styles.btnPrimaryText}>Anzeigen</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => openExternalRoute(selectedGroup.loc)}
+                  style={[styles.btn, styles.btnGhostWide]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Route öffnen"
+                >
+                  <Text style={styles.btnGhostText}>Route</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => { setSelectedGroup(null); setShowDetails(false); }}
+                  style={[styles.btn, styles.btnGhostWide]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Schließen"
+                >
+                  <Text style={styles.btnGhostText}>Schließen</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Bottom-Sheet – Details */}
+        {selectedGroup && showDetails && (
+          <View style={[styles.cardWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
+            <View style={styles.card}>
               <Text style={styles.cardTitle} numberOfLines={2}>
                 {selectedGroup.provider?.name || selectedGroup.rows?.[0]?.offer?.provider?.name || 'Anbieter'}
               </Text>
@@ -396,20 +462,18 @@ export default function NavigationMap() {
 
               <View style={{ height: 6 }} />
 
-              <ScrollView style={{ maxHeight: 180 }}>
+              <ScrollView style={{ maxHeight: 220 }}>
                 {selectedGroup.rows.map((r) => {
                   const o = r.offer;
-                  const { cat, sub } = categoryText(o);
+                  const remain = formatRemaining(r.remainingMs);
                   return (
                     <View key={o?._id || o?.id} style={styles.offerRow}>
                       <View style={{ flex: 1, paddingRight: 8 }}>
-                        <Text style={styles.offerTitle}>{o?.name || 'Angebot'}</Text>
-                        <Text style={styles.offerMeta}>
-                          {cat}{sub ? ` • ${sub}` : ''} • gültig bis {validUntilText(o)}
-                        </Text>
+                        <Text style={styles.offerTitle} numberOfLines={1}>{o?.name || 'Angebot'}</Text>
+                        <Text style={styles.offerMeta}>läuft noch {remain}</Text>
                       </View>
                       <TouchableOpacity
-                        onPress={() => onGoNavigate(r)}
+                        onPress={() => onGoNavigateOffer(r)}
                         style={[styles.btn, styles.btnPrimary]}
                         accessibilityRole="button"
                         accessibilityLabel="Route starten"
@@ -425,11 +489,18 @@ export default function NavigationMap() {
 
               <View style={styles.actions}>
                 <TouchableOpacity
-                  onPress={() => setSelectedGroup(null)}
+                  onPress={() => setShowDetails(false)}
+                  style={[styles.btn, styles.btnGhost]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zurück"
+                >
+                  <Text style={styles.btnGhostText}>Zurück</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { setSelectedGroup(null); setShowDetails(false); }}
                   style={[styles.btn, styles.btnGhost]}
                   accessibilityRole="button"
                   accessibilityLabel="Schließen"
-                  testID="navmap-close-card"
                 >
                   <Text style={styles.btnGhostText}>Schließen</Text>
                 </TouchableOpacity>
@@ -438,7 +509,7 @@ export default function NavigationMap() {
           </View>
         )}
 
-        {/* Floating Recenter (über Tab-Bar) */}
+        {/* Floating Recenter */}
         <TouchableOpacity
           onPress={recenter}
           style={[styles.fab, { bottom: 16 + insets.bottom }]}
@@ -449,6 +520,13 @@ export default function NavigationMap() {
         >
           <Text style={styles.fabText}>•</Text>
         </TouchableOpacity>
+
+        {/* Leerzustand */}
+        {showEmpty && (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>Zurzeit keine passenden Orte in deiner Nähe.</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -457,17 +535,6 @@ export default function NavigationMap() {
 /* Styles */
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-
-  banner: {
-    position: 'absolute',
-    left: 12, right: 12, zIndex: 10,
-    backgroundColor: 'rgba(16,18,22,0.80)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
-  },
-  bannerText: { color: '#E9F1FF', fontWeight: '700' },
 
   loading: {
     position: 'absolute',
@@ -500,67 +567,66 @@ const styles = StyleSheet.create({
   },
   deniedBtnText: { color: '#fff', fontWeight: '700' },
 
-  /* Marker UI – wrap, kein abgeschnittener Text */
-  badgeBubble: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(16,18,22,0.92)',
-    borderColor: 'rgba(255,255,255,0.16)',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginBottom: 6,
+  /* Marker – runde Zahl (Badge) */
+  countBadge: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#0F1117',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    elevation: 3,
   },
-  badgeTitle: { color: '#E9F1FF', fontSize: 12, fontWeight: '800', lineHeight: 16 },
-  badgeSub: { color: '#cfe0ff', fontSize: 11, fontWeight: '600', lineHeight: 15 },
-  pin: {
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: colors.primary,
-    borderWidth: 2, borderColor: '#fff',
-    shadowColor: colors.primary,
-    shadowOpacity: 0.45, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-  },
+  countBadgeText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  miniName: { color: '#cfe0ff', fontSize: 11, marginTop: 4, maxWidth: 140, textAlign: 'center' },
 
-  /* Bottom sheet */
-  cardWrap: {
+  /* DEV-HUD */
+  hud: {
     position: 'absolute',
-    left: 0, right: 0, bottom: 0,
-    paddingHorizontal: 12,
+    left: 12,
+    paddingHorizontal: 10, paddingVertical: 8,
+    backgroundColor: 'rgba(16,18,22,0.92)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12,
+    minWidth: 180,
   },
+  hudTitle: { color: '#fff', fontWeight: '900', fontSize: 12, marginBottom: 4 },
+  hudLine: { color: '#cfe0ff', fontSize: 11 },
+  hudItem: { color: '#b8c8e6', fontSize: 11 },
+
+  /* Kompaktes / Detail-Sheet */
+  cardWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12 },
   card: {
     backgroundColor: 'rgba(16,18,22,0.96)',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
+  peekHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  peekTitle: { color: '#fff', fontSize: 18, fontWeight: '900', flex: 1, paddingRight: 8 },
+  peekDistance: { color: '#0FE3A9', fontSize: 14, fontWeight: '800' },
+  peekSubtitle: { color: '#cfe0ff', marginTop: 6, fontSize: 13, fontWeight: '700' },
+
+  btn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
+  btnGhostWide: { flex: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'transparent' },
+  btnPrimaryWide: { flex: 1, borderColor: colors.primary, backgroundColor: colors.primary },
+  btnPrimaryText: { color: '#0b1220', fontWeight: '800', textAlign: 'center' },
+  btnGhostText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
+
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
   sectionTitle: { color: '#E9F1FF', fontSize: 13, fontWeight: '800' },
-
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   label: { color: '#9fb0c6', fontSize: 12 },
-  value: { color: '#e8f0ff', fontSize: 13, fontWeight: '600', marginLeft: 8 },
-
+  value: { color: '#0FE3A9', fontSize: 13, fontWeight: '800', marginLeft: 8 },
   offerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   offerTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   offerMeta: { color: '#cfe0ff', fontSize: 12, marginTop: 2 },
-
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  btn: {
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 10, borderWidth: 1,
-  },
   btnGhost: { borderColor: 'rgba(255,255,255,0.18)' },
-  btnGhostText: { color: '#e8f0ff', fontWeight: '700' },
   btnPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
-  btnPrimaryText: { color: '#0b1220', fontWeight: '800' },
 
   /* Floating Action (Recenter) */
   fab: {
@@ -574,4 +640,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   fabText: { color: colors.primary, fontSize: 24, lineHeight: 24, fontWeight: '800' },
+
+  /* Empty */
+  empty: {
+    position: 'absolute', left: 0, right: 0, bottom: 130,
+    alignItems: 'center',
+  },
+  emptyText: { color: '#9fb0c6', fontWeight: '700' },
 });

@@ -1,3 +1,4 @@
+// stepsmatch/mobile/components/PushInitializer.tsx
 import React, { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -173,7 +174,8 @@ async function initPush() {
   }
 
   const token = await resolveExpoTokenAuthoritative();
-  console.log('[Push] Expo token', token);
+  // 🔧 Änderung: Token im erwarteten Muster loggen, damit ADB/grep es findet
+  console.log(`[Push] Expo token ${token}`);
   console.log('[Push] deviceId', deviceId);
 
   let lastLoc: any | null = null;

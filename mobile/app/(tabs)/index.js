@@ -1,8 +1,5 @@
 // stepsmatch/mobile/app/(tabs)/index.js
-// Änderungen in diesem Schritt:
-// - Foreground-Sync garantiert: Heartbeat -> Geofence-Refresh(force) -> Offers-Reload
-// - Dedupe: 2.5s Gap, damit AppState + Focus nicht doppelt triggern
-// - Keine neuen Libraries, Business-Logik unverändert
+// Robustheit: Standort-Fallback (LastKnown + Persist), Offers trotz fehlender Position, Axios-Timeout + Retry
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { sendHeartbeat } from '../../components/PushInitializer';
@@ -52,7 +49,10 @@ function withTimeout(promise, ms, label = 'operation') {
   ]).finally(() => clearTimeout(timer));
 }
 
-const api = axios.create({ baseURL: API_URL, timeout: 12000 });
+// Netzwerk robuster: höheres Timeout + gezielter Retry bei Timeout
+const AXIOS_BASE_TIMEOUT_MS = 20000;
+const AXIOS_RETRY_TIMEOUT_MS = 35000;
+const api = axios.create({ baseURL: API_URL, timeout: AXIOS_BASE_TIMEOUT_MS });
 
 function groupByCategory(list) {
   const m = {};
@@ -285,6 +285,9 @@ export default function HomeTab() {
   const lastFgSyncAtRef = useRef(0);
   const FG_REFRESH_MIN_GAP_MS = 2500;
 
+  // Persistierter Standort (Fallback)
+  const LAST_LOC_KEY = 'lastUserLoc.v1';
+
   /* Initial HB */
   useEffect(() => {
     (async () => {
@@ -342,19 +345,45 @@ export default function HomeTab() {
     return '';
   }, []);
 
+  // Standort robust holen (mit Fallback auf „last known“ + Persist)
   const getLocation = useCallback(async () => {
     const { status } = await withTimeout(Location.requestForegroundPermissionsAsync(), 5000, 'location permission');
     if (status !== 'granted') throw new Error('Location permission denied');
 
-    let pos = await Location.getLastKnownPositionAsync();
-    if (!pos) {
-      pos = await withTimeout(
+    // 1) Sofort: last known (wenn da, direkt nutzen)
+    let last = null;
+    try { last = await Location.getLastKnownPositionAsync(); } catch {}
+
+    // 2) Versuche eine frische Position (7s Soft-Timeout)
+    try {
+      const pos = await withTimeout(
         Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
         7000,
         'getCurrentPosition'
       );
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      // Persistieren für späteren Fallback
+      try { await AsyncStorage.setItem(LAST_LOC_KEY, JSON.stringify(loc)); } catch {}
+      return loc;
+    } catch (e) {
+      // 3) Bei Timeout: nutze lastKnown oder persistierten Fallback – kein harter Fehler
+      if (last?.coords) {
+        const loc = { lat: last.coords.latitude, lng: last.coords.longitude };
+        try { await AsyncStorage.setItem(LAST_LOC_KEY, JSON.stringify(loc)); } catch {}
+        return loc;
+      }
+      try {
+        const raw = await AsyncStorage.getItem(LAST_LOC_KEY);
+        if (raw) {
+          const loc = JSON.parse(raw);
+          if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+            return loc;
+          }
+        }
+      } catch {}
+      // wenn gar nichts da ist → gib null zurück, damit UI trotzdem lädt
+      return null;
     }
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
   }, []);
 
   // Fetch
@@ -377,7 +406,7 @@ export default function HomeTab() {
         if (!baselineAppliedRef.current) { await loadSeenIds(); }
 
         const [interestsCSV, loc] = await Promise.all([interestsCSVFromStorage(), getLocation()]);
-        setUserLoc(loc);
+        setUserLoc(loc || null);
         const interestSet = csvToSet(interestsCSV);
 
         let expoToken = null;
@@ -389,7 +418,22 @@ export default function HomeTab() {
 
         const params = { withProvider: 1, page: pageToLoad, limit };
         const t0 = (global?.performance && performance.now) ? performance.now() : Date.now();
-        const res = await api.get('/offers', { params, signal: controller.signal });
+
+        let res;
+        try {
+          res = await api.get('/offers', { params, signal: controller.signal });
+        } catch (e) {
+          // gezielter Retry nur bei Timeout/Abort
+          const isTimeout = e?.code === 'ECONNABORTED' || String(e?.message || '').toLowerCase().includes('timeout');
+          const isAborted = String(e?.message || '').toLowerCase().includes('aborted');
+          if (isTimeout || isAborted) {
+            const apiRetry = axios.create({ baseURL: API_URL, timeout: AXIOS_RETRY_TIMEOUT_MS });
+            res = await apiRetry.get('/offers', { params }); // ohne signal (um Race zu vermeiden)
+          } else {
+            throw e;
+          }
+        }
+
         const t1 = (global?.performance && performance.now) ? performance.now() : Date.now();
 
         const payload = res?.data ?? {};
@@ -420,14 +464,15 @@ export default function HomeTab() {
           const radiusM = pickRadiusMeters(o);
           if (!geo || !Number.isFinite(radiusM)) continue;
 
+          // Wenn loc fehlt → nicht wegfiltern, sondern zeigen (Distance bleibt leer)
           const distanceM =
-            toNumber(o.distance) ?? haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng);
-          const inside = distanceM <= radiusM;
+            toNumber(o.distance) ?? (loc && geo ? haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng) : null);
 
+          const inside = loc ? (Number(distanceM) <= radiusM) : true;
           if (inside) {
             filtered.push(o);
 
-            if (expoToken && postsThisReload < 1) {
+            if (expoToken && postsThisReload < 1 && loc) {
               const id = String(o._id || '');
               const seenSet = seenIdsRef.current;
               const isNew = id && !seenSet.has(id);
@@ -453,6 +498,7 @@ export default function HomeTab() {
         }
 
         filtered.sort((a, b) => {
+          if (!loc) return 0; // ohne Position Reihenfolge vom Server lassen
           const pa = pickOfferLatLng(a);
           const pb = pickOfferLatLng(b);
           const da = toNumber(a.distance) ?? (pa ? haversineMeters(loc.lat, loc.lng, pa.lat, pa.lng) : Infinity);
@@ -480,12 +526,13 @@ export default function HomeTab() {
 
         if (!hasLoadedOnce) setHasLoadedOnce(true);
 
-        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${(t1 - t0).toFixed(0)}ms`);
+        console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${(t1 - t0).toFixed(0)}ms loc=${loc ? 'yes' : 'no'}`);
         if (newlySeenThisRun.length > 0) { await saveSeenIds(); }
       } catch (e) {
         if (mountedRef.current) {
-          const msg = e?.message?.includes('timeout')
-            ? 'Zeitüberschreitung – bitte erneut versuchen.'
+          const isTimeout = String(e?.message || '').toLowerCase().includes('timeout');
+          const msg = isTimeout
+            ? 'Netzwerk langsam – erneut versuchen.'
             : 'Fehler beim Laden der Angebote.';
           setError(msg);
           console.warn('[HomeTab] fetch error:', e?.message || e);
@@ -773,11 +820,10 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
           <View style={styles.badgeRowTop}>
             {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={[styles.badgeSpacing, styles.badgeUniform]} />}
             {remainingNice && <Badge label={remainingNice} tone="warning" style={[styles.badgeSpacing, styles.badgeUniform]} />}
-            {/* DistanceBadge an Badgehöhe angleichen */}
             <DistanceBadge meters={distanceMeters} style={[styles.badgeSpacing, styles.badgeUniform]} />
           </View>
 
-          {/* HERO (ohne Overlay) */}
+          {/* HERO */}
           <View style={styles.heroWrap}>
             {hero ? (
               <Animated.Image
