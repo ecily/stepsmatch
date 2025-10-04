@@ -7,28 +7,29 @@ import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
 import heroBg from "../assets/hero-bg-pitch2.jpg";
 import { QRCodeCanvas } from "qrcode.react";
 
+/* ───────────────── Animations ───────────────── */
 const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut", delay } },
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.55, ease: "easeOut", delay } },
 });
 
 const fadeIn = (delay = 0) => ({
   initial: { opacity: 0 },
-  animate: { opacity: 1, transition: { duration: 0.6, ease: "easeOut", delay } },
+  animate: { opacity: 1, transition: { duration: 0.55, ease: "easeOut", delay } },
 });
 
+/* ───────────────── Phone Mockup ───────────────── */
 const PhonePushMock = () => {
   return (
-    <motion.div
-      className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]"
-      {...fadeUp(0.2)}
-    >
+    <motion.div className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]" {...fadeUp(0.2)}>
+      {/* Glow */}
+      <div className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-cyan-400/10 blur-2xl rounded-[40px]" aria-hidden />
       {/* Phone frame */}
       <div className="relative rounded-[36px] border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
         {/* Notch */}
         <div className="absolute left-1/2 -translate-x-1/2 top-0 h-6 w-36 bg-black/70 rounded-b-2xl z-20" />
         {/* Map placeholder */}
-        <div className="h-[520px] w-full bg-gradient-to-br from-blue-900/30 via-blue-700/30 to-indigo-700/30">
+        <div className="h-[520px] w-full bg-gradient-to-br from-blue-900/30 via-blue-700/30 to-indigo-700/30 relative">
           {/* Radius bubble */}
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <div className="relative">
@@ -41,18 +42,15 @@ const PhonePushMock = () => {
             <span className="block h-3 w-3 rounded-full bg-emerald-400 shadow shadow-emerald-900/40" />
           </div>
         </div>
-
         {/* Push bubble */}
         <motion.div className="absolute left-4 right-4 top-16" {...fadeUp(0.35)}>
           <div className="rounded-2xl bg-white text-gray-900 shadow-xl shadow-black/10 border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">
-                S
-              </div>
+              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">S</div>
               <div className="flex-1">
                 <div className="text-sm font-semibold">StepsMatch</div>
                 <div className="text-xs text-gray-600">
-                  Du bist <b>120 m</b> entfernt – <b>11–14 Uhr</b> heute <b>10 % Pasta</b>
+                  <b>Jetzt in der Nähe:</b> Pasta ‧ <b>−10%</b> ‧ <b>120 m</b> ‧ <b>11–14 Uhr</b>
                 </div>
               </div>
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -64,25 +62,16 @@ const PhonePushMock = () => {
   );
 };
 
-/** ───────────────── APK MODAL ───────────────── **/
+/* ───────────────── APK MODAL ───────────────── */
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
 
-  // QR-Ziel: Backend-Redirect (/apk) mit Tracking-Param
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
-    <div
-      aria-modal="true"
-      role="dialog"
-      aria-labelledby="apk-modal-title"
-      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
-    >
+    <div aria-modal="true" role="dialog" aria-labelledby="apk-modal-title" className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px]" onClick={onClose} />
       {/* Dialog */}
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -91,20 +80,16 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
       >
         <div className="p-6 sm:p-8">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">
-              S
-            </div>
+            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">S</div>
             <div className="flex-1">
               <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
                 Sicher & einfach: App per QR-Code installieren
               </h3>
               <p className="mt-1 text-gray-700">
-                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den
-                APK-Download. iOS folgt im Beta-Programm.
+                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den APK-Download. iOS folgt im Beta-Programm.
               </p>
-              {/* NEW: Release-Hinweis unter dem erklärenden Text */}
               <p className="mt-1 text-xs text-gray-500">
-                <b>Version 1.5 coming up, stabilizing background jobs!</b>
+                <b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b>
               </p>
             </div>
           </div>
@@ -112,49 +97,22 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
           {/* QR-Code */}
           <div className="mt-6 flex flex-col items-center">
             <div className="rounded-3xl p-4 border border-gray-200 bg-white shadow-sm ring-4 ring-[#0d4ea6]/10">
-              <QRCodeCanvas
-                value={qrValue}
-                size={232}         // 4-pt Raster: 58 * 4
-                includeMargin
-                level="M"
-              />
+              <QRCodeCanvas value={qrValue} size={232} includeMargin level="M" />
             </div>
 
-            {/* Steps */}
             <ol className="mt-6 w-full grid gap-2 text-sm text-gray-700">
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
-                Kamera öffnen oder QR-Scanner verwenden
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
-                Code scannen → Download bestätigen
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" />
-                „Installieren“ tippen (evtl. „Unbekannte Apps erlauben“ aktivieren)
-              </li>
+              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Kamera öffnen oder QR-Scanner verwenden</li>
+              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Code scannen → Download bestätigen</li>
+              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> „Installieren“ tippen (ggf. „Unbekannte Apps erlauben“)</li>
             </ol>
           </div>
 
           {/* Hinweise & Controls */}
           <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-            <p className="text-xs text-gray-500">
-              Dein Download wird über unseren gesicherten Server weitergeleitet.
-            </p>
+            <p className="text-xs text-gray-500">Download erfolgt über unseren gesicherten Server.</p>
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={onDontShowAgain}
-                className="text-sm underline underline-offset-2 hover:text-gray-700"
-              >
-                Nicht mehr anzeigen
-              </button>
-              <button
-                onClick={onClose}
-                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition"
-              >
-                Schließen
-              </button>
+              <button onClick={onDontShowAgain} className="text-sm underline underline-offset-2 hover:text-gray-700">Nicht mehr anzeigen</button>
+              <button onClick={onClose} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition">Schließen</button>
             </div>
           </div>
         </div>
@@ -174,21 +132,20 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   );
 }
 
+/* ───────────────── Page ───────────────── */
 const LandingPage = () => {
   const title = "StepsMatch – finden. nicht suchen.";
   const description =
-    "StepsMatch sendet dir nur dann ein Signal, wenn ein Angebot in deiner Nähe wirklich passt – Zero-Search, DSGVO-konform und in Echtzeit.";
+    "StepsMatch pingt nur dann, wenn ein Angebot genau jetzt in deiner Nähe wirklich passt – Zero-Search, DSGVO-konform und in Echtzeit.";
   const url = "https://www.stepsmatch.com/";
-  const ogImage = heroBg; // Alternativ ein dediziertes 1200x630-OG-Bild exportieren
-  const twitterHandle = "@stepsmatch"; // falls vorhanden, sonst leer lassen
+  const ogImage = heroBg;
+  const twitterHandle = "@stepsmatch";
   const location = useLocation();
 
   // Backend-Redirect statt Direktlink: {VITE_BACKEND_URL}/apk
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
   const APK_REDIRECT_URL = `${BACKEND_URL}/apk`;
 
-  // Modal-Visibility zustand
   const [apkOpen, setApkOpen] = React.useState(false);
 
   // Guard/Trigger: ?apk=1 ODER (NDA vorhanden + noch nicht gesehen)
@@ -197,10 +154,9 @@ const LandingPage = () => {
       const params = new URLSearchParams(location.search);
       const fromQuery = params.get("apk") === "1";
 
-      const ndaAcceptedAt = localStorage.getItem("ndaAcceptedAt"); // wird nach NDA-POST gesetzt
+      const ndaAcceptedAt = localStorage.getItem("ndaAcceptedAt");
       const modalSeen = localStorage.getItem("apkModalSeen") === "1";
 
-      // Wenn Query-Trigger: Modal öffnen und Query entfernen (saubere URL)
       if (fromQuery) {
         setApkOpen(true);
         params.delete("apk");
@@ -210,12 +166,9 @@ const LandingPage = () => {
         return;
       }
 
-      // Sonst: automatisch öffnen, wenn NDA akzeptiert und noch nicht gesehen
-      if (ndaAcceptedAt && !modalSeen) {
-        setApkOpen(true);
-      }
+      if (ndaAcceptedAt && !modalSeen) setApkOpen(true);
     } catch {
-      // still ok
+      // no-op
     }
   }, [location.pathname, location.search, location.hash]);
 
@@ -243,30 +196,20 @@ const LandingPage = () => {
     operatingSystem: "Android",
     applicationCategory: "LifestyleApplication",
     description,
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "EUR",
-    },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" },
   };
 
   return (
     <div className="bg-white min-h-screen flex flex-col font-sans text-gray-900">
       {/* ───────── SEO / SHARING ───────── */}
       <Helmet>
-        {/* Base */}
         <title>{title}</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={url} />
-
-        {/* Preload Hero (schneller First Paint) */}
         <link rel="preload" as="image" href={heroBg} />
-
-        {/* Preconnects (Performance-Hint) */}
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-
-        {/* Open Graph */}
+        {/* OG / Twitter */}
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="StepsMatch" />
         <meta property="og:title" content={title} />
@@ -274,14 +217,11 @@ const LandingPage = () => {
         <meta property="og:url" content={url} />
         <meta property="og:image" content={ogImage} />
         <meta property="og:image:alt" content="StepsMatch – Zero-Search Benachrichtigungsvorschau" />
-
-        {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
         {twitterHandle && <meta name="twitter:site" content={twitterHandle} />}
         <meta name="twitter:title" content={title} />
         <meta name="twitter:description" content={description} />
         <meta name="twitter:image" content={ogImage} />
-
         {/* JSON-LD */}
         <script type="application/ld+json">{JSON.stringify(jsonLdOrganization)}</script>
         <script type="application/ld+json">{JSON.stringify(jsonLdApp)}</script>
@@ -297,8 +237,9 @@ const LandingPage = () => {
         aria-label="Hero Hintergrundbild Stadtansicht"
       >
         {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
-
+        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/65 to-black/85" />
+        {/* Decorative grid */}
+        <div className="pointer-events-none absolute inset-0 [background:radial-gradient(circle_at_30%_20%,rgba(13,78,166,.25),transparent_40%),radial-gradient(circle_at_80%_10%,rgba(59,130,246,.18),transparent_45%)]" aria-hidden />
         {/* Content */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
           <div className="grid md:grid-cols-2 gap-10 items-center">
@@ -310,30 +251,38 @@ const LandingPage = () => {
                 {...fadeUp(0.1)}
               >
                 <img src={logoIcon} alt="StepsMatch" className="h-4 w-4 rounded-sm" />
-                <span>StepsMatch</span>
+                StepsMatch
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Zero-Search • DSGVO-konform
+                Zero-Search • DSGVO
               </motion.span>
 
-              {/* Brand + Claim */}
-              <motion.h1
-                className="mt-5 text-[2.6rem] leading-[1.05] md:text-6xl font-black tracking-tight text-white"
-                {...fadeUp(0.15)}
-              >
-                <span className="block">StepsMatch</span>
-                <span className="block opacity-90">finden. nicht suchen.</span>
+              {/* WOW Headline */}
+              <motion.h1 className="mt-5 text-[2.8rem] leading-[1.05] md:text-6xl font-black tracking-tight text-white" {...fadeUp(0.15)}>
+                Die App, die nur dann pingt,{" "}
+                <span className="block text-white/90">wenn es sich <u className="decoration-emerald-400/70 underline-offset-4">wirklich lohnt.</u></span>
               </motion.h1>
 
-              <motion.p
-                className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl"
-                {...fadeUp(0.2)}
-              >
-                Wir zeigen dir nur, was <b>jetzt</b> und <b>hier</b> wirklich passt – basierend auf
-                Standort, Zeitfenster und Interessen. Keine Suche. Kein Spam. Nur Relevanz.
+              {/* Power subline */}
+              <motion.p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl" {...fadeUp(0.2)}>
+                <b>Echtzeit-Kontext statt Suche.</b> Standort × Zeitfenster × Interesse → Push in ≤ <b>30 s</b>. Kein Scrollen. Kein Spam. Nur Relevanz.
               </motion.p>
 
-              {/* Persona-CTAs */}
-              <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.25)}>
+              {/* Punchy bullets */}
+              <motion.ul className="mt-6 grid gap-2 text-white/90" {...fadeUp(0.25)}>
+                {[
+                  "⚡ Sofort-Push beim Betreten des Radius (≤ 30 s).",
+                  "🎯 Null Streuverlust: nur passende Menschen, nur passende Momente.",
+                  "🛡️ Privacy-by-Design: keine Wegverläufe, nur Ereignisse (Enter / Exit / Heartbeat).",
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="mt-1 h-2 w-2 rounded-full bg-white/80" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </motion.ul>
+
+              {/* CTAs (Links unverändert) */}
+              <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.3)}>
                 <Link
                   to="/register"
                   className="group inline-flex items-center justify-between rounded-2xl bg-white px-5 py-4 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
@@ -361,8 +310,8 @@ const LandingPage = () => {
               </motion.div>
 
               {/* Trust bar */}
-              <motion.div className="mt-8 flex flex-wrap items-center gap-4 text-white/85" {...fadeUp(0.3)}>
-                {["DSGVO", "Zero-Search", "Echtzeit", "Kein Tracking der Wege"].map((t, i) => (
+              <motion.div className="mt-8 flex flex-wrap items-center gap-4 text-white/85" {...fadeUp(0.35)}>
+                {["DSGVO", "Zero-Search", "≤30 s Push", "Keine Wege-Tracks"].map((t, i) => (
                   <div key={i} className="inline-flex items-center gap-2">
                     <span className="h-1.5 w-1.5 rounded-full bg-white/85" />
                     <span className="tracking-wide">{t}</span>
@@ -371,7 +320,7 @@ const LandingPage = () => {
               </motion.div>
 
               {/* Admin Demo (dezent) */}
-              <motion.div className="mt-6" {...fadeUp(0.35)}>
+              <motion.div className="mt-6" {...fadeUp(0.4)}>
                 <Link
                   to="/admin/offers"
                   className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
@@ -379,10 +328,7 @@ const LandingPage = () => {
                 >
                   Admin-Demo öffnen
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path
-                      d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z"
-                      transform="scale(-1,1) translate(-24,0)"
-                    />
+                    <path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="scale(-1,1) translate(-24,0)" />
                   </svg>
                 </Link>
               </motion.div>
@@ -396,17 +342,14 @@ const LandingPage = () => {
         </div>
       </header>
 
-      {/* ───────── USP PERSONAS ───────── */}
+      {/* ───────── USP / PERSONAS ───────── */}
       <section id="features" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl">
             <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
               Kontext statt Suche: <span className="text-blue-700">Warum StepsMatch?</span>
             </h2>
-            <p className="mt-3 text-gray-600">
-              Wir verbinden Standort, Zeitfenster und persönliche Interessen – und zeigen nur das,
-              was dich im Moment weiterbringt.
-            </p>
+            <p className="mt-3 text-gray-600">Wir verbinden Ort, Zeitfenster und Interesse – und zeigen nur, was dich im Moment weiterbringt.</p>
           </div>
 
           <div className="mt-10 grid md:grid-cols-3 gap-6">
@@ -414,19 +357,19 @@ const LandingPage = () => {
               {
                 title: "Für Nutzer",
                 lead: "Nichts mehr suchen.",
-                text: "Nur Angebote, die genau jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
+                text: "Nur Angebote, die jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
                 cta: { label: "So funktioniert’s", href: "#how" },
               },
               {
                 title: "Für Anbieter",
-                lead: "Sichtbar im richtigen Moment.",
-                text: "Erreiche Menschen, die gerade in der Nähe sind. Null Streuverlust, volle Relevanz.",
+                lead: "Im richtigen Moment sichtbar.",
+                text: "Erreiche Menschen in der Nähe. Null Streuverlust, volle Relevanz.",
                 cta: { label: "Jetzt starten", href: "/register" },
               },
               {
                 title: "Für Investoren",
                 lead: "Skalierbar & datengetrieben.",
-                text: "Event-Streams (Enter/Exit/Heartbeat), Privacy-by-Design, klare Unit-Economics.",
+                text: "Event-Streams, Privacy-by-Design, klare Unit-Economics.",
                 cta: { label: "Pitch ansehen", href: "/pitch" },
               },
             ].map((f, i) => (
@@ -447,11 +390,7 @@ const LandingPage = () => {
                 <h3 className="mt-1 text-lg font-semibold">{f.lead}</h3>
                 <p className="mt-2 text-gray-600">{f.text}</p>
                 <div className="mt-4">
-                  <Link
-                    to={f.cta.href}
-                    className="text-sm text-blue-700 group-hover:text-blue-800 transition"
-                    title={f.cta.label}
-                  >
+                  <Link to={f.cta.href} className="text-sm text-blue-700 group-hover:text-blue-800 transition" title={f.cta.label}>
                     {f.cta.label} →
                   </Link>
                 </div>
@@ -471,26 +410,12 @@ const LandingPage = () => {
               </h2>
               <ol className="mt-6 space-y-5">
                 {[
-                  {
-                    step: "01",
-                    title: "Interessen & Radius",
-                    text: "Definiere Interessen, Ort und Radius – oder richte ein Angebot ein.",
-                  },
-                  {
-                    step: "02",
-                    title: "Zeitfenster aktivieren",
-                    text: "Mittags, abends oder flexibel – du bestimmst, wann es relevant ist.",
-                  },
-                  {
-                    step: "03",
-                    title: "Automatisch gefunden werden",
-                    text: "Wir benachrichtigen nur passende Personen im Nähe – ohne Suche.",
-                  },
+                  { step: "01", title: "Interessen & Radius", text: "Definiere Interessen, Ort und Radius – oder richte ein Angebot ein." },
+                  { step: "02", title: "Zeitfenster aktivieren", text: "Mittags, abends oder flexibel – du bestimmst, wann es relevant ist." },
+                  { step: "03", title: "Automatisch gefunden werden", text: "Wir benachrichtigen nur passende Personen in der Nähe – ohne Suche." },
                 ].map((s, i) => (
                   <motion.li key={i} className="flex gap-4" {...fadeUp(0.05 * i)}>
-                    <div className="shrink-0 h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">
-                      {s.step}
-                    </div>
+                    <div className="shrink-0 h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">{s.step}</div>
                     <div>
                       <h3 className="font-semibold text-lg">{s.title}</h3>
                       <p className="text-gray-600">{s.text}</p>
@@ -500,16 +425,10 @@ const LandingPage = () => {
               </ol>
 
               <motion.div className="mt-8 flex flex-wrap gap-3" {...fadeUp(0.2)}>
-                <Link
-                  to="/register"
-                  className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
-                >
+                <Link to="/register" className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition">
                   Kostenlos registrieren
                 </Link>
-                <Link
-                  to="/login"
-                  className="rounded-full border border-gray-300 px-5 py-3 font-semibold text-gray-800 hover:bg-gray-100 transition"
-                >
+                <Link to="/login" className="rounded-full border border-gray-300 px-5 py-3 font-semibold text-gray-800 hover:bg-gray-100 transition">
                   Anbieter-Login
                 </Link>
               </motion.div>
@@ -520,9 +439,7 @@ const LandingPage = () => {
               <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-lg">
                 <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
                   <p className="text-sm font-semibold text-blue-700">Live-Beispiel</p>
-                  <p className="mt-2 text-gray-700">
-                    „Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“
-                  </p>
+                  <p className="mt-2 text-gray-700">„Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“</p>
                   <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                     <div className="rounded-xl bg-white p-3 border border-gray-200">
                       <p className="font-semibold">Radius</p>
@@ -561,22 +478,11 @@ const LandingPage = () => {
       <section className="py-8 bg-gray-900">
         <div className="max-w-7xl mx-auto px-6 text-gray-100">
           <div className="grid sm:grid-cols-3 gap-6 text-sm">
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              Echtzeit-Matching im Millisekunden-Bereich
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-sky-400" />
-              DSGVO-konform • Privacy-by-Design
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-amber-400" />
-              Event-Modell: Enter / Exit / Heartbeat
-            </div>
+            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Sofort-Push beim Radius-Enter (≤ 30 s)</div>
+            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-sky-400" /> DSGVO-konform • Privacy-by-Design</div>
+            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-amber-400" /> Ereignisse statt Pfade: Enter / Exit / Heartbeat</div>
           </div>
-          <p className="mt-3 text-xs text-gray-300">
-            Wir tracken keine Wege. Wir triggern nur kontextuelle Ereignisse.
-          </p>
+          <p className="mt-3 text-xs text-gray-300">Wir tracken keine Wege. Wir triggern nur kontextuelle Ereignisse.</p>
         </div>
       </section>
 
@@ -587,8 +493,7 @@ const LandingPage = () => {
             Zeig dich genau dann, wenn Kund:innen <span className="text-blue-700">vorbeikommen</span>.
           </h3>
           <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
-            Perfekt für Gastronomie, lokale Shops, Services und Events – zeitlich limitiert,
-            ortsgenau und ohne Streuverlust.
+            Ideal für Gastronomie, lokale Shops, Services & Events – zeitlich limitiert, ortsgenau und ohne Streuverlust.
           </p>
 
           <div className="mt-8 grid sm:grid-cols-3 gap-4 text-left max-w-4xl mx-auto">
@@ -612,16 +517,10 @@ const LandingPage = () => {
           </div>
 
           <motion.div className="mt-8 flex flex-wrap justify-center gap-3" {...fadeUp(0.05)}>
-            <Link
-              to="/register"
-              className="rounded-full bg-blue-600 px-6 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
-            >
+            <Link to="/register" className="rounded-full bg-blue-600 px-6 py-3 text-white font-semibold shadow hover:bg-blue-700 transition">
               Jetzt kostenlos testen
             </Link>
-            <Link
-              to="/admin/offers"
-              className="rounded-full border border-blue-200 bg-blue-50 px-6 py-3 text-blue-800 font-semibold hover:bg-blue-100 transition"
-            >
+            <Link to="/admin/offers" className="rounded-full border border-blue-200 bg-blue-50 px-6 py-3 text-blue-800 font-semibold hover:bg-blue-100 transition">
               Admin-Demo ansehen
             </Link>
           </motion.div>
@@ -636,24 +535,9 @@ const LandingPage = () => {
               Die Infrastruktur für <span className="opacity-90">Zero-Search</span> in der realen Welt.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link
-                to="/pitch"
-                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
-              >
-                Pitch ansehen
-              </Link>
-              <Link
-                to="/admin/offers"
-                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
-              >
-                Tech-Demo (Karte)
-              </Link>
-              <Link
-                to="/register"
-                className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition"
-              >
-                Anbieter: Jetzt starten
-              </Link>
+              <Link to="/pitch" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">Pitch ansehen</Link>
+              <Link to="/admin/offers" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">Tech-Demo (Karte)</Link>
+              <Link to="/register" className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition">Anbieter: Jetzt starten</Link>
             </div>
           </div>
         </div>
@@ -671,19 +555,12 @@ const LandingPage = () => {
             <a href="#how" className="hover:text-gray-900">So funktioniert’s</a>
             <Link to="/login" className="hover:text-gray-900">Login</Link>
             <Link to="/register" className="hover:text-gray-900">Registrieren</Link>
-            <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">
-              Admin-Demo
-            </Link>
+            <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">Admin-Demo</Link>
             <Link to="/pitch" className="hover:text-gray-900">Pitch</Link>
           </div>
           <div>
             Ein Projekt von{" "}
-            <a
-              href="https://www.ecily.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline"
-            >
+            <a href="https://www.ecily.com" target="_blank" rel="noopener noreferrer" className="hover:underline">
               ecily / Webentwicklung
             </a>
           </div>
@@ -691,12 +568,7 @@ const LandingPage = () => {
       </footer>
 
       {/* ───────── APK MODAL MOUNT ───────── */}
-      <ApkModal
-        open={apkOpen}
-        onClose={handleCloseApk}
-        onDontShowAgain={handleDontShowAgain}
-        apkUrl={APK_REDIRECT_URL}
-      />
+      <ApkModal open={apkOpen} onClose={handleCloseApk} onDontShowAgain={handleDontShowAgain} apkUrl={APK_REDIRECT_URL} />
     </div>
   );
 };
