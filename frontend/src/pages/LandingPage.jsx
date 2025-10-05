@@ -70,24 +70,37 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
-    <div aria-modal="true" role="dialog" aria-labelledby="apk-modal-title" className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+    <div
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="apk-modal-title"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+    >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px]" onClick={onClose} />
       {/* Dialog */}
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.25 } }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.25 }}
         className="relative z-[101] mx-4 sm:mx-6 w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200"
       >
         <div className="p-6 sm:p-8">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">S</div>
+            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">
+              S
+            </div>
             <div className="flex-1">
-              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">Sicher & einfach: App per QR-Code installieren</h3>
+              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
+                Sicher & einfach: App per QR-Code installieren
+              </h3>
               <p className="mt-1 text-gray-700">
-                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den APK-Download. iOS folgt im Beta-Programm.
+                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den APK-Download. iOS
+                folgt im Beta-Programm.
               </p>
-              <p className="mt-1 text-xs text-gray-500"><b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b></p>
+              <p className="mt-1 text-xs text-gray-500">
+                <b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b>
+              </p>
             </div>
           </div>
 
@@ -97,9 +110,16 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
               <QRCodeCanvas value={qrValue} size={232} includeMargin level="M" />
             </div>
             <ol className="mt-6 w-full grid gap-2 text-sm text-gray-700">
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Kamera öffnen oder QR-Scanner verwenden</li>
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Code scannen → Download bestätigen</li>
-              <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> „Installieren“ tippen (ggf. „Unbekannte Apps erlauben“)</li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Kamera öffnen oder QR-Scanner verwenden
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Code scannen → Download bestätigen
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> „Installieren“ tippen (ggf. „Unbekannte
+                Apps erlauben“)
+              </li>
             </ol>
           </div>
 
@@ -107,8 +127,15 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
           <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
             <p className="text-xs text-gray-500">Download erfolgt über unseren gesicherten Server.</p>
             <div className="flex gap-2 justify-end">
-              <button onClick={onDontShowAgain} className="text-sm underline underline-offset-2 hover:text-gray-700">Nicht mehr anzeigen</button>
-              <button onClick={onClose} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition">Schließen</button>
+              <button onClick={onDontShowAgain} className="text-sm underline underline-offset-2 hover:text-gray-700">
+                Nicht mehr anzeigen
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition"
+              >
+                Schließen
+              </button>
             </div>
           </div>
         </div>
@@ -285,10 +312,7 @@ const LandingPage = () => {
                   </motion.span>
 
                   {/* Underline grow animation */}
-                  <motion.span
-                    className="block relative"
-                    initial={false}
-                  >
+                  <motion.span className="block relative" initial={false}>
                     <motion.span
                       className="absolute left-0 -bottom-2 h-2 rounded-full"
                       style={{
@@ -321,14 +345,16 @@ const LandingPage = () => {
                     className="absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-emerald-400 via-sky-400 to-indigo-400"
                   />
                   <p className="text-base md:text-lg leading-relaxed">
-                    <strong>StepsMatch</strong> bringt dich im <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammen:
+                    <strong>StepsMatch</strong> bringt dich im <b>genau richtigen Moment</b> mit dem{" "}
+                    <b>genau richtigen Angebot</b> zusammen:
                     <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
-                    <span className="whitespace-nowrap"> keine Suche</span>, <span className="whitespace-nowrap">kein Streuverlust</span>.
+                    <span className="whitespace-nowrap"> keine Suche</span>,{" "}
+                    <span className="whitespace-nowrap">kein Streuverlust</span>.
                   </p>
                 </div>
               </motion.div>
 
-              {/* CTAs (Links unverändert) */}
+              {/* CTAs */}
               <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.3)}>
                 <Link
                   to="/register"
@@ -338,14 +364,15 @@ const LandingPage = () => {
                   Anbieter
                   <span className="ml-3 text-blue-700/70 group-hover:translate-x-0.5 transition">→</span>
                 </Link>
-                <a
-                  href="/why"
+                {/* Nutzer → Login */}
+                <Link
+                  to="/login"
                   className="group inline-flex items-center justify-between rounded-2xl border border-white/30 bg-white/10 px-5 py-4 text-base font-semibold text-white hover:bg-white/15 transition"
-                  title="So funktioniert’s für Nutzer"
+                  title="Login"
                 >
                   Nutzer
                   <span className="ml-3 opacity-80 group-hover:translate-x-0.5 transition">→</span>
-                </a>
+                </Link>
                 <Link
                   to="/pitch"
                   className="group inline-flex items-center justify-between rounded-2xl bg-blue-600/90 px-5 py-4 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
@@ -399,9 +426,8 @@ const LandingPage = () => {
 
             {/* NEW copy: 2–3 extrem klare Sätze */}
             <p className="mt-3 text-gray-700 text-lg">
-              StepsMatch meldet sich nur, wenn in deiner Nähe gerade etwas wirklich passt.{" "}
-              Keine Suche, kein Spam – du wirst gefunden.{" "}
-              Einzigartig, weil Ort × Zeit × Interesse in <b>Echtzeit</b> gematcht wird –{" "}
+              StepsMatch meldet sich nur, wenn in deiner Nähe gerade etwas wirklich passt. Keine Suche, kein Spam – du
+              wirst gefunden. Einzigartig, weil Ort × Zeit × Interesse in <b>Echtzeit</b> gematcht wird –{" "}
               <span className="whitespace-nowrap">ohne Wegetracking.</span>
             </p>
           </div>
@@ -412,7 +438,7 @@ const LandingPage = () => {
                 title: "Für Nutzer",
                 lead: "Nichts mehr suchen.",
                 text: "Nur Angebote, die jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
-                cta: { label: "So funktioniert’s", href: "https://www.stepsmatch.com/why"},
+                cta: { label: "So funktioniert’s", href: "https://www.stepsmatch.com/why" },
               },
               {
                 title: "Für Anbieter",
@@ -493,7 +519,9 @@ const LandingPage = () => {
               <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-lg">
                 <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
                   <p className="text-sm font-semibold text-blue-700">Live-Beispiel</p>
-                  <p className="mt-2 text-gray-700">„Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“</p>
+                  <p className="mt-2 text-gray-700">
+                    „Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“
+                  </p>
                   <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                     <div className="rounded-xl bg-white p-3 border border-gray-200">
                       <p className="font-semibold">Radius</p>
@@ -532,9 +560,15 @@ const LandingPage = () => {
       <section className="py-8 bg-gray-900">
         <div className="max-w-7xl mx-auto px-6 text-gray-100">
           <div className="grid sm:grid-cols-3 gap-6 text-sm">
-            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Sofort-Push beim Radius-Enter (≤ 30 s)</div>
-            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-sky-400" /> DSGVO-konform • Privacy-by-Design</div>
-            <div className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-amber-400" /> Ereignisse statt Pfade: Enter / Exit / Heartbeat</div>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Sofort-Push beim Radius-Enter (≤ 30 s)
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-sky-400" /> DSGVO-konform • Privacy-by-Design
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-amber-400" /> Ereignisse statt Pfade: Enter / Exit / Heartbeat
+            </div>
           </div>
           <p className="mt-3 text-xs text-gray-300">Wir tracken keine Wege. Wir triggern nur kontextuelle Ereignisse.</p>
         </div>
@@ -547,7 +581,8 @@ const LandingPage = () => {
             Zeig dich genau dann, wenn Kund:innen <span className="text-blue-700">vorbeikommen</span>.
           </h3>
           <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
-            Ideal für Gastronomie, lokale Shops, Services & Events – zeitlich limitiert, ortsgenau und ohne Streuverlust.
+            Ideal für Gastronomie, lokale Shops, Services & Events – zeitlich limitiert, ortsgenau und ohne
+            Streuverlust.
           </p>
 
           <div className="mt-8 grid sm:grid-cols-3 gap-4 text-left max-w-4xl mx-auto">
@@ -574,7 +609,10 @@ const LandingPage = () => {
             <Link to="/register" className="rounded-full bg-blue-600 px-6 py-3 text-white font-semibold shadow hover:bg-blue-700 transition">
               Jetzt kostenlos testen
             </Link>
-            <Link to="/admin/offers" className="rounded-full border border-blue-200 bg-blue-50 px-6 py-3 text-blue-800 font-semibold hover:bg-blue-100 transition">
+            <Link
+              to="/admin/offers"
+              className="rounded-full border border-blue-200 bg-blue-50 px-6 py-3 text-blue-800 font-semibold hover:bg-blue-100 transition"
+            >
               Admin-Demo ansehen
             </Link>
           </motion.div>
@@ -589,9 +627,21 @@ const LandingPage = () => {
               Die Infrastruktur für <span className="opacity-90">Zero-Search</span> in der realen Welt.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/pitch" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">Pitch ansehen</Link>
-              <Link to="/admin/offers" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">Tech-Demo (Karte)</Link>
-              <Link to="/register" className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition">Anbieter: Jetzt starten</Link>
+              <Link to="/pitch" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">
+                Pitch ansehen
+              </Link>
+              <Link
+                to="/admin/offers"
+                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
+              >
+                Tech-Demo (Karte)
+              </Link>
+              <Link
+                to="/register"
+                className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition"
+              >
+                Anbieter: Jetzt starten
+              </Link>
             </div>
           </div>
         </div>
@@ -605,12 +655,24 @@ const LandingPage = () => {
             <span>© {new Date().getFullYear()} stepsmatch.com</span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="#features" className="hover:text-gray-900">Features</a>
-            <a href="/why" className="hover:text-gray-900">So funktioniert’s</a>
-            <Link to="/login" className="hover:text-gray-900">Login</Link>
-            <Link to="/register" className="hover:text-gray-900">Registrieren</Link>
-            <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">Admin-Demo</Link>
-            <Link to="/pitch" className="hover:text-gray-900">Pitch</Link>
+            <a href="#features" className="hover:text-gray-900">
+              Features
+            </a>
+            <a href="/why" className="hover:text-gray-900">
+              So funktioniert’s
+            </a>
+            <Link to="/login" className="hover:text-gray-900">
+              Login
+            </Link>
+            <Link to="/register" className="hover:text-gray-900">
+              Registrieren
+            </Link>
+            <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">
+              Admin-Demo
+            </Link>
+            <Link to="/pitch" className="hover:text-gray-900">
+              Pitch
+            </Link>
           </div>
           <div>
             Ein Projekt von{" "}
