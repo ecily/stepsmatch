@@ -23,7 +23,10 @@ const PhonePushMock = () => {
   return (
     <motion.div className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]" {...fadeUp(0.2)}>
       {/* Glow */}
-      <div className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-cyan-400/10 blur-2xl rounded-[40px]" aria-hidden />
+      <div
+        className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-cyan-400/10 blur-2xl rounded-[40px]"
+        aria-hidden
+      />
       {/* Phone frame */}
       <div className="relative rounded-[36px] border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
         {/* Notch */}
@@ -65,7 +68,6 @@ const PhonePushMock = () => {
 /* ───────────────── APK MODAL ───────────────── */
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
-
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
@@ -82,15 +84,11 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
           <div className="flex items-start gap-3">
             <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">S</div>
             <div className="flex-1">
-              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
-                Sicher & einfach: App per QR-Code installieren
-              </h3>
+              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">Sicher & einfach: App per QR-Code installieren</h3>
               <p className="mt-1 text-gray-700">
                 Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den APK-Download. iOS folgt im Beta-Programm.
               </p>
-              <p className="mt-1 text-xs text-gray-500">
-                <b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b>
-              </p>
+              <p className="mt-1 text-xs text-gray-500"><b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b></p>
             </div>
           </div>
 
@@ -99,7 +97,6 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
             <div className="rounded-3xl p-4 border border-gray-200 bg-white shadow-sm ring-4 ring-[#0d4ea6]/10">
               <QRCodeCanvas value={qrValue} size={232} includeMargin level="M" />
             </div>
-
             <ol className="mt-6 w-full grid gap-2 text-sm text-gray-700">
               <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Kamera öffnen oder QR-Scanner verwenden</li>
               <li className="flex items-start gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Code scannen → Download bestätigen</li>
@@ -143,7 +140,8 @@ const LandingPage = () => {
   const location = useLocation();
 
   // Backend-Redirect statt Direktlink: {VITE_BACKEND_URL}/apk
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
+  const BACKEND_URL =
+    import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
   const APK_REDIRECT_URL = `${BACKEND_URL}/apk`;
 
   const [apkOpen, setApkOpen] = React.useState(false);
@@ -236,10 +234,13 @@ const LandingPage = () => {
         style={{ backgroundImage: `url(${heroBg})` }}
         aria-label="Hero Hintergrundbild Stadtansicht"
       >
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/65 to-black/85" />
-        {/* Decorative grid */}
-        <div className="pointer-events-none absolute inset-0 [background:radial-gradient(circle_at_30%_20%,rgba(13,78,166,.25),transparent_40%),radial-gradient(circle_at_80%_10%,rgba(59,130,246,.18),transparent_45%)]" aria-hidden />
+        {/* Overlay for contrast */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/65 to-black/85" />
+        {/* Decorative glows */}
+        <div
+          className="pointer-events-none absolute inset-0 [background:radial-gradient(900px_500px_at_5%_10%,rgba(59,130,246,.25),transparent_40%),radial-gradient(900px_500px_at_95%_0%,rgba(99,102,241,.18),transparent_45%)]"
+          aria-hidden
+        />
         {/* Content */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
           <div className="grid md:grid-cols-2 gap-10 items-center">
@@ -256,15 +257,18 @@ const LandingPage = () => {
                 Zero-Search • DSGVO
               </motion.span>
 
-              {/* WOW Headline */}
-              <motion.h1 className="mt-5 text-[2.8rem] leading-[1.05] md:text-6xl font-black tracking-tight text-white" {...fadeUp(0.15)}>
-                Die App, die nur dann pingt,{" "}
-                <span className="block text-white/90">wenn es sich <u className="decoration-emerald-400/70 underline-offset-4">wirklich lohnt.</u></span>
+              {/* NEW: Headline (requested) */}
+              <motion.h1
+                className="mt-5 text-[3.2rem] leading-[1.02] md:text-7xl font-black tracking-tight text-white"
+                {...fadeUp(0.15)}
+              >
+                Finden. <span className="text-white/90">Nicht suchen.</span>
               </motion.h1>
 
-              {/* Power subline */}
+              {/* Subline (sharpened) */}
               <motion.p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl" {...fadeUp(0.2)}>
-                <b>Echtzeit-Kontext statt Suche.</b> Standort × Zeitfenster × Interesse → Push in ≤ <b>30 s</b>. Kein Scrollen. Kein Spam. Nur Relevanz.
+                <b>Echtzeit statt Endlossuche.</b> Standort × Zeitfenster × Interesse → Push in ≤ <b>30&nbsp;s</b>.
+                Kein Scrollen. Kein Spam. Nur Relevanz.
               </motion.p>
 
               {/* Punchy bullets */}
@@ -272,7 +276,7 @@ const LandingPage = () => {
                 {[
                   "⚡ Sofort-Push beim Betreten des Radius (≤ 30 s).",
                   "🎯 Null Streuverlust: nur passende Menschen, nur passende Momente.",
-                  "🛡️ Privacy-by-Design: keine Wegverläufe, nur Ereignisse (Enter / Exit / Heartbeat).",
+                  "🛡️ Privacy-by-Design: keine Wege-Tracks – nur Ereignisse (Enter / Exit / Heartbeat).",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <span className="mt-1 h-2 w-2 rounded-full bg-white/80" />
@@ -347,9 +351,11 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl">
             <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-              Kontext statt Suche: <span className="text-blue-700">Warum StepsMatch?</span>
+              Kontext schlägt Suche: <span className="text-blue-700">Warum StepsMatch?</span>
             </h2>
-            <p className="mt-3 text-gray-600">Wir verbinden Ort, Zeitfenster und Interesse – und zeigen nur, was dich im Moment weiterbringt.</p>
+            <p className="mt-3 text-gray-600">
+              Ort, Zeitfenster, Interesse – wir zeigen nur das, was dich im Moment wirklich weiterbringt.
+            </p>
           </div>
 
           <div className="mt-10 grid md:grid-cols-3 gap-6">
