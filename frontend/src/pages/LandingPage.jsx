@@ -412,7 +412,7 @@ const LandingPage = () => {
                 title: "Für Nutzer",
                 lead: "Nichts mehr suchen.",
                 text: "Nur Angebote, die jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
-                cta: { label: "So funktioniert’s", href: "/why" },
+                cta: { label: "So funktioniert’s", href: "https://www.stepsmatch.com/why"},
               },
               {
                 title: "Für Anbieter",
