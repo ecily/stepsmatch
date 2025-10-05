@@ -30,6 +30,8 @@ export default function Pitch() {
         <title>{title}</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={url} />
+        {/* ⬇️ kleines Perf-Tuning für das Mockup im Hero */}
+        <link rel="preload" as="image" href={navMockup} />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="StepsMatch" />
         <meta property="og:title" content={title} />
@@ -69,8 +71,10 @@ export default function Pitch() {
 
               {/* Primäre CTAs für Invest/Team/Beachhead */}
               <div className="mt-8 flex flex-wrap items-center gap-3">
+                {/* ⬇️ sauber encodierter Mailto-Betreff */}
                 <a
-                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Early%20Investment%20/ %20Team%20Intro"
+                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Early%20Investment%20%2F%20Team%20Intro"
+                  aria-label="Early Investor Intro-Call anfragen"
                   className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-base font-semibold text-blue-700 shadow-lg hover:bg-gray-100 transition"
                 >
                   Early Investor: Intro-Call
@@ -79,13 +83,15 @@ export default function Pitch() {
                   </svg>
                 </a>
                 <a
-                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Mitgruender:in%20(Engineering/Growth)"
+                  href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Mitgruender%3Ain%20(Engineering%2FGrowth)"
+                  aria-label="Mitgründen bei StepsMatch"
                   className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 px-5 py-3 text-base font-semibold text-white hover:bg-white/15 transition"
                 >
                   Mitgründen (MERN / Growth)
                 </a>
                 <Link
                   to="/admin/offers"
+                  aria-label="Live-Tech-Demo öffnen"
                   className="inline-flex items-center gap-2 rounded-full bg-blue-600/90 px-5 py-3 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
                 >
                   Live-Tech-Demo öffnen
@@ -180,7 +186,7 @@ export default function Pitch() {
           </div>
           <motion.div className="mt-8 flex flex-wrap gap-3" {...fadeUp(0.25)}>
             <a
-              href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Beachhead%20Graz%20Support"
+              href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Beachhead%20Graz%20Support"
               className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition"
             >
               Beachhead mitaufbauen
@@ -202,15 +208,21 @@ export default function Pitch() {
             {[
               { k: "x3", l: "höhere Signal-Relevanz vs. Push-Spam" },
               { k: "0", l: "Suchaufwand für Nutzer:innen" },
-              { k: "Minuten", l: "bis zur ersten Live-Ausspielung" },
+              // ⬇️ gewünschte Änderung – klare Formulierung + kleine visuelle Betonung via Ring
+              { k: "wenige Sekunden", l: "bis ein Angebot live ist", highlight: true },
               { k: "DSGVO", l: "Privacy-by-Design" },
             ].map((m, i) => (
               <motion.div
                 key={i}
-                className="rounded-2xl border border-gray-200 bg-white p-5 text-center"
+                className={
+                  "rounded-2xl border border-gray-200 bg-white p-5 text-center " +
+                  (m.highlight ? "ring-2 ring-emerald-200" : "")
+                }
                 {...fadeUp(0.05 * i)}
               >
-                <div className="text-2xl md:text-3xl font-extrabold text-blue-700">{m.k}</div>
+                <div className="text-2xl md:text-3xl font-extrabold text-blue-700">
+                  {m.k}
+                </div>
                 <div className="mt-1 text-xs md:text-sm text-gray-600">{m.l}</div>
               </motion.div>
             ))}
@@ -408,19 +420,19 @@ export default function Pitch() {
 
             <motion.div className="space-y-3" {...fadeUp(0.1)}>
               <a
-                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Early%20Investment%20/ %20Team%20Intro"
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Early%20Investment%20%2F%20Team%20Intro"
                 className="block rounded-full bg-white px-6 py-3 text-blue-900 font-semibold text-center shadow hover:bg-gray-100 transition"
               >
                 Early Investment · Intro
               </a>
               <a
-                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Mitgruender:in%20(Engineering/Growth)"
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Mitgruender%3Ain%20(Engineering%2FGrowth)"
                 className="block rounded-full border border-white/30 bg-white/10 px-6 py-3 font-semibold text-center text-white hover:bg-white/15 transition"
               >
                 Mitgründen (Engineering/Growth)
               </a>
               <a
-                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20–%20Beachhead%20Graz"
+                href="mailto:andreas.franz@ecily.com?subject=StepsMatch%20%E2%80%93%20Beachhead%20Graz"
                 className="block rounded-full bg-blue-700 px-6 py-3 text-white font-semibold text-center shadow hover:bg-blue-800 transition"
               >
                 Beachhead Graz: Ich helfe mit
