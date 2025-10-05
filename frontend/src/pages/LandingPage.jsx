@@ -312,12 +312,21 @@ const LandingPage = () => {
                 Kein Scrollen. Kein Spam. Nur Relevanz.
               </motion.p>
 
-              {/* ⬇️ REPLACED: Marketing-Statement statt Bullets */}
-              <motion.p className="mt-6 text-white/90 text-lg" {...fadeUp(0.25)}>
-                StepsMatch bringt dich im <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammen:
-                <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
-                <span className="whitespace-nowrap"> keine Suche</span>, <span className="whitespace-nowrap">kein Streuverlust</span> — <em>Privacy-by-Design</em>.
-              </motion.p>
+              {/* ⬇️ REPLACED: Hervorgehobenes Marketing-Statement */}
+              <motion.div className="mt-6" {...fadeUp(0.25)}>
+                <div className="relative rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-5 py-4 shadow-lg text-white">
+                  {/* Akzentleiste links */}
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-emerald-400 via-sky-400 to-indigo-400"
+                  />
+                  <p className="text-base md:text-lg leading-relaxed">
+                    <strong>StepsMatch</strong> bringt dich im <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammen:
+                    <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
+                    <span className="whitespace-nowrap"> keine Suche</span>, <span className="whitespace-nowrap">kein Streuverlust</span>.
+                  </p>
+                </div>
+              </motion.div>
 
               {/* CTAs (Links unverändert) */}
               <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.3)}>
