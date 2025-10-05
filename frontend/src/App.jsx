@@ -14,6 +14,7 @@ import LandingPage from './pages/LandingPage';
 import AdminCategoryPage from './pages/AdminCategoryPage';
 import AdminOffersMap from './pages/AdminOffersMap';
 import EditProviderForm from './components/EditProviderForm'; // ✅ Neu: Stammdaten bearbeiten
+import WhyStepsMatch from './pages/WhyStepsMatch';
 
 // ✅ Gate + NDA
 import TesterGate from './pages/TesterGate';
@@ -80,6 +81,8 @@ const AppRoutes = () => {
 
         {/* frühere Root-Seite jetzt unter /home */}
         <Route path="/home" element={<LandingPage />} />
+        <Route path="/why" element={<WhyStepsMatch />} />  {/* <— neu */}
+
 
         {/* bestehende Routen */}
         <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />

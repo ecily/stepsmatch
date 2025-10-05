@@ -337,7 +337,7 @@ const LandingPage = () => {
                   <span className="ml-3 text-blue-700/70 group-hover:translate-x-0.5 transition">→</span>
                 </Link>
                 <a
-                  href="#how"
+                  href="/why"
                   className="group inline-flex items-center justify-between rounded-2xl border border-white/30 bg-white/10 px-5 py-4 text-base font-semibold text-white hover:bg-white/15 transition"
                   title="So funktioniert’s für Nutzer"
                 >
@@ -410,7 +410,7 @@ const LandingPage = () => {
                 title: "Für Nutzer",
                 lead: "Nichts mehr suchen.",
                 text: "Nur Angebote, die jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
-                cta: { label: "So funktioniert’s", href: "#how" },
+                cta: { label: "So funktioniert’s", href: "/why" },
               },
               {
                 title: "Für Anbieter",
@@ -604,7 +604,7 @@ const LandingPage = () => {
           </div>
           <div className="flex items-center gap-4">
             <a href="#features" className="hover:text-gray-900">Features</a>
-            <a href="#how" className="hover:text-gray-900">So funktioniert’s</a>
+            <a href="/why" className="hover:text-gray-900">So funktioniert’s</a>
             <Link to="/login" className="hover:text-gray-900">Login</Link>
             <Link to="/register" className="hover:text-gray-900">Registrieren</Link>
             <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">Admin-Demo</Link>
