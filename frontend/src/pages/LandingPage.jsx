@@ -312,19 +312,12 @@ const LandingPage = () => {
                 Kein Scrollen. Kein Spam. Nur Relevanz.
               </motion.p>
 
-              {/* Punchy bullets */}
-              <motion.ul className="mt-6 grid gap-2 text-white/90" {...fadeUp(0.25)}>
-                {[
-                  "⚡ Sofort-Push beim Betreten des Radius (≤ 30 s).",
-                  "🎯 Null Streuverlust: nur passende Menschen, nur passende Momente.",
-                  "🛡️ Privacy-by-Design: keine Wege-Tracks – nur Ereignisse (Enter / Exit / Heartbeat).",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="mt-1 h-2 w-2 rounded-full bg-white/80" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </motion.ul>
+              {/* ⬇️ REPLACED: Marketing-Statement statt Bullets */}
+              <motion.p className="mt-6 text-white/90 text-lg" {...fadeUp(0.25)}>
+                StepsMatch bringt dich im <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammen:
+                <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
+                <span className="whitespace-nowrap"> keine Suche</span>, <span className="whitespace-nowrap">kein Streuverlust</span> — <em>Privacy-by-Design</em>.
+              </motion.p>
 
               {/* CTAs (Links unverändert) */}
               <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.3)}>
