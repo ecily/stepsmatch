@@ -1,6 +1,6 @@
 db.testers.insertOne({
-  key: "SM-2025-ALPHA-7K3U",
-  name: "Simon Werba",
-  email: "simon.werba@dignisens.com",
+  key: "SM-2025-ALPHA-7H1U",
+  name: "Christian Friedl",
+  email: "christian.friedl@fh-joanneum.at",
   status: "pending"
 })

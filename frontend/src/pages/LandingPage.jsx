@@ -12,7 +12,6 @@ const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.55, ease: "easeOut", delay } },
 });
-
 const fadeIn = (delay = 0) => ({
   initial: { opacity: 0 },
   animate: { opacity: 1, transition: { duration: 0.55, ease: "easeOut", delay } },
@@ -257,15 +256,57 @@ const LandingPage = () => {
                 Zero-Search • DSGVO
               </motion.span>
 
-              {/* NEW: Headline (requested) */}
+              {/* Headline with premium visual emphasis */}
               <motion.h1
-                className="mt-5 text-[3.2rem] leading-[1.02] md:text-7xl font-black tracking-tight text-white"
+                className="mt-5 text-[3.2rem] leading-[1.02] md:text-7xl font-black tracking-tight text-white relative"
                 {...fadeUp(0.15)}
               >
-                Finden. <span className="text-white/90">Nicht suchen.</span>
+                {/* Animated gradient text for 'Finden.' */}
+                <motion.span
+                  className="inline-block"
+                  initial={{ y: 6, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
+                >
+                  <motion.span
+                    className="inline-block"
+                    animate={{ backgroundPositionX: ["0%", "100%"] }}
+                    transition={{ repeat: Infinity, repeatType: "mirror", duration: 6, ease: "linear" }}
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(90deg, #a7f3d0, #93c5fd, #a5b4fc, #93c5fd, #a7f3d0)",
+                      backgroundSize: "200% 100%",
+                      WebkitBackgroundClip: "text",
+                      backgroundClip: "text",
+                      color: "transparent",
+                    }}
+                  >
+                    Finden.
+                  </motion.span>
+
+                  {/* Underline grow animation */}
+                  <motion.span
+                    className="block relative"
+                    initial={false}
+                  >
+                    <motion.span
+                      className="absolute left-0 -bottom-2 h-2 rounded-full"
+                      style={{
+                        right: 0,
+                        background:
+                          "linear-gradient(90deg, rgba(16,185,129,0.9), rgba(59,130,246,0.9), rgba(99,102,241,0.9))",
+                      }}
+                      initial={{ scaleX: 0 }}
+                      animate={{ scaleX: 1 }}
+                      transition={{ duration: 0.8, ease: "easeOut", delay: 0.35 }}
+                    />
+                  </motion.span>
+                </motion.span>
+
+                <span className="block text-white/90">Nicht suchen.</span>
               </motion.h1>
 
-              {/* Subline (sharpened) */}
+              {/* Subline */}
               <motion.p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl" {...fadeUp(0.2)}>
                 <b>Echtzeit statt Endlossuche.</b> Standort × Zeitfenster × Interesse → Push in ≤ <b>30&nbsp;s</b>.
                 Kein Scrollen. Kein Spam. Nur Relevanz.
@@ -353,8 +394,13 @@ const LandingPage = () => {
             <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
               Kontext schlägt Suche: <span className="text-blue-700">Warum StepsMatch?</span>
             </h2>
-            <p className="mt-3 text-gray-600">
-              Ort, Zeitfenster, Interesse – wir zeigen nur das, was dich im Moment wirklich weiterbringt.
+
+            {/* NEW copy: 2–3 extrem klare Sätze */}
+            <p className="mt-3 text-gray-700 text-lg">
+              StepsMatch meldet sich nur, wenn in deiner Nähe gerade etwas wirklich passt.{" "}
+              Keine Suche, kein Spam – du wirst gefunden.{" "}
+              Einzigartig, weil Ort × Zeit × Interesse in <b>Echtzeit</b> gematcht wird –{" "}
+              <span className="whitespace-nowrap">ohne Wegetracking.</span>
             </p>
           </div>
 
