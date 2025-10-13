@@ -16,7 +16,7 @@ function normalizePointStrict(v) {
     // { type:'Point', coordinates:[lng, lat] }
     if (v.type === 'Point' && Array.isArray(v.coordinates) && v.coordinates.length === 2) {
       const [lng, lat] = v.coordinates.map(Number);
-      if (inLat(lat) && inLng(lng)) return { type: 'Point', coordinates: [lng, lat] };
+      if (inLng(lng) && inLat(lat)) return { type: 'Point', coordinates: [lng, lat] };
       return undefined;
     }
 
@@ -24,11 +24,10 @@ function normalizePointStrict(v) {
     if (Object.prototype.hasOwnProperty.call(v, 'lat') && Object.prototype.hasOwnProperty.call(v, 'lng')) {
       const lat = Number(v.lat);
       const lng = Number(v.lng);
-      if (inLat(lat) && inLng(lng)) return { type: 'Point', coordinates: [lng, lat] };
+      if (inLng(lng) && inLat(lat)) return { type: 'Point', coordinates: [lng, lat] };
       return undefined;
     }
 
-    // Nichts davon → ignorieren
     return undefined;
   } catch {
     return undefined;
@@ -45,10 +44,8 @@ function sanitizeGeoInUpdate(update) {
       if (norm) update[key].lastLocation = norm;
       else delete update[key].lastLocation; // ⚠️ invalid → nicht schreiben
     }
-    // Wenn lastLocation entfernt wurde, optional auch lastLocationAt streichen (konsistent halten)
+    // Konsistenz: wenn lastLocation entfernt wurde, auch lastLocationAt weglassen
     if (!('lastLocation' in (update[key] || {})) && 'lastLocationAt' in update[key]) {
-      // nur löschen, wenn der Caller explizit LocationAt ohne Location setzen wollte
-      // (reduziert inkonsistente Daten)
       delete update[key].lastLocationAt;
     }
   }
@@ -88,11 +85,11 @@ const PushTokenSchema = new Schema(
       type: {
         type: String,
         enum: ['Point'],
-        default: undefined,      // ⚠️ statt 'Point' → verhindert halbleere Objekte
+        default: undefined,      // kein halbes Subdoc erzeugen
       },
       coordinates: {
         type: [Number],
-        default: undefined,      // ⚠️ undefined, damit kein leeres Array persistiert
+        default: undefined,      // kein leeres Array persistieren
         validate: {
           validator: function (val) {
             if (val == null) return true;                 // Feld ist optional
@@ -123,23 +120,27 @@ const PushTokenSchema = new Schema(
   }
 );
 
-/* ───────────────────────── setters/validators ───────────────────────── */
-/** Setzer: normalisiert eingehenden Wert zu gültigem GeoJSON oder entfernt ihn. */
-PushTokenSchema.path('lastLocation').set(function (v) {
-  const norm = normalizePointStrict(v);
-  return norm === undefined ? undefined : norm;
+/* ───────────────────────── hooks ───────────────────────── */
+// 1) Create/Save: normalisieren oder Feld entfernen
+PushTokenSchema.pre('validate', function (next) {
+  try {
+    if (this.isModified('lastLocation') || this.lastLocation != null) {
+      const norm = normalizePointStrict(this.lastLocation);
+      if (norm) {
+        this.lastLocation = norm;
+      } else {
+        // invalid → ganz entfernen + Attribut-Zeitstempel konsistent halten
+        this.lastLocation = undefined;
+        this.lastLocationAt = undefined;
+      }
+    }
+    next();
+  } catch (e) {
+    next(e);
+  }
 });
 
-/* Zusätzliche Validierung auf dem gesamten Subdocument (falls jemand ein halbes Objekt setzt). */
-PushTokenSchema.path('lastLocation').validate(function (v) {
-  if (v == null) return true; // optional
-  if (v.type !== 'Point') return false;
-  if (!Array.isArray(v.coordinates) || v.coordinates.length !== 2) return false;
-  const [lng, lat] = v.coordinates;
-  return inLng(lng) && inLat(lat);
-}, 'Invalid lastLocation GeoJSON Point.');
-
-/* ───────────────────────── hooks (updates) ───────────────────────── */
+// 2) Updates: inkompatible GeoJSONs vor DB-Call strippen
 PushTokenSchema.pre('findOneAndUpdate', function (next) {
   const update = this.getUpdate();
   sanitizeGeoInUpdate(update);
