@@ -1,7 +1,7 @@
 // stepsmatch/mobile/index.js
 
-// WICHTIG: Side-Effect-Import, registriert die BG-Location-Task beim Bundle-Load
-import './tasks/bgLocationTask';
+// Headless-Task registrieren (wird beim Bundle-Load ausgeführt)
+import './bootHeadless';
 
 // expo-router Entry (muss zuletzt importiert werden)
 import 'expo-router/entry';

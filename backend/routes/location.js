@@ -39,12 +39,14 @@ function distanceMeters(lng1, lat1, lng2, lat2) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
+/** Baut ein valides GeoJSON-Point-Objekt oder null. Erwartet geprüfte Ranges. */
+function pointOrNull(lat, lng) {
+  if (!isValidNumber(lat) || !isValidNumber(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { type: 'Point', coordinates: [Number(lng), Number(lat)] };
+}
 
-/** Normalisiert Interessen-Tokens (Array ODER CSV-String).
- * - lowercased
- * - Diakritika entfernt (NFD + strip)
- * - Mehrfachspaces gekürzt
- */
+/** Normalisiert Interessen-Tokens (Array ODER CSV-String). */
 function normalizeInterests(input) {
   if (input == null) return [];
   const arr = Array.isArray(input) ? input : String(input).split(/[,;|]/);
@@ -60,10 +62,7 @@ function normalizeInterests(input) {
     .filter(Boolean);
 }
 
-/** Leitet die benötigten Tags aus dem Offer ab:
- *  1) bevorzugt offer.interestsRequired (falls befüllt)
- *  2) Fallback auf [subcategory, category]
- */
+/** Leitet die benötigten Tags aus dem Offer ab (interestsRequired bevorzugt). */
 function deriveRequiredFromOffer(offer) {
   try {
     const explicit = Array.isArray(offer?.interestsRequired) ? offer.interestsRequired : [];
@@ -75,11 +74,7 @@ function deriveRequiredFromOffer(offer) {
   }
 }
 
-/** Prüft, ob Device-Interessen (vom PushToken) zu den Offer-Anforderungen passen.
- *  - Wenn Offer keinerlei Anforderungen hat → true (keine Einschränkung)
- *  - Wenn Anforderungen existieren, Device aber keine Interessen → false
- *  - Match, sobald mind. 1 Tag übereinstimmt (OR-Logik)
- */
+/** Prüft, ob Device-Interessen (vom PushToken) zu den Offer-Anforderungen passen. */
 function interestsMatch(offer, tokenDoc) {
   const required = deriveRequiredFromOffer(offer);
   if (required.length === 0) return true;
@@ -112,14 +107,7 @@ const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000
   .map(s => Number(s.trim()))
   .filter(n => Number.isFinite(n) && n > 0);
 
-/* ───────────────── Retry-Helper (Heartbeat) ─────────────────
-   Scheduled Retries für DeviceNotRegistered beim Heartbeat-Push.
-   Prüft vor jedem Retry:
-   - Offer noch aktiv?
-   - Token nicht disabled & existiert?
-   - OfferVisibility (keine Doppel-Pushs)
-   Markiert bei Erfolg OfferVisibility=notified.
----------------------------------------------------------------- */
+/* ───────────────── Retry-Helper (Heartbeat) ───────────────── */
 function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
   try {
     if (!FRESH_RETRY_DELAYS_MS.length || !offer?._id || (!pushTokenId && !tokenString)) return;
@@ -127,7 +115,6 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
     for (const delayMs of FRESH_RETRY_DELAYS_MS) {
       setTimeout(async () => {
         try {
-          // 1) Offer noch aktiv?
           const now = new Date();
           const stillActive = isOfferActiveNow(offer, TZ, now);
           if (!stillActive) {
@@ -135,7 +122,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             return;
           }
 
-          // 2) Token laden/prüfen (aktuellster Stand)
+          // Token neu laden
           let tokenDoc = null;
           if (pushTokenId) {
             tokenDoc = await PushToken.findOne({ _id: pushTokenId }).select('_id token disabled projectId interests').lean();
@@ -152,7 +139,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             return;
           }
 
-          // 3) OfferVisibility-Dedupe
+          // Dedupe (OfferVisibility)
           const cutoff = new Date(offer?.updatedAt || offer?.createdAt || 0);
           const exists = await OfferVisibility.findOne({
             offerId: offer._id,
@@ -167,7 +154,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             return;
           }
 
-          // 4) Push senden
+          // Push senden
           const title = offer.name || 'Angebot in deiner Nähe';
           const body  = 'Tippe, um Details zu sehen.';
           const data  = {
@@ -230,6 +217,7 @@ router.post('/heartbeat', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'token_invalid_or_missing' });
     }
 
+    // Koordinaten aus lat/lng oder optional aus lastLocation.coordinates lesen
     let lat = toNum(b.lat);
     let lng = toNum(b.lng);
     if (!isValidNumber(lat) || !isValidNumber(lng)) {
@@ -239,6 +227,7 @@ router.post('/heartbeat', async (req, res) => {
         lat = toNum(coords[1]);
       }
     }
+    // Ohne valide Koordinaten: kein lastLocation-Update (Kontrakt bleibt 400)
     if (!isValidNumber(lat) || !isValidNumber(lng)) {
       return res.status(400).json({ ok: false, error: 'coords_missing' });
     }
@@ -258,27 +247,31 @@ router.post('/heartbeat', async (req, res) => {
     const platform = b.platform ? String(b.platform).toLowerCase() : undefined;
 
     const now = new Date();
-    const lastLocation = { type: 'Point', coordinates: [lng, lat] };
+    const point = pointOrNull(lat, lng); // ✅ strikter Guard
 
+    // $set/$setOnInsert, kein Replace, und keine undefinierten Felder schreiben
     const $set = {
-      lastLocation,
       lastHeartbeatAt: now,
       lastSeenAt: now,
       disabled: false,
+      ...(point ? { lastLocation: point } : {}),
       ...(accuracy !== undefined ? { lastLocationAccuracy: accuracy } : {}),
       ...(speed !== undefined ? { lastLocationSpeed: speed } : {}),
-      lastLocationAt,
+      ...(point ? { lastLocationAt } : {}), // nur wenn Position gesetzt wurde
       ...(projectId ? { projectId } : {}),
       ...(deviceId ? { deviceId } : {}),
+      updatedAt: now,
     };
     const $setOnInsert = {
       platform: platform || 'android',
+      createdAt: now,
+      firstSeenAt: now,
     };
 
     const pushTokenDoc = await PushToken.findOneAndUpdate(
       { token },
       { $set, $setOnInsert },
-      { new: true, upsert: true }
+      { new: true, upsert: true, omitUndefined: true }
     ).lean();
 
     console.log(
@@ -357,7 +350,7 @@ router.post('/heartbeat', async (req, res) => {
           const [olng, olat] = coords;
           if (!isValidNumber(olng) || !isValidNumber(olat)) continue;
 
-          // Interessen / Kategorien (mit Fallback auf category/subcategory)
+          // Interessen / Kategorien
           if (!interestsMatch(o, pushTokenDoc)) continue;
 
           const baseR = Number(o.radius || 0) || DEFAULT_RADIUS_M;
@@ -367,10 +360,8 @@ router.post('/heartbeat', async (req, res) => {
           const d = distanceMeters(lng, lat, olng, olat);
           if (d <= effR) {
             activeCandidates.push({ offer: o, d, effR });
-            // optionales Diagnoselog
             console.log(`[hb-geofence-diag] inside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
           } else {
-            // optionales Diagnoselog
             console.log(`[hb-geofence-diag] outside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
           }
         } catch {}
@@ -502,8 +493,8 @@ router.post('/geofence-enter', async (req, res) => {
     }
 
     // Optional: Location aktualisieren (+ Token-Dokument anlegen, falls es noch keines gibt)
-    let lat = toNum(b.lat);
-    let lng = toNum(b.lng);
+    const lat = toNum(b.lat);
+    const lng = toNum(b.lng);
     const haveCoords =
       isValidNumber(lat) && isValidNumber(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
@@ -515,17 +506,18 @@ router.post('/geofence-enter', async (req, res) => {
         disabled: false,
         ...(projectFilter ? { projectId: projectFilter } : {}),
         ...(deviceId ? { deviceId } : {}),
+        ...(haveCoords ? { lastLocation: { type: 'Point', coordinates: [lng, lat] }, lastLocationAt: now } : {}),
+        updatedAt: now,
       };
-      if (haveCoords) {
-        $set.lastLocation = { type: 'Point', coordinates: [lng, lat] };
-      }
       const $setOnInsert = {
         platform: b.platform ? String(b.platform).toLowerCase() : 'android',
+        createdAt: now,
+        firstSeenAt: now,
       };
       await PushToken.findOneAndUpdate(
         { token: rawToken },
         { $set, $setOnInsert },
-        { upsert: true, new: true }
+        { upsert: true, new: true, omitUndefined: true }
       ).lean();
     }
 
@@ -559,9 +551,8 @@ router.post('/geofence-enter', async (req, res) => {
           .lean());
     }
 
-    // Interessen/Kategorien prüfen (mit Fallback auf category/subcategory)
+    // Interessen/Kategorien prüfen
     if (targetDoc && !interestsMatch(offer, targetDoc)) {
-      // Wir markieren nicht als notified, um spätere gültige Fälle nicht zu blocken
       return res.json({ ok: 1, pushed: 0, recorded: 0, reason: 'interests_mismatch' });
     }
 

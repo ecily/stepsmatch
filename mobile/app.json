@@ -7,17 +7,14 @@
     "icon": "./assets/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
-
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "cover",
       "backgroundColor": "#0d4ea6"
     },
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -47,18 +44,17 @@
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden.",
         "notificationChannelId": "com.ecily.mobile:stepsmatch-bg-location-task"
       },
-      "notification": {
-        "icon": "./assets/notification-icon.png",
-        "color": "#0d4ea6"
-      }
+      "foregroundServiceType": ["location"]
     },
-
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#0d4ea6"
+    },
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       [
         "expo-splash-screen",
@@ -75,20 +71,23 @@
           "sounds": ["./assets/sounds/arrival.mp3"]
         }
       ],
-      "expo-location",
-      "expo-secure-store"
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-secure-store",
+      "expo-intent-launcher"
     ],
-
     "experiments": {
       "typedRoutes": true
     },
-
     "extra": {
       "eas": {
         "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed"
       }
     },
-
     "updates": {
       "enabled": false
     }

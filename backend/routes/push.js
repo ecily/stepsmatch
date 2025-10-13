@@ -30,19 +30,37 @@ const PROJECT_ID =
 
 console.log('[push] routes projectId =', PROJECT_ID || '(none)');
 
-function normalizePoint(input) {
-  if (!input || typeof input !== 'object') return null;
-  if (input.type === 'Point' && Array.isArray(input.coordinates) && input.coordinates.length === 2) {
-    const [lng, lat] = input.coordinates;
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      return { type: 'Point', coordinates: [lng, lat] };
+/** Baut ein valides GeoJSON-Point-Objekt oder gibt null zurück. */
+function normalizePoint(input, fallbackLat = null, fallbackLng = null) {
+  try {
+    // 1) Bereits GeoJSON?
+    if (input && typeof input === 'object' && input.type === 'Point') {
+      const coords = Array.isArray(input.coordinates) ? input.coordinates : null;
+      if (coords && coords.length === 2) {
+        const [lng, lat] = coords;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return { type: 'Point', coordinates: [Number(lng), Number(lat)] };
+        }
+      }
+      // Ungültiges GeoJSON → ignorieren
+      return null;
     }
+    // 2) Objekt mit lat/lng?
+    if (input && typeof input === 'object') {
+      const lat = Number(input.lat);
+      const lng = Number(input.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { type: 'Point', coordinates: [lng, lat] };
+      }
+    }
+    // 3) Fallback: separate Werte
+    if (Number.isFinite(fallbackLat) && Number.isFinite(fallbackLng)) {
+      return { type: 'Point', coordinates: [Number(fallbackLng), Number(fallbackLat)] };
+    }
+    return null;
+  } catch {
+    return null;
   }
-  const { lat, lng } = input;
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    return { type: 'Point', coordinates: [lng, lat] };
-  }
-  return null;
 }
 
 /* prefer valid:true */
@@ -112,8 +130,6 @@ function hasDNR(resp) {
 
 /** Health-Ping über GET – liefert nur einen OK-Hinweis.
  *  Optional: Wenn ?token=… oder ?deviceId=… gesetzt, wird ein echter Canary-Push versendet.
- *  => kompatibel mit: curl -sS -k https://.../api/push/canary
- *  => kompatibel mit: curl -sS --get --data-urlencode "token=ExponentPushToken[...]" "https://.../api/push/canary"
  */
 router.get('/canary', async (req, res) => {
   try {
@@ -180,17 +196,33 @@ router.get('/canary', async (req, res) => {
   }
 });
 
+/** ✅ FIX 2: Register – GeoJSON strikt & sicher */
 router.post('/register', async (req, res) => {
   try {
-    const { token, platform, userId, deviceId, projectId, lastLocation } = req.body || {};
+    const {
+      token,
+      platform,
+      userId,
+      deviceId,
+      projectId,
+      lastLocation,   // optional: { type:'Point', coordinates:[lng,lat] } ODER { lat, lng }
+      lat,            // optional: number
+      lng,            // optional: number
+      reason,         // optional: rein fürs Logging
+    } = req.body || {};
+
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ success: false, error: 'token-required' });
     }
 
-    const point = normalizePoint(lastLocation);
+    // Strikte Geo-Validierung (setzt nur bei valider Koordinate)
+    const point = normalizePoint(lastLocation, Number(lat), Number(lng));
+
     const now = new Date();
-    const update = {
-      token,
+
+    // $set/$setOnInsert → kein Replacement-Update
+    const $set = {
+      token: token.trim(),
       platform: normPlatform(platform),
       userId: isValidObjectId(userId) ? userId : null,
       deviceId: deviceId || null,
@@ -199,24 +231,62 @@ router.post('/register', async (req, res) => {
       lastError: null,
       lastTriedAt: null,
       lastSeenAt: now,
+      updatedAt: now,
       ...(projectId ? { projectId } : {}),
-      ...(point ? { lastLocation: point, lastHeartbeatAt: now } : {}),
     };
 
-    const doc = await PushToken.findOneAndUpdate({ token }, update, { new: true, upsert: true });
+    // Nur wenn Koordinate gültig ist → GeoJSON + lastHeartbeatAt
+    if (point) {
+      $set.lastLocation = point;
+      $set.lastHeartbeatAt = now;
+    }
+    // WICHTIG: Wenn keine Koordinate → NICHTS zu lastLocation setzen (auch kein leeres Objekt)!
 
-    if (doc.deviceId) {
+    const $setOnInsert = {
+      createdAt: now,
+      firstSeenAt: now,
+    };
+
+    // Sicheres Upsert
+    const doc = await PushToken.findOneAndUpdate(
+      { token: token.trim() },
+      { $set, $setOnInsert },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+        omitUndefined: true,
+        // runValidators bewusst aus – Geo wird von normalizePoint garantiert
+      }
+    ).lean();
+
+    // Alte Tokens desselben Geräts invalidieren (wenn wir eine deviceId haben)
+    if (doc?.deviceId) {
       const resInvalidate = await PushToken.updateMany(
         { deviceId: doc.deviceId, token: { $ne: doc.token } },
-        { $set: { valid: false, lastError: 'replaced-by-new-token' } }
+        { $set: { valid: false, lastError: 'replaced-by-new-token', updatedAt: new Date() } }
       );
       if (resInvalidate.modifiedCount > 0) {
         console.log('[push] register: invalidated old tokens', doc.deviceId, resInvalidate.modifiedCount);
       }
     }
 
-    console.log('[push] register', token.slice(0, 22) + '…', 'platform=', doc.platform, 'deviceId=', doc.deviceId);
-    res.json({ success: true, id: doc._id, platform: doc.platform, deviceId: doc.deviceId, valid: doc.valid });
+    console.log('[push] register',
+      String(token).slice(0, 22) + '…',
+      'platform=', $set.platform,
+      'deviceId=', $set.deviceId || '(none)',
+      'point=', point ? 'ok' : 'n/a',
+      reason ? `reason=${reason}` : ''
+    );
+
+    res.json({
+      success: true,
+      id: doc?._id || null,
+      platform: $set.platform,
+      deviceId: $set.deviceId,
+      valid: true,
+      hadPoint: Boolean(point),
+    });
   } catch (e) {
     console.error('[push] register error', e);
     res.status(500).json({ success: false, error: 'server-error' });

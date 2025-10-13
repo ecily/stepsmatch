@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 
 const { Schema, model } = mongoose;
 
+/* Helpers für Geo-Validierung */
+const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
+const inLat = (lat) => isFiniteNum(lat) && lat >= -90 && lat <= 90;
+const inLng = (lng) => isFiniteNum(lng) && lng >= -180 && lng <= 180;
+
 const OfferSchema = new Schema(
   {
     provider:    { type: Schema.Types.ObjectId, ref: 'Provider', required: true },
@@ -20,7 +25,6 @@ const OfferSchema = new Schema(
     /**
      * Gültige Wochentage:
      * erlaubt sind Zahlen (0..6, So..Sa) ODER Strings ("Monday", "Dienstag", ...)
-     * Interpretation erfolgt zentral in isOfferActiveNow()
      */
     validDays:   { type: [Schema.Types.Mixed], default: undefined },
 
@@ -49,11 +53,15 @@ const OfferSchema = new Schema(
     location: {
       type:        { type: String, enum: ['Point'], required: true, default: 'Point' },
       coordinates: {
-        type: [Number],
-        required: true,                 // [lng, lat]
+        type: [Number],          // [lng, lat]
+        required: true,
         validate: {
-          validator: (v) => Array.isArray(v) && v.length === 2 && v.every((n) => Number.isFinite(n)),
-          message:   'location.coordinates must be an array [lng, lat] of numbers',
+          validator: (v) => {
+            if (!Array.isArray(v) || v.length !== 2) return false;
+            const [lng, lat] = v.map(Number);
+            return inLng(lng) && inLat(lat);
+          },
+          message: 'location.coordinates must be [lng, lat] within valid ranges',
         },
       },
     },

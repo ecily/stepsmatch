@@ -1,21 +1,51 @@
 // stepsmatch/mobile/app/(tabs)/diagnostics.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
 import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
-import { sendRoundtripTest, sendHeartbeat, kickstartBackgroundLocation } from '../../components/PushInitializer';
+// ✅ KORREKT: Exports aus PushInitializer
+import {
+  roundtripTest,
+  headlessBootstrap,
+  kickstartBackgroundLocation,
+  // In PushInitializer exportiert als: export const sendHeartbeat = sendHeartbeatOnce;
+  sendHeartbeat as sendHeartbeatNow,
+} from '../../components/PushInitializer';
+
+// =========================
+// Settings & Constants
+// =========================
+const MAX_LOG_LINES = 1500;
+const TAG_RE = /\[(push|BGLOC|HEARTBEAT|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i;
+
+const TOKEN_KEY = 'expoPushToken.v2';
+const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
+const GLOBAL_STATE_KEY = 'offerPushState.__global';
+
+// ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.json entsprechen:
+const OFFERS_CHANNEL_ID = 'offers-v2';
+const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
+
+// Backend (wie im PushInitializer)
+const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+
+// ▶️ Zusatz-Keys für Diagnostik
+const BATTERY_ACK_KEY = 'batteryOptAck.v1';
+const LAST_TOKEN_REFRESH_AT_KEY = 'push.lastTokenRefreshAt';
+
+// Heuristik: wie frisch ist „frisch“?
+const BG_FIX_FRESH_MS = 2 * 60 * 1000; // 2 min
+const HB_FRESH_MS = 2 * 60 * 1000;     // 2 min
 
 // =========================
 // Lightweight Log Capture
 // =========================
-const MAX_LOG_LINES = 1500;
-const TAG_RE = /\[(push|BGLOC|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i;
-
 function formatArg(a) {
   if (a == null) return String(a);
   if (typeof a === 'string') return a;
@@ -53,35 +83,78 @@ function clearLogs() { if (Array.isArray(globalThis.__SM_LOGS__)) globalThis.__S
 // =========================
 // Helpers (Diagnostics Data)
 // =========================
-const TOKEN_KEY = 'expoPushToken.v2';
-const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
-const GLOBAL_STATE_KEY = 'offerPushState.__global'; // { lastAnyPushAt, lastHeartbeatAt, lastGeofenceSyncAt? }
-
-const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
-const DEFAULT_CHANNEL_ID = 'stepsmatch-default-v2';
-const OFFERS_CHANNEL_ID = 'offers-v2';          // ✅ konsolidiert
-const OFFERS_CATEGORY_ID = 'offer-go-v2';       // ✅ konsolidiert
-
 const fmtMsAge = (t) => {
   if (!t) return '–';
   const age = Date.now() - Number(t);
   const s = Math.floor(age / 1000);
-  return `${s}s ago`;
+  if (s < 120) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 120) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
 };
-
 const take = (s, n=28) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
 
-// Haversine
-const R_EARTH_M = 6371000;
-const toRad = (d) => (d * Math.PI) / 180;
-function distM(aLat, aLng, bLat, bLng) {
-  if ([aLat,aLng,bLat,bLng].some((v)=>typeof v!=='number'||Number.isNaN(v))) return NaN;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
-  const aa = s1*s1 + Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*s2*s2;
-  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
-  return Math.round(R_EARTH_M * c);
+// ❗️FIX: Lokale Zeit parsen (nicht mit „Z“ als UTC forcen)
+function parseWrappedLogTimestamp(line) {
+  // format: [LEVEL] YYYY-MM-DD HH:mm:ss ...
+  const m = line.match(/^\[(LOG|WARN|ERROR)\]\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+  if (!m) return 0;
+  // Ohne Zeitzonen-Suffix → als lokale Zeit interpretieren
+  const isoLocal = `${m[2]}T${m[3]}`;
+  const t = Date.parse(isoLocal);
+  return Number.isFinite(t) ? t : 0;
+}
+function lastEventFromLogs(lines, re) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (re.test(lines[i])) {
+      const t = parseWrappedLogTimestamp(lines[i]);
+      return { line: lines[i], at: t };
+    }
+  }
+  return { line: null, at: 0 };
+}
+
+// Näherungsweise „Kandidaten in der Nähe“ (Backend), wenn wir keine Region-Liste lesen können
+async function fetchNearbyOfferCandidates(pos) {
+  if (!pos?.coords?.latitude || !pos?.coords?.longitude) return [];
+  try {
+    const res = await fetch(`${API_BASE}/offers?withProvider=1&fields=_id,title,name,location,provider,radius,validTimes,validDays,validDates`);
+    const json = await res.json().catch(()=>({}));
+    const list = Array.isArray(json) ? json : json?.data || [];
+    const toRad = (d) => (d * Math.PI) / 180;
+    const hav = (aLat, aLng, bLat, bLng) => {
+      const R = 6371000, dLat = toRad(bLat - aLat), dLng = toRad(bLng - aLng);
+      const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
+      const aa = s1*s1 + Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*s2*s2;
+      return Math.round(2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa)));
+    };
+    const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : 20;
+    const accAdj = Math.min((acc * 0.5), 20); // wie im ENTER-Check
+    const items = [];
+    for (const o of list) {
+      try {
+        const p = (o?.location?.coordinates && Array.isArray(o.location.coordinates)) ? { lng: Number(o.location.coordinates[0]), lat: Number(o.location.coordinates[1]) } : null;
+        if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+        const d = hav(here.lat, here.lng, p.lat, p.lng);
+        if (d <= 3000) {
+          const radius = Number.isFinite(Number(o?.radius)) ? Math.max(30, Math.min(500, Number(o.radius))) : 120;
+          const effective = radius + accAdj + 2; // radius + min(acc*0.5,20) + 2
+          items.push({
+            id: String(o?._id || ''),
+            title: o?.title || o?.name || 'Offer',
+            provider: o?.provider?.name || '',
+            d, radius, effective
+          });
+        }
+      } catch {}
+    }
+    items.sort((a,b)=>a.d-b.d);
+    return items.slice(0, 20);
+  } catch {
+    return [];
+  }
 }
 
 // =========================
@@ -99,8 +172,7 @@ export default function Diagnostics() {
   const [gfStarted, setGfStarted] = useState(false);
 
   const [lastFixAt, setLastFixAt] = useState(0);
-  const [lastHeartbeatAt, setLastHeartbeatAt] = useState(0);
-  const [lastGeofenceSyncAt, setLastGeofenceSyncAt] = useState(0);
+  const [lastHeartbeatLogAt, setLastHeartbeatLogAt] = useState(0);
 
   const [lastKnown, setLastKnown] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
@@ -109,9 +181,17 @@ export default function Diagnostics() {
   const [deviceId, setDeviceId] = useState(null);
 
   const [channels, setChannels] = useState([]);
+  const [candidates, setCandidates] = useState([]);
 
-  // Local geofence snapshot (from AsyncStorage)
-  const [gfSnapshot, setGfSnapshot] = useState({ count: 0, items: [], accCapM: 0 });
+  // ▶️ neue Zustände
+  const [batteryAckAt, setBatteryAckAt] = useState(0);
+  const [lastTokenRefreshAt, setLastTokenRefreshAt] = useState(0);
+
+  const [appState, setAppState] = useState(AppState.currentState || 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', setAppState);
+    return () => sub?.remove?.();
+  }, []);
 
   // ---- poll logs every 500ms
   useEffect(() => {
@@ -120,91 +200,18 @@ export default function Diagnostics() {
     return () => clearInterval(iv);
   }, []);
 
+  // Ableitung: letzte Heartbeat-/ENTER-Aktivität aus Logs
+  useEffect(() => {
+    const l1 = lastEventFromLogs(logs, /\[HEARTBEAT\]/i);
+    setLastHeartbeatLogAt(l1.at || 0);
+  }, [logs]);
+
   const filtered = useMemo(() => (onlyTagged ? logs.filter((l) => TAG_RE.test(l)) : logs), [logs, onlyTagged]);
 
   const onCopy = async () => {
     try { await Clipboard.setStringAsync((filtered || []).join('\n') || '(keine Logs)'); } catch {}
   };
   const onClear = () => { clearLogs(); setLogs([]); };
-
-  async function loadGeofenceSnapshot(pos) {
-    try {
-      const allKeys = await AsyncStorage.getAllKeys();
-      const metaKeys = allKeys.filter(k => k.startsWith('offerMeta.'));
-      const stateKeys = allKeys.filter(k => k.startsWith('offerPushState.') && k !== GLOBAL_STATE_KEY);
-
-      const kv = await AsyncStorage.multiGet([...metaKeys, ...stateKeys]);
-      const metaById = {};
-      const stateById = {};
-
-      for (const [k, v] of kv) {
-        if (!v) continue;
-        if (k.startsWith('offerMeta.')) {
-          const id = k.slice('offerMeta.'.length);
-          try {
-            const j = JSON.parse(v);
-            // Try to normalize coordinates
-            let lat=null, lng=null, radiusM=null;
-            if (j?.location?.coordinates && Array.isArray(j.location.coordinates)) {
-              lng = Number(j.location.coordinates[0]);
-              lat = Number(j.location.coordinates[1]);
-            } else if (typeof j?.lat === 'number' && typeof j?.lng === 'number') {
-              lat = j.lat; lng = j.lng;
-            }
-            if (typeof j?.radiusM === 'number') radiusM = j.radiusM;
-            metaById[id] = { lat, lng, radiusM, raw: j };
-          } catch {}
-        } else if (k.startsWith('offerPushState.')) {
-          const id = k.slice('offerPushState.'.length);
-          try {
-            const j = JSON.parse(v);
-            stateById[id] = { inside: !!j?.inside, lastPushedAt: Number(j?.lastPushedAt || 0), raw: j };
-          } catch {}
-        }
-      }
-
-      const lat = pos?.coords?.latitude;
-      const lng = pos?.coords?.longitude;
-      const acc = pos?.coords?.accuracy;
-      const accCapM = Math.min(Math.max(0, Number(acc || 999)), 60); // cap at 60 m like runtime
-
-      const items = [];
-      for (const id of Object.keys(metaById)) {
-        const m = metaById[id];
-        const s = stateById[id] || {};
-        const d = (typeof lat === 'number' && typeof lng === 'number' && typeof m.lat === 'number' && typeof m.lng === 'number')
-          ? distM(lat, lng, m.lat, m.lng)
-          : NaN;
-        const r = Number(m.radiusM || 0);
-        const effective = (isFinite(d) ? r + accCapM + 5 : NaN);
-        const wouldEnter = isFinite(d) ? d <= effective : false;
-        items.push({
-          id,
-          distM: d,
-          radiusM: r,
-          effectiveM: isFinite(d) ? effective : NaN,
-          insideFlag: s.inside === true,
-          lastPushedAt: s.lastPushedAt || 0,
-        });
-      }
-
-      // sort nearest first
-      items.sort((a, b) => {
-        const da = isFinite(a.distM) ? a.distM : 1e12;
-        const db = isFinite(b.distM) ? b.distM : 1e12;
-        return da - db;
-      });
-
-      setGfSnapshot({
-        count: items.length,
-        items: items.slice(0, 30),
-        accCapM,
-      });
-    } catch (e) {
-      setGfSnapshot({ count: 0, items: [], accCapM: 0 });
-      console.warn('[diag] geofence snapshot error', String(e));
-    }
-  }
 
   // ---- refresh diagnostics snapshot
   const snapshot = async () => {
@@ -230,19 +237,16 @@ export default function Diagnostics() {
       const lf = Number(await AsyncStorage.getItem('lastFixAt') || 0);
       setLastFixAt(lf);
     } catch { setLastFixAt(0); }
-    try {
-      const g = JSON.parse((await AsyncStorage.getItem(GLOBAL_STATE_KEY)) || '{}');
-      setLastHeartbeatAt(Number(g?.lastHeartbeatAt || 0));
-      setLastGeofenceSyncAt(Number(g?.lastGeofenceSyncAt || 0));
-    } catch { setLastHeartbeatAt(0); setLastGeofenceSyncAt(0); }
 
     try {
       const pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 400 });
       setLastKnown(pos || null);
-      await loadGeofenceSnapshot(pos || null);
+      // Kandidaten (nahe Offers vom Backend)
+      const cand = await fetchNearbyOfferCandidates(pos || null);
+      setCandidates(cand);
     } catch {
       setLastKnown(null);
-      await loadGeofenceSnapshot(null);
+      setCandidates([]);
     }
 
     try {
@@ -260,6 +264,10 @@ export default function Diagnostics() {
       setDeviceId(did || null);
     } catch {}
 
+    // ▶️ neue Felder laden
+    try { setBatteryAckAt(Number(await AsyncStorage.getItem(BATTERY_ACK_KEY) || 0)); } catch {}
+    try { setLastTokenRefreshAt(Number(await AsyncStorage.getItem(LAST_TOKEN_REFRESH_AT_KEY) || 0)); } catch {}
+
     if (Platform.OS === 'android') {
       try {
         const list = await Notifications.getNotificationChannelsAsync();
@@ -275,26 +283,26 @@ export default function Diagnostics() {
   }, []);
 
   const localNow = async () => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'StepsMatch – Local Test',
-        body: 'Sofortige Local-Notification',
-        data: { offerId: 'LOCAL_TEST' },
-        android: { channelId: OFFERS_CHANNEL_ID },
-        categoryIdentifier: OFFERS_CATEGORY_ID,
-      },
-      trigger: null,
-    });
-    console.log('[diag] scheduled local notification');
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'StepsMatch – Local Test',
+          body: 'Sofortige Local-Notification',
+          data: { offerId: 'LOCAL_TEST' },
+          channelId: OFFERS_CHANNEL_ID,
+          categoryIdentifier: 'offer-go-v2',
+        },
+        trigger: null,
+      });
+      console.log('[diag] scheduled local notification');
+    } catch (e) {
+      console.log('[diag] local notification error', String(e));
+    }
   };
 
   const roundtrip = async () => {
     try {
-      if (typeof sendRoundtripTest === 'function') {
-        await sendRoundtripTest({ offerId: 'ROUNDTRIP_TEST' });
-      } else {
-        console.log('[diag] sendRoundtripTest not available (no-op)');
-      }
+      await roundtripTest('ROUNDTRIP_TEST');
     } catch (e) {
       console.log('[diag] roundtrip error', String(e));
     }
@@ -302,13 +310,9 @@ export default function Diagnostics() {
 
   const heartbeatNow = async () => {
     try {
-      if (typeof sendHeartbeat === 'function') {
-        await sendHeartbeat('manual');
-        console.log('[diag] manual heartbeat sent (also triggers geofence refresh)');
-        await snapshot();
-      } else {
-        console.log('[diag] sendHeartbeat not available');
-      }
+      await sendHeartbeatNow();
+      console.log('[diag] manual heartbeat sent (also triggers geofence refresh)');
+      await snapshot();
     } catch (e) {
       console.log('[diag] heartbeat error', String(e));
     }
@@ -316,13 +320,11 @@ export default function Diagnostics() {
 
   const restartBg = async () => {
     try {
-      if (typeof kickstartBackgroundLocation === 'function') {
-        await kickstartBackgroundLocation();
-        console.log('[diag] kickstartBackgroundLocation invoked');
-        await snapshot();
-      } else {
-        console.log('[diag] kickstartBackgroundLocation not available');
-      }
+      await headlessBootstrap();            // re-register, ensure channels
+      await kickstartBackgroundLocation();  // 🔧 BG Location wirklich starten
+      await sendHeartbeatNow();             // warmup + geofence refresh
+      console.log('[diag] BG kickstart requested');
+      await snapshot();
     } catch (e) {
       console.log('[diag] restartBg error', String(e));
     }
@@ -334,7 +336,7 @@ export default function Diagnostics() {
       await IntentLauncher.startActivityAsync('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS');
     } catch {
       try {
-        await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
+        await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMATION_SETTINGS');
       } catch {
         Linking.openSettings().catch(()=>{});
       }
@@ -358,6 +360,16 @@ export default function Diagnostics() {
     }
   };
 
+  // ▶️ Akku-Optimierung: Acknowledge & Reset
+  const markBatteryAck = async () => {
+    try { await AsyncStorage.setItem(BATTERY_ACK_KEY, String(Date.now())); } catch {}
+    await snapshot();
+  };
+  const resetBatteryAck = async () => {
+    try { await AsyncStorage.removeItem(BATTERY_ACK_KEY); } catch {}
+    await snapshot();
+  };
+
   const atBottom = () => { requestAnimationFrame(() => logScrollerRef.current?.scrollToEnd?.({ animated: false })); };
   useEffect(() => { atBottom(); }, [filtered.length]);
 
@@ -371,21 +383,27 @@ export default function Diagnostics() {
   const chOffers = chById[OFFERS_CHANNEL_ID];
   const chBg     = chById[BG_CHANNEL_ID];
 
-  // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo Doku)
+  // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo)
   const offersIsMax = !!chOffers && Number(chOffers.importance) >= 6;
   const offersHasSound = !!chOffers && !!chOffers.sound; // "arrival" erwartet
   const bgIsPresent = !!chBg;
 
   const notifOk = notifPerm === 'granted';
   const locOk = (locPerm.fg === 'granted') && (locPerm.bg === 'granted');
-  const tasksOk = bgStarted && gfStarted;
 
-  // Haupt-Verdikt (grün, gelb, rot)
+  // ✅ Robustere Einschätzung, ob BG wirklich läuft:
+  const now = Date.now();
+  const bgApiStarted = !!bgStarted;
+  const bgRecentFix = !!lastFixAt && (now - lastFixAt <= BG_FIX_FRESH_MS);
+  const hbRecent = !!lastHeartbeatLogAt && (now - lastHeartbeatLogAt <= HB_FRESH_MS);
+  const bgEffective = bgApiStarted || bgRecentFix || hbRecent;
+
+  const tasksOk = bgEffective && gfStarted;
+
   const verdictOK =
     notifOk && locOk && tasksOk && offersIsMax && offersHasSound && bgIsPresent;
 
   const verdictWarn =
-    // z.B. alles ok, aber Sound fehlt oder Importance < MAX → funktioniert, aber evtl. leiser/später
     (notifOk && locOk && tasksOk) && (!verdictOK);
 
   // ===== Render =====
@@ -408,7 +426,7 @@ export default function Diagnostics() {
           </View>
         </View>
 
-        {/* Actions – nach oben gezogen, sofort sichtbar */}
+        {/* Actions */}
         <View style={s.actions}>
           <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={heartbeatNow}>
             <Text style={s.bt}>Heartbeat jetzt (→ Geofence-Refresh)</Text>
@@ -439,12 +457,18 @@ export default function Diagnostics() {
         <View style={s.cards}>
           <Card title="Gesamtstatus">
             {verdictOK ? (
-              <Verdict ok label="Alles OK – Push sollte überall zuverlässig feuern." />
+              <Verdict ok label="Alles OK – Push sollte früh & zuverlässig feuern." />
             ) : verdictWarn ? (
               <Verdict warn label="Läuft grundsätzlich – Feintuning empfohlen (Kanal/Sound/Tasks)." />
             ) : (
               <Verdict ok={false} warn={false} label="Fehler – mindestens eine Kernvoraussetzung fehlt." />
             )}
+          </Card>
+
+          <Card title="App / Build">
+            <KV k="ProjectId" v={String((Constants.expoConfig?.extra?.eas?.projectId) || (Constants.easConfig?.projectId) || '–')} />
+            <KV k="ReleaseChannel" v={String(Constants.expoConfig?.releaseChannel || 'default')} />
+            <KV k="AppState" v={String(appState)} />
           </Card>
 
           <Card title="Permissions">
@@ -454,17 +478,19 @@ export default function Diagnostics() {
           </Card>
 
           <Card title="Background Services">
-            <Row verdict={bgStarted} label="BG Location started" value={String(bgStarted)} />
+            {/* Zwei Ebenen: API vs. Effektiv */}
+            <Row verdict={bgApiStarted} label="BG Location started (API)" value={String(bgApiStarted)} />
+            <Row verdict={bgEffective} label="BG Location healthy (effektiv)" value={String(bgEffective)} />
             <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
             <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
-            <KV k="lastHeartbeatAt" v={fmtMsAge(lastHeartbeatAt)} />
-            <KV k="lastGeofenceSyncAt" v={fmtMsAge(lastGeofenceSyncAt)} />
+            <KV k="lastHeartbeat(log)" v={fmtMsAge(lastHeartbeatLogAt)} />
           </Card>
 
           <Card title="Position (lastKnown)">
             <KV k="lat" v={lastKnown?.coords?.latitude?.toFixed?.(5) ?? '–'} />
             <KV k="lng" v={lastKnown?.coords?.longitude?.toFixed?.(5) ?? '–'} />
             <KV k="acc" v={lastKnown?.coords?.accuracy != null ? `${Math.round(lastKnown.coords.accuracy)} m` : '–'} />
+            <KV k="speed" v={lastKnown?.coords?.speed != null ? `${Number(lastKnown.coords.speed).toFixed(2)} m/s` : '–'} />
             <KV k="age" v={lastKnown?.timestamp ? fmtMsAge(lastKnown.timestamp) : '–'} />
           </Card>
 
@@ -499,20 +525,47 @@ export default function Diagnostics() {
             </Card>
           )}
 
-          <Card title="Local Geofence Snapshot (aus AsyncStorage)">
-            <KV k="registrierte Offers (lokal)" v={String(gfSnapshot.count)} />
-            <KV k="accCap (m)" v={String(gfSnapshot.accCapM)} />
-            {gfSnapshot.items.length === 0 ? (
+          {Platform.OS === 'android' && (
+            <Card title="Akku-Optimierung (Android)">
+              <KV k="Bestätigt (manuell)" v={batteryAckAt ? fmtMsAge(batteryAckAt) : '–'} />
+              <View style={{ marginTop: 8, gap: 8 }}>
+                <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={openIgnoreBatteryOptimizations}>
+                  <Text style={s.bt}>Einstellung öffnen</Text>
+                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity style={[s.btn, s.bBlue, { flex: 1 }]} onPress={markBatteryAck}>
+                    <Text style={s.bt}>Als bestätigt markieren</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.btn, s.bGray, { flex: 1 }]} onPress={resetBatteryAck}>
+                    <Text style={s.bt}>Zurücksetzen</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={s.hintSmall}>
+                  Android liefert kein sicheres API, um den Ignore-Whitelist-Status auszulesen. Dieses Flag ist bewusst „manuell“.
+                </Text>
+              </View>
+            </Card>
+          )}
+
+          <Card title="Self-Heal / Token">
+            <KV k="Letzter Token-Refresh" v={fmtMsAge(lastTokenRefreshAt)} />
+            <Text style={s.hintSmall}>
+              Der Token wird automatisch erneuert (Self-Heal), z.B. bei „DeviceNotRegistered“. Manuell anstoßen über „BG Location (re)starten“.
+            </Text>
+          </Card>
+
+          <Card title="Kandidaten in deiner Nähe (vom Backend)">
+            {candidates.length === 0 ? (
               <Text style={s.kvV}>–</Text>
             ) : (
-              gfSnapshot.items.map((it) => (
+              candidates.map((it) => (
                 <Text key={it.id} style={s.kvV}>
-                  {take(it.id, 16)} · d={Number.isFinite(it.distM) ? `${it.distM}m` : '–'} · r={it.radiusM ?? '–'} · eff={Number.isFinite(it.effectiveM) ? `${it.effectiveM}m` : '–'} · insideFlag={String(it.insideFlag)} · lastPush={fmtMsAge(it.lastPushedAt)}
+                  {take(it.title || it.id, 22)} · d={it.d}m · r={it.radius} · eff≈{Math.round(it.effective)}m {it.d <= it.effective ? '● ENTER möglich' : ''}
                 </Text>
               ))
             )}
             <Text style={s.hintSmall}>
-              ENTER-Schwelle: distance ≤ radius + min(accuracy, 60m) + 5m
+              ENTER-Regel: d ≤ radius + min(acc*0.5, 20) + 2 (acc aus lastKnown)
             </Text>
             <View style={{ marginTop: 8, gap: 8 }}>
               <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={snapshot}>
@@ -522,7 +575,7 @@ export default function Diagnostics() {
           </Card>
         </View>
 
-        {/* Logs – eigene Scroll-Area mit begrenzter Höhe */}
+        {/* Logs */}
         <View style={s.logWrapper}>
           <ScrollView
             ref={logScrollerRef}
@@ -543,7 +596,7 @@ export default function Diagnostics() {
         </View>
 
         <Text style={s.hint}>
-          Gefilterte Tags: [push], [BGLOC], [GEOFENCE], [RECONCILE], [LOCAL_PUSH_SHOWN]. Umschalten über „Nur Tags/Alle Logs“.
+          Gefilterte Tags: [push], [BGLOC], [HEARTBEAT], [GEOFENCE], [RECONCILE], [LOCAL_PUSH_SHOWN]. Umschalten über „Nur Tags/Alle Logs“.
         </Text>
       </ScrollView>
     </View>
@@ -583,7 +636,7 @@ function lineStyle(line) {
   if (/\[ERROR\]/.test(line)) return s.logErr;
   if (/\[WARN\]/.test(line)) return s.logWarn;
   if (/\[(GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i.test(line)) return s.logHot;
-  if (/\[(push|BGLOC)\]/i.test(line)) return s.logInfo;
+  if (/\[(push|BGLOC|HEARTBEAT)\]/i.test(line)) return s.logInfo;
   return s.log;
 }
 
