@@ -1000,6 +1000,12 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
     const bg = await Location.getBackgroundPermissionsAsync();
     console.log('[PERMS] location', { fg: fg?.status, bg: bg?.status });
 
+    // Sanity: Task registration present?
+    try {
+      const reg = await TaskManager.isTaskRegisteredAsync(BG_LOCATION_TASK);
+      if (!reg) console.log('[BGLOC] WARN task not registered in TaskManager (check defineTask)');
+    } catch {}
+
     // 1) Vor Start immer stoppen
     const startedPrev = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     if (startedPrev) { try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {} }
@@ -1014,14 +1020,13 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: false,
       foregroundService: {
-        // Der Channel wird über app.json → android.foregroundService.notificationChannelId zugeordnet
         notificationTitle: 'StepsMatch ist aktiv',
         notificationBody: 'Standort wird im Hintergrund aktualisiert.',
       },
     } as any);
 
     // 3) Mehrfach prüfen, ob Android den Start bestätigt
-    const attempts = [200, 500, 1000, 1800];
+    const attempts = [200, 500, 1000, 1800, 2400];
     let ok = false;
     for (const wait of attempts) {
       await new Promise(r => setTimeout(r, wait));
@@ -1031,7 +1036,7 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
     if (!ok) {
       console.log('[BGLOC] start not confirmed → final retry (hard restart)');
       try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {}
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 250));
       await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: timeMs,
@@ -1106,7 +1111,7 @@ function useForegroundHighAccuracyRefresh() {
       const delay = jitter(FG_REFRESH_MIN_S, FG_REFRESH_MAX_S);
       timerRef.current = setTimeout(async () => {
         try {
-          const perm = await Location.getPermissionsAsync();
+          const perm = await Location.getForegroundPermissionsAsync();
           if (perm.granted) {
             const loc = await Location.getCurrentPositionAsync({
               accuracy: Location.Accuracy.Highest,
