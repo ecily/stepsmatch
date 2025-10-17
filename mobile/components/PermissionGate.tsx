@@ -72,13 +72,11 @@ async function getLocStatuses(): Promise<{ fg: 'granted' | 'denied'; bg: 'grante
 async function openBatterySettings() {
   if (!ANDROID) return;
   try {
-    // 1) Paket-spezifisch von Doze ausnehmen
     const ACTION_REQ =
       (IntentLauncher as any).ActivityAction?.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS ??
       'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS';
     await IntentLauncher.startActivityAsync(ACTION_REQ, { data: `package:${ANDROID_PACKAGE}` });
   } catch {
-    // 2) Fallback: Liste
     try {
       const ACTION_LIST =
         (IntentLauncher as any).ActivityAction?.IGNORE_BATTERY_OPTIMIZATION_SETTINGS ??
@@ -93,7 +91,6 @@ async function openBatterySettings() {
 async function openAppNotificationSettings() {
   try {
     if (!ANDROID) {
-      // iOS
       await Linking.openSettings();
       return;
     }
@@ -116,14 +113,12 @@ async function openAppNotificationSettings() {
 }
 
 // ────────────────────────────────────────────────────────────
-// Component
-// ────────────────────────────────────────────────────────────
 type Props = {
-  onDone?: () => void;              // legacy alias
-  onReady?: () => void;             // wird gerufen, wenn alles ok
+  onDone?: () => void;                 // legacy alias
+  onReady?: () => void;                // wird gerufen, wenn alles ok
   requireBackgroundLocation?: boolean; // default: true (iOS ignoriert)
-  children?: React.ReactNode;       // darunterliegendes UI
-  overlay?: boolean;                // default: true → Gate als Overlay statt Vollseite
+  children?: React.ReactNode;          // darunterliegendes UI
+  overlay?: boolean;                   // default: true → Gate als Overlay statt Vollseite
 };
 
 export default function PermissionGate({
@@ -208,6 +203,10 @@ export default function PermissionGate({
       const r = await Location.requestForegroundPermissionsAsync();
       console.log('[gate] fg location ->', r?.status);
       await refresh();
+      if (r?.status !== 'granted') {
+        // öffne Systemeinstellungen als Hilfe
+        await Linking.openSettings().catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
@@ -220,6 +219,9 @@ export default function PermissionGate({
       const r = await Location.requestBackgroundPermissionsAsync();
       console.log('[gate] bg location ->', r?.status);
       await refresh();
+      if (r?.status !== 'granted') {
+        await Linking.openSettings().catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
@@ -313,9 +315,7 @@ export default function PermissionGate({
       {/* Overlay nur, wenn nicht alles ok */}
       {!allOk && (
         overlay ? (
-          <View style={styles.overlay}>
-            {GateContent}
-          </View>
+          <View style={styles.overlay}>{GateContent}</View>
         ) : (
           <View style={{ padding: 16 }}>{GateContent}</View>
         )

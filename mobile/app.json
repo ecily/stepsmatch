@@ -1,3 +1,4 @@
+// C:\Users\Lenovo\stepsmatch\mobile\app.json
 {
   "expo": {
     "name": "Stepsmatch",
@@ -12,9 +13,7 @@
       "resizeMode": "cover",
       "backgroundColor": "#0d4ea6"
     },
-    "ios": {
-      "supportsTablet": true
-    },
+    "ios": { "supportsTablet": true },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -25,7 +24,7 @@
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDvnjWY4bT5ZQYJGw-3jGH2aTDbqGYnHMY"
+          "apiKey": "REPLACED_BY_app.config.js"
         }
       },
       "permissions": [
@@ -40,7 +39,7 @@
         "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
       ],
       "foregroundService": {
-        "notificationTitle": "StepsMatch läuft im Hintergrund",
+        "notificationTitle": "StepsMatch ist aktiv",
         "notificationBody": "Dein Standort wird verwendet, um passende Angebote zu finden.",
         "notificationChannelId": "com.ecily.mobile:stepsmatch-bg-location-task"
       },
@@ -56,40 +55,17 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/splash.png",
-          "resizeMode": "cover",
-          "backgroundColor": "#0d4ea6"
-        }
-      ],
+      ["expo-splash-screen", { "image": "./assets/splash.png", "resizeMode": "cover", "backgroundColor": "#0d4ea6" } ],
       "expo-font",
-      [
-        "expo-notifications",
-        {
-          "sounds": ["./assets/sounds/arrival.mp3"]
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "isAndroidBackgroundLocationEnabled": true
-        }
-      ],
-      "expo-secure-store",
-      "expo-intent-launcher"
+      ["expo-notifications", { "sounds": ["./assets/sounds/arrival.mp3"] } ],
+      ["expo-location", { "isAndroidBackgroundLocationEnabled": true } ],
+      "expo-secure-store"
+      /* ❌ kein "expo-intent-launcher" hier */
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
+    "experiments": { "typedRoutes": true },
     "extra": {
-      "eas": {
-        "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed"
-      }
+      "eas": { "projectId": "08559a29-b307-47e9-a130-d3b31f73b4ed" }
     },
-    "updates": {
-      "enabled": false
-    }
+    "updates": { "enabled": false }
   }
 }

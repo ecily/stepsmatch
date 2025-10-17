@@ -1,7 +1,7 @@
 // stepsmatch/mobile/index.js
 
-// Headless-Task registrieren (wird beim Bundle-Load ausgeführt)
+// Headless-Tasks registrieren (muss vor dem Router geladen werden)
 import './bootHeadless';
 
-// expo-router Entry (muss zuletzt importiert werden)
+// expo-router Entry (als letztes importieren)
 import 'expo-router/entry';

@@ -72,7 +72,7 @@ function HeaderGreeting() {
 
   return (
     <View style={{ paddingRight: 12, alignItems: 'flex-end' }}>
-      <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Hallo,</Text>
+      <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Version 2,</Text>
       <Text style={{ color: '#e2e8f0', fontSize: 14, fontWeight: '700' }}>
         {firstName || 'Pilger'}
       </Text>

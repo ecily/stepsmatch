@@ -2,10 +2,11 @@
 import { AppRegistry, Platform } from 'react-native';
 import { headlessBootstrap } from './components/PushInitializer';
 
-// Idempotenter Guard gegen Doppelstarts
+// Guard gegen Doppel-Registrierung & Parallelstarts
+let __registered = false;
 let __inFlight = false;
 
-async function runHeadlessBootstrap() {
+async function runHeadlessBootstrapOnce() {
   if (__inFlight) {
     try { console.log('[HEADLESS] skip (already in-flight)'); } catch {}
     return;
@@ -16,22 +17,26 @@ async function runHeadlessBootstrap() {
     await headlessBootstrap();
     console.log('[HEADLESS] task done');
   } catch (e: any) {
-    console.log('[HEADLESS] error', String(e?.message || e));
+    try { console.log('[HEADLESS] error', e?.message || String(e)); } catch {}
   } finally {
     __inFlight = false;
   }
 }
 
-// Headless-Provider-Funktion (Signatur gemäß RN)
-const task = async () => {
-  await runHeadlessBootstrap();
+// Headless-Handler (Signatur gemäß RN)
+const handler = async () => {
+  await runHeadlessBootstrapOnce();
 };
 
-// Nur Android: Headless-Tasks registrieren
-if (Platform.OS === 'android') {
-  // Custom-Bootstrap (falls ein BootReceiver/Service diesen Task startet)
-  AppRegistry.registerHeadlessTask('BootHeadlessTask', () => task);
+if (Platform.OS === 'android' && !__registered) {
+  // Optionaler, eigener Task-Name (falls ein nativer BootReceiver diesen Task explizit startet)
+  AppRegistry.registerHeadlessTask('BootHeadlessTask', () => handler);
 
-  // Expo eigener Headless-Start (z.B. durch Updates/Services im Hintergrund)
-  AppRegistry.registerHeadlessTask('ExpoHeadlessApp', () => task);
+  // Expo interner Headless-Einstieg (z. B. wenn Expo-Services die App headless wecken)
+  AppRegistry.registerHeadlessTask('ExpoHeadlessApp', () => handler);
+
+  __registered = true;
 }
+
+// Keine Exports nötig – wichtig ist, dass diese Datei vom Entry importiert wird.
+export {};

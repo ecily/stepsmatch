@@ -12,13 +12,12 @@ import { isOfferActiveNow as _isOfferActiveNow } from '../utils/isOfferActiveNow
 import { csvToSet, matchesInterests as _matchesInterests } from '../utils/interests';
 
 // ────────────────────────────────────────────────────────────
-// Notification handler (einheitlich)
+// Notification handler
 // ────────────────────────────────────────────────────────────
 Notifications.setNotificationHandler({
   handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
     shouldShowBanner: true,
     shouldShowList: true,
-    // legacy
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
@@ -26,14 +25,41 @@ Notifications.setNotificationHandler({
 });
 
 // ────────────────────────────────────────────────────────────
-// Constants
+// Constants (aus app.config.js → extra, mit Fallbacks)
 // ────────────────────────────────────────────────────────────
-const FG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
+const EXTRA = (Constants as any)?.expoConfig?.extra || {};
 
-const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
-const GEOFENCE_TASK = 'stepsmatch-geofence-task';
+/**
+ * SANITIZE FIX (Root-Cause):
+ * Einige OEMs (insb. MIUI) verweigern FGS-Start, wenn die Channel-ID nicht exakt existiert
+ * oder Sonderzeichen/Namensräume (z. B. "com.pkg:channel") enthält.
+ * → Kanal-ID vereinheitlichen: einfache, paketlose ID ohne ":".
+ */
+function sanitizeChannelId(id: any, fallback = 'stepsmatch-bg-location-task'): string {
+  try {
+    let s = String(id || '').trim();
+    if (!s) return fallback;
+    if (s.includes(':')) s = s.split(':').pop() as string; // nur Segment nach ":" behalten
+    s = s.replace(/[^a-zA-Z0-9._-]/g, '-');               // harte Zeichenbereinigung
+    return s.toLowerCase();
+  } catch {
+    return fallback;
+  }
+}
 
-const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const RAW_FG_CHANNEL_ID: string =
+  EXTRA?.fgChannelId || 'com.ecily.mobile:stepsmatch-bg-location-task';
+const FG_CHANNEL_ID: string = sanitizeChannelId(RAW_FG_CHANNEL_ID, 'stepsmatch-bg-location-task');
+
+const OFFER_CHANNEL_ID: string =
+  EXTRA?.offerChannelId || 'offers-v2';
+const BG_LOCATION_TASK: string =
+  EXTRA?.bgLocationTask || 'stepsmatch-bg-location-task';
+const GEOFENCE_TASK: string =
+  EXTRA?.geofenceTask || 'stepsmatch-geofence-task';
+
+const API_BASE: string =
+  EXTRA?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 const EUROPE_VIENNA = 'Europe/Vienna';
 
 // Geofencing
@@ -55,13 +81,18 @@ const BG_DEFAULT_DIST_M = 25;
 const BG_BURST_TIME_MS = 6_000;
 const BG_BURST_DIST_M = 10;
 
-// Foreground Refresh (Highest) — 10–15 s
+// Foreground Refresh (Highest)
 const FG_REFRESH_MIN_S = 10;
 const FG_REFRESH_MAX_S = 15;
 
 // Dynamic heartbeat policy
 const SPEED_ACTIVE_MS = 0.5;
 const DEEP_IDLE_AFTER_MS = 3 * 60 * 1000;
+
+// ⏱️ Auto-Refresh der Geofences ohne manuelle Aktion:
+const GEOFENCE_REEVAL_DIST_M = 200;
+const GEOFENCE_REEVAL_MAX_AGE_MS = 10 * 60 * 1000;
+const EMPTY_REGION_GRACE_MS = 10 * 60 * 1000;
 
 let geofenceStartedAt = 0 as number;
 
@@ -74,7 +105,7 @@ const DEVICE_ID_ASYNC_KEY = 'deviceId.v1.mirror';
 const GLOBAL_STATE_KEY = 'offerPushState.__global';
 
 const RESOLVED_PROJECT_ID =
-  (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
+  EXTRA?.eas?.projectId ||
   (Constants as any)?.easConfig?.projectId ||
   '08559a29-b307-47e9-a130-d3b31f73b4ed';
 
@@ -82,8 +113,15 @@ const RESOLVED_PROJECT_ID =
 const BRAND_BLUE = '#0d4ea6';
 const STRONG_PATTERN = [0, 450, 180, 900, 300, 1200];
 
+// FGS-Text exakt wie im Manifest (für ADB-Grep & MIUI)
+const FGS_NOTIFICATION_TITLE = 'StepsMatch ist aktiv';
+const FGS_NOTIFICATION_BODY  = 'Standortaktualisierung läuft';
+
 // Laufzeit-Cache
 let CURRENT_REGIONS: Array<{ identifier: string; latitude: number; longitude: number; radius: number }> = [];
+let LAST_REGION_HASH = '';
+let lastGeofenceSyncAt = 0;
+let lastNonEmptyRegionsAt = 0;
 
 // Interessen-Cache
 let INTEREST_SET_CACHE: Set<string> | null = null;
@@ -132,6 +170,43 @@ async function dumpChannelsOnce(tag = 'CHANNELS') {
     if (!fg) console.log(`[${tag}] WARN no FG channel`, FG_CHANNEL_ID);
   } catch (e) {
     logErr(`${tag}`, e);
+  }
+}
+
+// Channel/FGS-Assertions + Fused-Priming
+async function assertFgChannelBound() {
+  if (Platform.OS !== 'android') return;
+  try {
+    const list = await Notifications.getNotificationChannelsAsync?.();
+    const fg = (list || []).find(c => c.id === FG_CHANNEL_ID);
+    if (!fg) {
+      console.log('[CHANNELS] MISSING_FG_CHANNEL', FG_CHANNEL_ID, '(raw was:', RAW_FG_CHANNEL_ID, ')');
+    } else {
+      console.log('[CHANNELS] FG_CHANNEL_OK', FG_CHANNEL_ID, 'importance=', (fg as any)?.importance);
+    }
+  } catch (e) {
+    logErr('CHANNELS:assert', e);
+  }
+}
+
+// „Priming“: kurzer High-Accuracy-Fix → fused provider geht auf ON
+async function primeFusedProviderOnce() {
+  try {
+    const fix = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Highest,
+      timeout: 3500,
+      mayShowUserSettingsDialog: false,
+    } as any);
+    if (fix?.coords) {
+      lastKnownLocRef.current = {
+        latitude: fix.coords.latitude,
+        longitude: fix.coords.longitude,
+        accuracy: fix.coords.accuracy,
+      };
+      console.log('[BGLOC] primed fused provider with one-shot fix');
+    }
+  } catch {
+    // best effort
   }
 }
 
@@ -307,7 +382,8 @@ async function ensureChannels() {
       description: 'Allgemeine Benachrichtigungen von StepsMatch',
     } as any);
 
-    await Notifications.setNotificationChannelAsync('offers-v2', {
+    // Offers (primary)
+    await Notifications.setNotificationChannelAsync(OFFER_CHANNEL_ID, {
       name: 'Offers',
       importance: Notifications.AndroidImportance.MAX,
       sound: 'arrival' as any,
@@ -320,6 +396,20 @@ async function ensureChannels() {
       description: 'Sofort-Push bei passenden Angeboten in deiner Nähe',
     } as any);
 
+    // Optionaler Legacy-Alias
+    try {
+      await Notifications.setNotificationChannelAsync('offers', {
+        name: 'Offers (Legacy)',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'arrival' as any,
+        vibrationPattern: STRONG_PATTERN,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        showBadge: true,
+        description: 'Kompatibler Offer-Kanal',
+      } as any);
+    } catch {}
+
+    // Foreground service channel – FIX: stets die SANITIZED ID ohne ":" anlegen
     await Notifications.setNotificationChannelAsync(FG_CHANNEL_ID, {
       name: 'StepsMatch – Standort aktiv',
       importance: Notifications.AndroidImportance.DEFAULT,
@@ -336,6 +426,7 @@ async function ensureChannels() {
     ] as any);
 
     CHANNELS_READY_ONCE = true;
+    console.log('[CHANNELS] fgId(sanitized)=', FG_CHANNEL_ID, 'raw=', RAW_FG_CHANNEL_ID);
     await dumpChannelsOnce();
   } catch (e: any) {
     console.warn('[CHANNELS] ensureChannels failed:', e?.message || e);
@@ -474,6 +565,7 @@ async function registerTokenAtBackend(reason: string) {
       return;
     }
 
+    // BG & Geofence möglichst direkt "wärmen"
     if (res.ok) {
       try {
         const permsOk = await hasLocationPermissions();
@@ -549,14 +641,12 @@ async function reportEnterToBackend(p: EnterReport) {
   } catch {}
 }
 
-let lastGeofenceSyncAt = 0;
 let GEOFENCE_REFRESH_IN_FLIGHT = false;
 
 function hashRegions(regs: typeof CURRENT_REGIONS) {
   try { return JSON.stringify(regs.map((r) => [r.identifier, r.latitude, r.longitude, r.radius])); }
   catch { return ''; }
 }
-let LAST_REGION_HASH = '';
 
 // ────────────────────────────────────────────────────────────
 // Notification helpers & unified de-dupe
@@ -638,14 +728,19 @@ async function presentLocalOfferNotification(
       data: { offerId, source, t: now } as any,
       sound: true as any,
       categoryIdentifier: 'offer-go-v2',
-      channelId: 'offers-v2',
+      channelId: OFFER_CHANNEL_ID,
     });
 
     await setGroupState(groupId, { lastPushedAt: underCooldown ? gs.lastPushedAt : now, events: pruned });
 
     if (GROUP_SUMMARY_ENABLED && pruned.length >= 2 && !underCooldown) {
       const titleG = providerName ? `${providerName}: ${pruned.length} Angebote in deiner Nähe` : `${pruned.length} Angebote in deiner Nähe`;
-      await safePresentNotification({ title: titleG, body: 'Tippe, um alle zu sehen.', data: { groupId, kind: 'group-summary' } as any, channelId: 'offers-v2' } as any);
+      await safePresentNotification({
+        title: titleG,
+        body: 'Tippe, um alle zu sehen.',
+        data: { groupId, kind: 'group-summary' } as any,
+        channelId: OFFER_CHANNEL_ID,
+      } as any);
     }
   } catch (e: any) {
     logErr('LOCAL_PUSH', e);
@@ -691,7 +786,7 @@ async function pushOfferOnce(
 }
 
 // ────────────────────────────────────────────────────────────
-// Geofence refresh  (nie mit leerer Liste starten; ggf. stoppen)
+// Geofence refresh
 // ────────────────────────────────────────────────────────────
 async function refreshGeofencesAroundUser(force = false) {
   if (GEOFENCE_REFRESH_IN_FLIGHT) return;
@@ -747,6 +842,14 @@ async function refreshGeofencesAroundUser(force = false) {
     const changed = newHash !== LAST_REGION_HASH;
 
     if (regions.length === 0) {
+      if (CURRENT_REGIONS.length > 0) {
+        const age = now - (lastNonEmptyRegionsAt || 0);
+        if (age <= EMPTY_REGION_GRACE_MS) {
+          console.log('[geofence] empty result → keep previous regions (grace active, age=', age, 'ms)');
+          lastGeofenceSyncAt = now;
+          return;
+        }
+      }
       const wasRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false as any);
       if (wasRunning) {
         try { await Location.stopGeofencingAsync(GEOFENCE_TASK); } catch {}
@@ -773,9 +876,11 @@ async function refreshGeofencesAroundUser(force = false) {
       geofenceStartedAt = nowMs();
       CURRENT_REGIONS = regions.slice();
       LAST_REGION_HASH = newHash;
+      lastNonEmptyRegionsAt = now;
       console.log('[geofence] started with', regions.length, 'regions');
     } else {
       console.log('[geofence] regions unchanged → no restart');
+      if (regions.length > 0) lastNonEmptyRegionsAt = now;
     }
 
     lastGeofenceSyncAt = now;
@@ -795,16 +900,24 @@ async function _sendHeartbeatWithCoords({
   latitude, longitude, accuracy, reason = 'timer',
 }: { latitude: number; longitude: number; accuracy?: number; reason?: string; }) {
   try {
+    const prev = lastKnownLocRef.current;
+    const moved = prev ? haversineMeters(prev.latitude, prev.longitude, latitude, longitude) : 0;
+    lastKnownLocRef.current = { latitude, longitude, accuracy };
+
+    const now = nowMs();
+    if (moved >= GEOFENCE_REEVAL_DIST_M || now - (lastGeofenceSyncAt || 0) > GEOFENCE_REEVAL_MAX_AGE_MS) {
+      console.log('[geofence] auto-refresh trigger', { moved: Math.round(moved), ageMs: now - (lastGeofenceSyncAt || 0) });
+      await refreshGeofencesAroundUser(true);
+    }
+
     await reconcileInsideFlagsWithPosition({ latitude, longitude, accuracy });
 
-    lastKnownLocRef.current = { latitude, longitude, accuracy };
     const accVal = typeof accuracy === 'number' ? accuracy : undefined;
 
     if (!REGISTERED_READY) {
       console.log('[HB] skipped (not registered yet)');
     } else {
       const minWindowS = heartbeatWindowSeconds();
-      const now = nowMs();
       if (now - lastHeartbeatAt >= minWindowS * 1000) {
         lastHeartbeatAt = now;
         try {
@@ -956,24 +1069,24 @@ async function evaluateProximityForFallback(lat: number, lng: number, accuracy?:
 
       if (d <= effective) {
         const st = await getOfferPushState(offerId);
-        if (!st.inside) {
-          let ok = true;
-          try {
-            const [interestSet, fetchedOffer] = await Promise.all([getInterestSet(), fetchOfferForInterests(offerId)]);
-            if (typeof _matchesInterests === 'function' && fetchedOffer && !_matchesInterests(fetchedOffer, interestSet)) ok = false;
-            if (ok && fetchedOffer && !isOfferActiveNowSafe(fetchedOffer, EUROPE_VIENNA)) ok = false;
-          } catch {}
+        if (st.inside) continue;
 
-          if (ok) {
-            const meta = await getOfferMeta(offerId);
-            const pushed = await pushOfferOnce(offerId, meta, 'synthetic-enter');
-            if (pushed) {
-              reportEnterToBackend({ offerId, lat, lng, accuracy: rawAcc }).catch(() => {});
-              console.log('[LOCAL_PUSH_SHOWN:ENTER]', JSON.stringify({
-                offerId, d: Math.round(d), effective: Math.round(effective), accRaw: rawAcc, accAdj: Math.round(accAdj),
-                regionRadius: r.radius, fallback: true
-              }));
-            }
+        let ok = true;
+        try {
+          const [interestSet, fetchedOffer] = await Promise.all([getInterestSet(), fetchOfferForInterests(offerId)]);
+          if (typeof _matchesInterests === 'function' && fetchedOffer && !_matchesInterests(fetchedOffer, interestSet)) ok = false;
+          if (ok && fetchedOffer && !isOfferActiveNowSafe(fetchedOffer, EUROPE_VIENNA)) ok = false;
+        } catch {}
+
+        if (ok) {
+          const meta = await getOfferMeta(offerId);
+          const pushed = await pushOfferOnce(offerId, meta, 'synthetic-enter');
+          if (pushed) {
+            reportEnterToBackend({ offerId, lat, lng, accuracy: rawAcc }).catch(() => {});
+            console.log('[LOCAL_PUSH_SHOWN:ENTER]', JSON.stringify({
+              offerId, d: Math.round(d), effective: Math.round(effective), accRaw: rawAcc, accAdj: Math.round(accAdj),
+              regionRadius: r.radius, fallback: true
+            }));
           }
         }
       }
@@ -993,24 +1106,40 @@ async function evaluateProximityForFallback(lat: number, lng: number, accuracy?:
 // ───────────── BG Location start (mit robusten Retries) ─────────────
 async function startBgLocationWithOptions(timeMs: number, distM: number) {
   try {
-    await ensureChannels();
+    await ensureChannels();            // FIX: Channel garantiert VOR Start vorhanden
     await dumpChannelsOnce();
+    await assertFgChannelBound();
 
-    const fg = await Location.getForegroundPermissionsAsync();
-    const bg = await Location.getBackgroundPermissionsAsync();
-    console.log('[PERMS] location', { fg: fg?.status, bg: bg?.status });
+    // 0) einmal kurz "primen", damit fused provider auf ON geht
+    await primeFusedProviderOnce();
 
-    // Sanity: Task registration present?
+    // 1) Permissions hart verifizieren (sichtbar nur im FG)
     try {
-      const reg = await TaskManager.isTaskRegisteredAsync(BG_LOCATION_TASK);
-      if (!reg) console.log('[BGLOC] WARN task not registered in TaskManager (check defineTask)');
-    } catch {}
+      const fg = await Location.getForegroundPermissionsAsync();
+      if (fg.status !== 'granted') {
+        const r = await Location.requestForegroundPermissionsAsync();
+        console.log('[PERMS] request FG →', r.status);
+      }
+      const bg = await Location.getBackgroundPermissionsAsync();
+      if (Platform.OS === 'android' && bg.status !== 'granted') {
+        const r2 = await Location.requestBackgroundPermissionsAsync();
+        console.log('[PERMS] request BG →', r2.status);
+      }
+    } catch (e) {
+      logErr('PERMS:req', e);
+    }
 
-    // 1) Vor Start immer stoppen
+    const fgNow = await Location.getForegroundPermissionsAsync();
+    const bgNow = await Location.getBackgroundPermissionsAsync();
+    console.log('[PERMS] location', { fg: fgNow?.status, bg: bgNow?.status });
+
+    // 2) Vor Start sicher stoppen
     const startedPrev = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
-    if (startedPrev) { try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {} }
+    if (startedPrev) {
+      try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {}
+    }
 
-    // 2) Start mit BestForNavigation + gewünschtem Intervall
+    // 3) Start FGS-Location (mit exakt gleicher, SANITIZED Channel-ID)
     await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
       timeInterval: timeMs,
@@ -1020,13 +1149,17 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: false,
       foregroundService: {
-        notificationTitle: 'StepsMatch ist aktiv',
-        notificationBody: 'Standort wird im Hintergrund aktualisiert.',
+        notificationTitle: FGS_NOTIFICATION_TITLE,
+        notificationBody:  FGS_NOTIFICATION_BODY,
+        // @ts-ignore
+        notificationChannelId: FG_CHANNEL_ID, // <<< SANITIZED, garantiert vorhanden
+        // @ts-ignore
+        notificationColor: BRAND_BLUE,
       },
     } as any);
 
-    // 3) Mehrfach prüfen, ob Android den Start bestätigt
-    const attempts = [200, 500, 1000, 1800, 2400];
+    // 4) Bestätigung mit Backoff + eine „Last-Chance“-Wiederholung
+    const attempts = [250, 600, 1200, 2000, 2800];
     let ok = false;
     for (const wait of attempts) {
       await new Promise(r => setTimeout(r, wait));
@@ -1034,9 +1167,9 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
       if (ok) break;
     }
     if (!ok) {
-      console.log('[BGLOC] start not confirmed → final retry (hard restart)');
+      console.log('[BGLOC] start not confirmed → retry hard');
       try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {}
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 300));
       await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: timeMs,
@@ -1046,14 +1179,22 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: false,
         foregroundService: {
-          notificationTitle: 'StepsMatch ist aktiv',
-          notificationBody: 'Standort wird im Hintergrund aktualisiert.',
+          notificationTitle: FGS_NOTIFICATION_TITLE,
+          notificationBody:  FGS_NOTIFICATION_BODY,
+          // @ts-ignore
+          notificationChannelId: FG_CHANNEL_ID,
+          // @ts-ignore
+          notificationColor: BRAND_BLUE,
         },
       } as any);
       ok = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     }
 
     console.log('[BGLOC] hasStartedLocationUpdatesAsync =', ok, '(time=', timeMs, 'ms, dist=', distM, 'm)');
+
+    // 5) Direkt danach Geofences „wärmen“
+    try { await refreshGeofencesAroundUser(true); } catch {}
+
     if (!ok) console.log('[BGLOC] START REPORTED FALSE - check channel/permissions above]');
   } catch (e) {
     logErr('BGLOC:startLocationUpdatesAsync', e, { timeMs, distM });
@@ -1077,8 +1218,19 @@ async function ensureBgLocMode(mode: BgMode) {
 async function startAggressiveBgLocation() {
   await ensureChannels();
 
-  const bg = await Location.getBackgroundPermissionsAsync();
-  if (Platform.OS === 'android' && bg.status !== 'granted') {
+  // Wenn BG noch nicht gewährt, try-request (nur im FG sichtbar)
+  try {
+    const bg = await Location.getBackgroundPermissionsAsync();
+    if (Platform.OS === 'android' && bg.status !== 'granted') {
+      const r = await Location.requestBackgroundPermissionsAsync();
+      console.log('[PERMS] request BG (aggressive) →', r.status);
+    }
+  } catch (e) {
+    logErr('PERMS:req2', e);
+  }
+
+  const bg2 = await Location.getBackgroundPermissionsAsync();
+  if (Platform.OS === 'android' && bg2.status !== 'granted') {
     console.log('[BGLOC] start aborted (no BG permission)');
     return;
   }
@@ -1096,8 +1248,12 @@ async function startAggressiveBgLocation() {
         accuracy: typeof warm.coords.accuracy === 'number' ? warm.coords.accuracy : undefined,
         reason: 'after-bg-start',
       });
+    } else {
+      await refreshGeofencesAroundUser(true);
     }
-  } catch {}
+  } catch {
+    await refreshGeofencesAroundUser(true);
+  }
 }
 
 // Foreground Highest Refresh
@@ -1112,7 +1268,7 @@ function useForegroundHighAccuracyRefresh() {
       timerRef.current = setTimeout(async () => {
         try {
           const perm = await Location.getForegroundPermissionsAsync();
-          if (perm.granted) {
+          if (perm.status === 'granted') {
             const loc = await Location.getCurrentPositionAsync({
               accuracy: Location.Accuracy.Highest,
               mayShowUserSettingsDialog: false,
@@ -1196,6 +1352,8 @@ function useLocationWatchdog() {
         if (!started && permsOk) {
           console.log('[BGLOC] watchdog → (re)start');
           await startAggressiveBgLocation();
+        } else if (started) {
+          console.log('[BGLOC] watchdog → running');
         }
 
         try {
@@ -1248,7 +1406,7 @@ function useAppStateWatchdog() {
           const permsOk = await hasLocationPermissions();
           const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
           if (permsOk && !started) {
-            console.log('[BGLOC] watchdog appstate → (re)start');
+            console.log('[BGLOC] watchdog appstate → (re)start]');
             await startAggressiveBgLocation();
           }
           await maybePeriodicTokenRefresh('app-foreground');
@@ -1465,7 +1623,7 @@ export async function roundtripTest(offerId: string) {
       title: 'StepsMatch – Roundtrip',
       body: ok ? 'Backend-Push ausgelöst.' : `Backend nicht erreichbar (status=${lastStatus}).`,
       data: { kind: 'roundtrip', ok } as any,
-      channelId: 'offers-v2',
+      channelId: OFFER_CHANNEL_ID,
     });
     console.log('[diag] roundtrip', ok ? 'ok' : `failed status=${lastStatus}`);
   } catch (e: any) {
@@ -1475,7 +1633,7 @@ export async function roundtripTest(offerId: string) {
 
 // ───────────── Init
 async function initPush() {
-  await ensureChannels().catch(() => {});
+  await ensureChannels().catch(() => {}); // FIX: Channel vor jeglichem Start
 
   try {
     const notifOk = await hasNotificationPermissions();
@@ -1489,10 +1647,24 @@ async function initPush() {
   } catch {}
 
   try {
+    // Falls Gate es noch nicht erledigt hat, hier aktiv BG-Permission versuchen (nur im FG sichtbar)
+    const fg = await Location.getForegroundPermissionsAsync();
+    if (fg.status !== 'granted') {
+      const r = await Location.requestForegroundPermissionsAsync();
+      console.log('[PERMS] init FG →', r.status);
+    }
+    const bg = await Location.getBackgroundPermissionsAsync();
+    if (Platform.OS === 'android' && bg.status !== 'granted') {
+      const r2 = await Location.requestBackgroundPermissionsAsync();
+      console.log('[PERMS] init BG →', r2.status);
+    }
+
     const permsOk = await hasLocationPermissions();
     if (permsOk) {
       await startAggressiveBgLocation();
       await refreshGeofencesAroundUser(true);
+    } else {
+      console.log('[init] BG not started (permissions not granted)');
     }
   } catch {}
 }
@@ -1526,7 +1698,14 @@ export async function headlessBootstrap() {
 // ───────────── Öffentliche Helfer (Onboarding/Diag) ─────────────
 export async function ensureBgAfterOnboarding() {
   try {
-    await ensureChannels();
+    await ensureChannels(); // FIX: Channel vor Start sicherstellen
+    // Im Onboarding im FG: aktiv (nochmals) anfragen, um sicher zu sein
+    const bg = await Location.getBackgroundPermissionsAsync();
+    if (Platform.OS === 'android' && bg.status !== 'granted') {
+      const r = await Location.requestBackgroundPermissionsAsync();
+      console.log('[PERMS] onboarding BG →', r.status);
+    }
+
     const locOk = await hasLocationPermissions();
     if (locOk) {
       await startAggressiveBgLocation();
@@ -1558,7 +1737,7 @@ export async function getBgStatus() {
   }
 }
 
-// ───────────── Exports für Diagnostics-Screen ─────────────
+// Exports for Diagnostics
 export async function kickstartBackgroundLocation() { await startAggressiveBgLocation(); }
 export const sendHeartbeat = sendHeartbeatOnce;
 export const sendRoundtripTest = roundtripTest;

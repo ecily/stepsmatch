@@ -1,30 +1,31 @@
-import 'dotenv/config';
+// C:\Users\Lenovo\stepsmatch\mobile\app.config.js
+/* eslint-disable no-console */
+require('dotenv').config();
 
 /**
- * WICHTIG:
- * - Für Release-Builds müssen die ENV-Variablen in EAS gesetzt sein:
- *   EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY
- *   EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY
- * - Diese Datei sorgt dafür, dass
- *   1) der Maps-SDK-Key ins AndroidManifest geschrieben wird (react-native-maps)
- *   2) der Directions-Key unter extra.directionsKey im Bundle landet (NavigationScreen liest ihn)
+ * Build-ENV (in EAS setzen):
+ *  - EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY
+ *  - EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY
+ *  - EXPO_PUBLIC_API_BASE_URL (optional; Default unten)
  */
 
-const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ?? '';
-const DIRECTIONS_KEY = process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ?? '';
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY || '';
+const DIRECTIONS_KEY = process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY || '';
+const API_BASE =
+  process.env.EXPO_PUBLIC_API_BASE_URL ||
+  'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-// Build-time Hinweis (erscheint in den EAS-Logs, hilft die Ursache schnell zu sehen)
-if (!MAPS_KEY) {
-  // eslint-disable-next-line no-console
-  console.warn('⚠️  EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ist leer – Google Maps wird im Release nicht funktionieren.');
-}
-if (!DIRECTIONS_KEY) {
-  // eslint-disable-next-line no-console
-  console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist leer – Google Directions (Routen) funktionieren im Release nicht.');
-}
+// Zentrale IDs/Konstanten (werden auch in der App verwendet)
+// ⚠️ FGS-Channel ohne Doppelpunkt/Prefix
+const FG_CHANNEL_ID = 'stepsmatch-bg-location-task';
+const OFFER_CHANNEL_ID = 'offers-v2';
+const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
+const GEOFENCE_TASK = 'stepsmatch-geofence-task';
 
-export default {
+if (!MAPS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ist leer.');
+if (!DIRECTIONS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist leer.');
+
+module.exports = {
   expo: {
     name: 'Stepsmatch',
     slug: 'mobile',
@@ -53,16 +54,16 @@ export default {
         backgroundColor: '#0B3B68',
       },
 
-      // Für Firebase/Push
       googleServicesFile: './google-services.json',
 
-      // >>> Hier wird der Google Maps SDK Key ins Manifest geschrieben <<<
+      // Maps SDK Key ins Manifest
       config: {
-        googleMaps: {
-          apiKey: MAPS_KEY,
-        },
+        googleMaps: { apiKey: MAPS_KEY },
       },
 
+      /**
+       * WICHTIG: Permissions für Android 13/14 & BG-Location/FGS
+       */
       permissions: [
         'VIBRATE',
         'ACCESS_COARSE_LOCATION',
@@ -72,14 +73,27 @@ export default {
         'FOREGROUND_SERVICE_LOCATION',
         'WAKE_LOCK',
         'POST_NOTIFICATIONS',
+        'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+        'INTERNET',
       ],
 
-      // Persistente BG-Location-Notification (Android)
+      /**
+       * Persistente Foreground-Service-Notification
+       * → Muss zur Channel-ID passen, die wir in der App verwenden.
+       */
       foregroundService: {
-        notificationTitle: 'StepsMatch läuft im Hintergrund',
-        notificationBody: 'Dein Standort wird verwendet, um passende Angebote zu finden.',
-        notificationChannelId: 'com.ecily.mobile:stepsmatch-bg-location-task',
+        notificationTitle: 'StepsMatch ist aktiv',
+        notificationBody: 'Standortaktualisierung läuft',
+        notificationChannelId: FG_CHANNEL_ID,
       },
+
+      // Service-Typ für Android 14+
+      foregroundServiceType: ['location'],
+    },
+
+    notification: {
+      icon: './assets/notification-icon.png',
+      color: '#0d4ea6',
     },
 
     web: {
@@ -92,25 +106,28 @@ export default {
       ['expo-splash-screen', { image: './assets/splash.png', resizeMode: 'cover', backgroundColor: '#0d4ea6' }],
       'expo-font',
       ['expo-notifications', { sounds: ['./assets/sounds/arrival.mp3'] }],
-      'expo-location',
+      ['expo-location', { isAndroidBackgroundLocationEnabled: true, isAndroidForegroundServiceEnabled: true }],
       'expo-secure-store',
-      // react-native-maps benötigt kein separates Plugin im Managed Workflow (SDK 50),
-      // alles Wesentliche kommt über android.config.googleMaps.apiKey.
+      // ❌ KEIN "expo-intent-launcher" hier – es ist kein Config-Plugin
     ],
 
     experiments: { typedRoutes: true },
 
-    // Laufzeit-Config, wird in JS via Constants.expoConfig.extra.* gelesen
+    // Laufzeit-Config (Constants.expoConfig.extra.*)
     extra: {
       eas: { projectId: '08559a29-b307-47e9-a130-d3b31f73b4ed' },
-      directionsKey: DIRECTIONS_KEY, // NavigationScreen.js liest diese Property
       apiBase: API_BASE,
-      // Optional für Diagnostics im Client:
-      mapsKeyPresent: !!MAPS_KEY,
-      directionsKeyPresent: !!DIRECTIONS_KEY,
+      directionsKey: DIRECTIONS_KEY,
+      mapsKeyPresent: Boolean(MAPS_KEY),
+      directionsKeyPresent: Boolean(DIRECTIONS_KEY),
+
+      // Zentralisierte IDs, damit Code & Config 100% übereinstimmen
+      fgChannelId: FG_CHANNEL_ID,
+      offerChannelId: OFFER_CHANNEL_ID,
+      bgLocationTask: BG_LOCATION_TASK,
+      geofenceTask: GEOFENCE_TASK,
     },
 
-    // OTA-Updates sind bewusst aus (Builds via EAS)
     updates: { enabled: false },
   },
 };

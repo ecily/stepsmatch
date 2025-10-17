@@ -22,26 +22,34 @@ import {
 // Settings & Constants
 // =========================
 const MAX_LOG_LINES = 1500;
-const TAG_RE = /\[(push|BGLOC|HEARTBEAT|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i;
+// erweitert: auch LOCAL_PUSH, CHANNELS, WD
+const TAG_RE = /\[(push|BGLOC|HEARTBEAT|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN|LOCAL_PUSH|CHANNELS|WD)\]/i;
 
 const TOKEN_KEY = 'expoPushToken.v2';
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
 const GLOBAL_STATE_KEY = 'offerPushState.__global';
 
-// ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.json entsprechen:
+// ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.config.js entsprechen:
 const OFFERS_CHANNEL_ID = 'offers-v2';
 const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
 
 // Backend (wie im PushInitializer)
-const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const API_BASE =
+  (Constants?.expoConfig?.extra?.apiBase) ??
+  'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
-// ▶️ Zusatz-Keys für Diagnostik
-const BATTERY_ACK_KEY = 'batteryOptAck.v1';
+// ▶️ Akku-Keys JETZT konsistent zum PermissionGate
+const BATTERY_CONFIRM_KEY = 'batteryOptOut.confirmed';
+const BATTERY_CONFIRM_AT_KEY = 'batteryOptOut.confirmedAt';
 const LAST_TOKEN_REFRESH_AT_KEY = 'push.lastTokenRefreshAt';
 
 // Heuristik: wie frisch ist „frisch“?
 const BG_FIX_FRESH_MS = 2 * 60 * 1000; // 2 min
 const HB_FRESH_MS = 2 * 60 * 1000;     // 2 min
+
+// App-Package (für Intents)
+const ANDROID_PACKAGE =
+  (Constants?.expoConfig?.android?.package) || 'com.ecily.mobile';
 
 // =========================
 // Lightweight Log Capture
@@ -81,8 +89,6 @@ function getLogs() { return Array.isArray(globalThis.__SM_LOGS__) ? globalThis._
 function clearLogs() { if (Array.isArray(globalThis.__SM_LOGS__)) globalThis.__SM_LOGS__.length = 0; }
 
 // =========================
-// Helpers (Diagnostics Data)
-// =========================
 const fmtMsAge = (t) => {
   if (!t) return '–';
   const age = Date.now() - Number(t);
@@ -95,12 +101,11 @@ const fmtMsAge = (t) => {
 };
 const take = (s, n=28) => (s ? String(s).slice(0, n) + (String(s).length>n ? '…' : '') : '–');
 
-// ❗️FIX: Lokale Zeit parsen (nicht mit „Z“ als UTC forcen)
+// ❗️Lokale Zeit parsen (nicht mit „Z“ als UTC forcen)
 function parseWrappedLogTimestamp(line) {
   // format: [LEVEL] YYYY-MM-DD HH:mm:ss ...
   const m = line.match(/^\[(LOG|WARN|ERROR)\]\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
   if (!m) return 0;
-  // Ohne Zeitzonen-Suffix → als lokale Zeit interpretieren
   const isoLocal = `${m[2]}T${m[3]}`;
   const t = Date.parse(isoLocal);
   return Number.isFinite(t) ? t : 0;
@@ -115,7 +120,7 @@ function lastEventFromLogs(lines, re) {
   return { line: null, at: 0 };
 }
 
-// Näherungsweise „Kandidaten in der Nähe“ (Backend), wenn wir keine Region-Liste lesen können
+// Näherungsweise „Kandidaten in der Nähe“ (Backend)
 async function fetchNearbyOfferCandidates(pos) {
   if (!pos?.coords?.latitude || !pos?.coords?.longitude) return [];
   try {
@@ -131,11 +136,13 @@ async function fetchNearbyOfferCandidates(pos) {
     };
     const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : 20;
-    const accAdj = Math.min((acc * 0.5), 20); // wie im ENTER-Check
+    const accAdj = Math.min((acc * 0.5), 20);
     const items = [];
     for (const o of list) {
       try {
-        const p = (o?.location?.coordinates && Array.isArray(o.location.coordinates)) ? { lng: Number(o.location.coordinates[0]), lat: Number(o.location.coordinates[1]) } : null;
+        const p = (o?.location?.coordinates && Array.isArray(o.location.coordinates))
+          ? { lng: Number(o.location.coordinates[0]), lat: Number(o.location.coordinates[1]) }
+          : null;
         if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
         const d = hav(here.lat, here.lng, p.lat, p.lng);
         if (d <= 3000) {
@@ -184,7 +191,8 @@ export default function Diagnostics() {
   const [candidates, setCandidates] = useState([]);
 
   // ▶️ neue Zustände
-  const [batteryAckAt, setBatteryAckAt] = useState(0);
+  const [batteryConfirmed, setBatteryConfirmed] = useState(false);
+  const [batteryConfirmedAt, setBatteryConfirmedAt] = useState(0);
   const [lastTokenRefreshAt, setLastTokenRefreshAt] = useState(0);
 
   const [appState, setAppState] = useState(AppState.currentState || 'active');
@@ -264,8 +272,9 @@ export default function Diagnostics() {
       setDeviceId(did || null);
     } catch {}
 
-    // ▶️ neue Felder laden
-    try { setBatteryAckAt(Number(await AsyncStorage.getItem(BATTERY_ACK_KEY) || 0)); } catch {}
+    // ▶️ neue Felder laden (konsistent zum PermissionGate)
+    try { setBatteryConfirmed((await AsyncStorage.getItem(BATTERY_CONFIRM_KEY)) === 'true'); } catch {}
+    try { setBatteryConfirmedAt(Number(await AsyncStorage.getItem(BATTERY_CONFIRM_AT_KEY) || 0)); } catch {}
     try { setLastTokenRefreshAt(Number(await AsyncStorage.getItem(LAST_TOKEN_REFRESH_AT_KEY) || 0)); } catch {}
 
     if (Platform.OS === 'android') {
@@ -333,10 +342,14 @@ export default function Diagnostics() {
   const openIgnoreBatteryOptimizations = async () => {
     if (Platform.OS !== 'android') return;
     try {
-      await IntentLauncher.startActivityAsync('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS');
+      // ✅ mit package → direkter Sprung zur App
+      await IntentLauncher.startActivityAsync(
+        'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+        { data: `package:${ANDROID_PACKAGE}` }
+      );
     } catch {
       try {
-        await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMATION_SETTINGS');
+        await IntentLauncher.startActivityAsync('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
       } catch {
         Linking.openSettings().catch(()=>{});
       }
@@ -350,8 +363,8 @@ export default function Diagnostics() {
         data: undefined,
         flags: 0,
         extra: {
-          'android.provider.extra.APP_PACKAGE': 'com.ecily.mobile',
-          'app_package': 'com.ecily.mobile',
+          'android.provider.extra.APP_PACKAGE': ANDROID_PACKAGE,
+          'app_package': ANDROID_PACKAGE,
           'app_uid': 0,
         },
       });
@@ -360,13 +373,19 @@ export default function Diagnostics() {
     }
   };
 
-  // ▶️ Akku-Optimierung: Acknowledge & Reset
+  // ▶️ Akku-Optimierung: Acknowledge/Reset (zeigt nur UI-Status an)
   const markBatteryAck = async () => {
-    try { await AsyncStorage.setItem(BATTERY_ACK_KEY, String(Date.now())); } catch {}
+    try {
+      await AsyncStorage.setItem(BATTERY_CONFIRM_KEY, 'true');
+      await AsyncStorage.setItem(BATTERY_CONFIRM_AT_KEY, String(Date.now()));
+    } catch {}
     await snapshot();
   };
   const resetBatteryAck = async () => {
-    try { await AsyncStorage.removeItem(BATTERY_ACK_KEY); } catch {}
+    try {
+      await AsyncStorage.removeItem(BATTERY_CONFIRM_KEY);
+      await AsyncStorage.removeItem(BATTERY_CONFIRM_AT_KEY);
+    } catch {}
     await snapshot();
   };
 
@@ -527,7 +546,8 @@ export default function Diagnostics() {
 
           {Platform.OS === 'android' && (
             <Card title="Akku-Optimierung (Android)">
-              <KV k="Bestätigt (manuell)" v={batteryAckAt ? fmtMsAge(batteryAckAt) : '–'} />
+              <KV k="Bestätigt" v={batteryConfirmed ? 'true' : 'false'} />
+              <KV k="Bestätigt seit" v={batteryConfirmedAt ? fmtMsAge(batteryConfirmedAt) : '–'} />
               <View style={{ marginTop: 8, gap: 8 }}>
                 <TouchableOpacity style={[s.btnFull, s.bGray]} onPress={openIgnoreBatteryOptimizations}>
                   <Text style={s.bt}>Einstellung öffnen</Text>
@@ -596,7 +616,7 @@ export default function Diagnostics() {
         </View>
 
         <Text style={s.hint}>
-          Gefilterte Tags: [push], [BGLOC], [HEARTBEAT], [GEOFENCE], [RECONCILE], [LOCAL_PUSH_SHOWN]. Umschalten über „Nur Tags/Alle Logs“.
+          Gefilterte Tags: [push], [BGLOC], [HEARTBEAT], [GEOFENCE], [RECONCILE], [LOCAL_PUSH], [LOCAL_PUSH_SHOWN], [CHANNELS], [WD]. Umschalten über „Nur Tags/Alle Logs“.
         </Text>
       </ScrollView>
     </View>
@@ -635,8 +655,8 @@ function Card({ title, children }) {
 function lineStyle(line) {
   if (/\[ERROR\]/.test(line)) return s.logErr;
   if (/\[WARN\]/.test(line)) return s.logWarn;
-  if (/\[(GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN)\]/i.test(line)) return s.logHot;
-  if (/\[(push|BGLOC|HEARTBEAT)\]/i.test(line)) return s.logInfo;
+  if (/\[(GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN|LOCAL_PUSH)\]/i.test(line)) return s.logHot;
+  if (/\[(push|BGLOC|HEARTBEAT|CHANNELS|WD)\]/i.test(line)) return s.logInfo;
   return s.log;
 }
 

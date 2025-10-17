@@ -1,11 +1,12 @@
 // stepsmatch/mobile/app/_layout.js
-import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Slot } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
+import { Slot, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Notifications from 'expo-notifications';
 
-// Globales Theme
 import ThemeProvider from '../theme/ThemeProvider';
 
 // Startet Foreground-Location-Service, Geofencing, Channels (ohne Popups)
@@ -14,14 +15,16 @@ import PushInitializer, {
   getBgStatus,
 } from '../components/PushInitializer';
 
-// Neues Onboarding-Gate (Notifs → FG+BG-Location → Akku-Optimierung)
+// Geführtes Onboarding (Notifs → FG/BG-Location)
 import PermissionGate from '../components/PermissionGate';
 
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
   const gateCompletedRef = useRef(false);
+  const appStateRef = useRef(AppState.currentState || 'active');
+  const router = useRouter();
 
-  // Falls die App mit bereits erteilten Rechten startet, Gate überspringen
+  // Falls App mit bereits erteilten Rechten startet, Gate überspringen
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -29,16 +32,62 @@ export default function RootLayout() {
         const s = await getBgStatus();
         if (!mounted) return;
         if (s?.locPerms && s?.notifPerms) {
+          try { await ensureBgAfterOnboarding(); } catch {}
           setAppReady(true);
         }
       } catch {
-        // still — Gate übernimmt dann
+        // Gate übernimmt dann
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
+
+  // Notifications: Listener für Empfang + Interaktion
+  useEffect(() => {
+    const subRecv = Notifications.addNotificationReceivedListener((notif) => {
+      try {
+        const data = notif?.request?.content?.data || {};
+        console.log('[notif] received', { id: notif?.request?.identifier, data });
+      } catch {}
+    });
+
+    const subResp = Notifications.addNotificationResponseReceivedListener((resp) => {
+      try {
+        const action = resp?.actionIdentifier;
+        const data = resp?.notification?.request?.content?.data || {};
+        const offerId = data?.offerId || data?.id || data?.offer || null;
+        console.log('[notif] response', { action, data });
+
+        // Standardaktion oder "GO" → App in den Vordergrund + optional Navigation
+        if (action === Notifications.DEFAULT_ACTION_IDENTIFIER || action === 'go') {
+          if (offerId) {
+            try { router.push(`/offer/${offerId}`); }
+            catch { router.push('/(tabs)/diagnostics'); }
+          } else {
+            router.push('/(tabs)/diagnostics');
+          }
+        }
+      } catch (e) {
+        console.log('[notif] response handler error', String(e?.message || e));
+      }
+    });
+
+    return () => {
+      try { subRecv?.remove?.(); } catch {}
+      try { subResp?.remove?.(); } catch {}
+    };
+  }, [router]);
+
+  // AppState → bei Rückkehr in den Vordergrund leise BG sicherstellen
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (next) => {
+      appStateRef.current = next;
+      if (next === 'active' && appReady) {
+        try { await ensureBgAfterOnboarding(); } catch {}
+      }
+    });
+    return () => sub?.remove?.();
+  }, [appReady]);
 
   const handleGateDone = useCallback(async () => {
     if (gateCompletedRef.current) return; // Doppelklick-Schutz
@@ -48,7 +97,7 @@ export default function RootLayout() {
       // Startet BG-Location + Geofences + Token-Register OHNE Dialoge
       await ensureBgAfterOnboarding();
     } catch {
-      // Logs werden im PushInitializer geführt
+      // Logs kommen aus PushInitializer
     } finally {
       setAppReady(true);
     }
