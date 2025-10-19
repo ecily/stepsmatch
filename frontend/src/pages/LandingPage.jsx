@@ -99,7 +99,7 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
                 folgt im Beta-Programm.
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                <b>Version 1.5 coming up – stabilere Hintergrund-Jobs.</b>
+                <b>Version 2.0 19.10.25 – FGS, UX/UI, Onboarding.</b>
               </p>
             </div>
           </div>
