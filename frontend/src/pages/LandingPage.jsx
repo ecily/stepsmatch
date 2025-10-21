@@ -1,3 +1,4 @@
+// src/pages/LandingPage.jsx
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
@@ -330,12 +331,6 @@ const LandingPage = () => {
                 <span className="block text-white/90">Nicht suchen.</span>
               </motion.h1>
 
-              {/* Subline */}
-              <motion.p className="mt-5 text-lg md:text-xl text-white/85 max-w-2xl" {...fadeUp(0.2)}>
-                <b>Echtzeit statt Endlossuche.</b> Standort × Zeitfenster × Interesse → Push in ≤ <b>30&nbsp;s</b>.
-                Kein Scrollen. Kein Spam. Nur Relevanz.
-              </motion.p>
-
               {/* ⬇️ REPLACED: Hervorgehobenes Marketing-Statement */}
               <motion.div className="mt-6" {...fadeUp(0.25)}>
                 <div className="relative rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-5 py-4 shadow-lg text-white">
@@ -345,8 +340,8 @@ const LandingPage = () => {
                     className="absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-emerald-400 via-sky-400 to-indigo-400"
                   />
                   <p className="text-base md:text-lg leading-relaxed">
-                    <strong>StepsMatch</strong> bringt dich im <b>genau richtigen Moment</b> mit dem{" "}
-                    <b>genau richtigen Angebot</b> zusammen:
+                    <strong>StepsMatch</strong> ist eine <b>APP</b>, die dich im{" "}
+                    <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammenbringt:
                     <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
                     <span className="whitespace-nowrap"> keine Suche</span>,{" "}
                     <span className="whitespace-nowrap">kein Streuverlust</span>.
@@ -421,7 +416,7 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl">
             <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-              Kontext schlägt Suche: <span className="text-blue-700">Warum StepsMatch?</span>
+              <span className="text-blue-700">Warum StepsMatch?</span>
             </h2>
 
             {/* NEW copy: 2–3 extrem klare Sätze */}
