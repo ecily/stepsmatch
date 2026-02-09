@@ -4,6 +4,7 @@ import { Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Random from 'expo-random';
@@ -57,6 +58,8 @@ const BG_LOCATION_TASK: string =
   EXTRA?.bgLocationTask || 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK: string =
   EXTRA?.geofenceTask || 'stepsmatch-geofence-task';
+const HEARTBEAT_FETCH_TASK: string =
+  EXTRA?.heartbeatFetchTask || 'stepsmatch-heartbeat-fetch';
 
 const API_BASE: string =
   EXTRA?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api';
@@ -937,6 +940,9 @@ async function _sendHeartbeatWithCoords({
           console.log('[HEARTBEAT] ok', {
             status: res.status, acc: Math.round(accVal ?? 0), reason, windowS: minWindowS, appState: appStateRef.current,
           });
+          try {
+            await setGlobalState({ lastHeartbeatAt: now });
+          } catch {}
 
           if (looksLikeInvalidToken(res, json)) {
             console.log('[push] heartbeat signalled token refresh → self-heal');
@@ -1464,6 +1470,47 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   }
 });
 
+// BackgroundFetch watchdog (Ultreia-style): rearm + stale heartbeat
+if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
+  TaskManager.defineTask(HEARTBEAT_FETCH_TASK, async () => {
+    try {
+      const permsOk = await hasLocationPermissions();
+      if (!permsOk) return BackgroundFetch.BackgroundFetchResult.NoData;
+
+      const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+      if (!started) {
+        console.log('[FETCH] bgLoc not running -> rearm startAggressiveBgLocation');
+        await startAggressiveBgLocation();
+      }
+
+      const last = await getGlobalState();
+      const lastHb = Number(last?.lastHeartbeatAt || 0);
+      const ageMs = lastHb ? (Date.now() - lastHb) : Infinity;
+      const stale = ageMs >= 3 * 60 * 1000;
+
+      if (!stale) {
+        return BackgroundFetch.BackgroundFetchResult.NoData;
+      }
+
+      const pos = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 } as any);
+      if (pos?.coords) {
+        await _sendHeartbeatWithCoords({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
+          reason: 'fetch-watchdog',
+        });
+        return BackgroundFetch.BackgroundFetchResult.NewData;
+      }
+
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    } catch (e: any) {
+      logErr('FETCH', e);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+  });
+}
+
 TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   try {
     if (error) {
@@ -1667,6 +1714,23 @@ async function initPush() {
       console.log('[init] BG not started (permissions not granted)');
     }
   } catch {}
+
+  try {
+    const status = await BackgroundFetch.getStatusAsync();
+    if (status === BackgroundFetch.BackgroundFetchStatus.Available) {
+      const registered = await TaskManager.isTaskRegisteredAsync(HEARTBEAT_FETCH_TASK);
+      if (!registered) {
+        await BackgroundFetch.registerTaskAsync(HEARTBEAT_FETCH_TASK, {
+          minimumInterval: 15 * 60,
+          stopOnTerminate: false,
+          startOnBoot: true,
+        });
+        console.log('[FETCH] registered task', HEARTBEAT_FETCH_TASK);
+      }
+    }
+  } catch (e: any) {
+    logErr('FETCH:register', e);
+  }
 }
 
 export default function PushInitializer() {

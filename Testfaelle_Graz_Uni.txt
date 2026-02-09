@@ -1,7 +1,3 @@
-Kottulinsky - test1@test.com - test
-Santa Lucia - test2@test.com - test - Lendplatz
-ÖH Uni Graz – Copyshop test3
-Sakana (Japanisches Restaurant) - test4
-Sägewerk Klassik (Studentenlokal) - test5
-3 Goldene Kugeln (Heinrichstraße) - test6
-
+ÖH Uni Graz – Copyshop test3@text.com - 1234
+Posaune - Essen - Italienisch - test2@test.com - 1234
+Kottulinsky - Nightlife - Bar - test1@test.com - 1234

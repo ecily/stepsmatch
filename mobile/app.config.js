@@ -21,6 +21,7 @@ const FG_CHANNEL_ID = 'stepsmatch-bg-location-task';
 const OFFER_CHANNEL_ID = 'offers-v2';
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK = 'stepsmatch-geofence-task';
+const HEARTBEAT_FETCH_TASK = 'stepsmatch-heartbeat-fetch';
 
 if (!MAPS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY ist leer.');
 if (!DIRECTIONS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist leer.');
@@ -126,6 +127,7 @@ module.exports = {
       offerChannelId: OFFER_CHANNEL_ID,
       bgLocationTask: BG_LOCATION_TASK,
       geofenceTask: GEOFENCE_TASK,
+      heartbeatFetchTask: HEARTBEAT_FETCH_TASK,
     },
 
     updates: { enabled: false },

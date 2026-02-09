@@ -4,6 +4,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking
 import * as Notifications from 'expo-notifications';
 import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -32,6 +34,7 @@ const GLOBAL_STATE_KEY = 'offerPushState.__global';
 // ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.config.js entsprechen:
 const OFFERS_CHANNEL_ID = 'offers-v2';
 const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
+const HEARTBEAT_FETCH_TASK = 'stepsmatch-heartbeat-fetch';
 
 // Backend (wie im PushInitializer)
 const API_BASE =
@@ -177,9 +180,12 @@ export default function Diagnostics() {
 
   const [bgStarted, setBgStarted] = useState(false);
   const [gfStarted, setGfStarted] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState('unknown');
+  const [fetchTaskReg, setFetchTaskReg] = useState(false);
 
   const [lastFixAt, setLastFixAt] = useState(0);
   const [lastHeartbeatLogAt, setLastHeartbeatLogAt] = useState(0);
+  const [lastHeartbeatAt, setLastHeartbeatAt] = useState(0);
 
   const [lastKnown, setLastKnown] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
@@ -240,11 +246,31 @@ export default function Diagnostics() {
     try {
       setGfStarted(await Location.hasStartedGeofencingAsync('stepsmatch-geofence-task'));
     } catch { setGfStarted(false); }
+    try {
+      const s = await BackgroundFetch.getStatusAsync();
+      setFetchStatus(
+        s === BackgroundFetch.BackgroundFetchStatus.Available
+          ? 'available'
+          : s === BackgroundFetch.BackgroundFetchStatus.Denied
+            ? 'denied'
+            : s === BackgroundFetch.BackgroundFetchStatus.Restricted
+              ? 'restricted'
+              : 'unknown'
+      );
+    } catch { setFetchStatus('unknown'); }
+    try {
+      setFetchTaskReg(await (TaskManager as any).isTaskRegisteredAsync?.(HEARTBEAT_FETCH_TASK));
+    } catch { setFetchTaskReg(false); }
 
     try {
       const lf = Number(await AsyncStorage.getItem('lastFixAt') || 0);
       setLastFixAt(lf);
     } catch { setLastFixAt(0); }
+    try {
+      const gs = await AsyncStorage.getItem(GLOBAL_STATE_KEY);
+      const parsed = gs ? JSON.parse(gs) : null;
+      setLastHeartbeatAt(Number(parsed?.lastHeartbeatAt || 0));
+    } catch { setLastHeartbeatAt(0); }
 
     try {
       const pos = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 400 });
@@ -501,8 +527,11 @@ export default function Diagnostics() {
             <Row verdict={bgApiStarted} label="BG Location started (API)" value={String(bgApiStarted)} />
             <Row verdict={bgEffective} label="BG Location healthy (effektiv)" value={String(bgEffective)} />
             <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
+            <Row verdict={fetchStatus === 'available'} label="BackgroundFetch" value={fetchStatus} />
+            <Row verdict={!!fetchTaskReg} label="Fetch Task registered" value={String(fetchTaskReg)} />
             <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
             <KV k="lastHeartbeat(log)" v={fmtMsAge(lastHeartbeatLogAt)} />
+            <KV k="lastHeartbeat(state)" v={fmtMsAge(lastHeartbeatAt)} />
           </Card>
 
           <Card title="Position (lastKnown)">
