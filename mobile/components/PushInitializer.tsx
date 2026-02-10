@@ -92,6 +92,12 @@ const FG_REFRESH_MAX_S = 15;
 const SPEED_ACTIVE_MS = 0.5;
 const DEEP_IDLE_AFTER_MS = 3 * 60 * 1000;
 
+// Ultreia-style heartbeat hardening
+const HB_MIN_GAP_SECONDS = 55;
+const BG_DISTANCE_METERS = 25;
+const BOOSTER_MIN_GAP_SECONDS = 45;
+const BOOSTER_MOVE_METERS = 60;
+
 // ⏱️ Auto-Refresh der Geofences ohne manuelle Aktion:
 const GEOFENCE_REEVAL_DIST_M = 200;
 const GEOFENCE_REEVAL_MAX_AGE_MS = 10 * 60 * 1000;
@@ -246,6 +252,34 @@ async function getPersistentDeviceId() {
   try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, nid); } catch {}
   try { await AsyncStorage.setItem(DEVICE_ID_ASYNC_KEY, nid); } catch {}
   return nid;
+}
+
+// Lightweight client diag logger (writes to backend Mongo)
+const diagLastAt: Record<string, number> = {};
+async function diagLog(
+  event: string,
+  data: Record<string, any> = {},
+  level: 'info' | 'warn' | 'error' = 'info',
+  minGapMs = 4000
+) {
+  try {
+    const now = Date.now();
+    const key = `${event}`;
+    if (diagLastAt[key] && now - diagLastAt[key] < minGapMs) return;
+    diagLastAt[key] = now;
+    const deviceId = await getPersistentDeviceId();
+    fetch(`${API_BASE}/diag/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId,
+        platform: Platform.OS,
+        event,
+        level,
+        data: { ...data, t: now, appState: appStateRef?.current || undefined },
+      }),
+    }).catch(() => {});
+  } catch {}
 }
 
 async function fetchOfferForInterests(offerId: string) {
@@ -547,6 +581,7 @@ async function registerTokenAtBackend(reason: string) {
     const token = await getCurrentExpoToken();
     if (!token) {
       console.log('[push] register skipped (no token/permission) →', reason);
+      diagLog('push.register.skip', { reason }, 'warn', 2000);
       REGISTERED_READY = false;
       return;
     }
@@ -560,6 +595,7 @@ async function registerTokenAtBackend(reason: string) {
     try { json = await res.json(); } catch { json = {}; }
 
     console.log('[push] register =>', res.status);
+    diagLog('push.register', { reason, ok: res.ok, status: res.status }, res.ok ? 'info' : 'warn', 1000);
     REGISTERED_READY = res.ok;
 
     if (!res.ok && looksLikeInvalidToken(res, json)) {
@@ -584,6 +620,7 @@ async function registerTokenAtBackend(reason: string) {
     }
   } catch (e: any) {
     console.warn('[push] register error', String(e));
+    diagLog('push.register.error', { reason, error: String(e?.message || e) }, 'error', 1000);
   }
 }
 
@@ -898,6 +935,82 @@ async function refreshGeofencesAroundUser(force = false) {
 
 // ────────────────────────────────────────────────────────────
 let lastHeartbeatAt = 0;
+let lastSentCoords: { latitude: number; longitude: number } | null = null;
+let lastBoosterAtMs: number | null = null;
+let lastCoordsForBooster: { latitude: number; longitude: number } | null = null;
+
+// Single-flight HB (verhindert Doppel-Trigger)
+let hbInFlight: Promise<any> | null = null;
+let hbInFlightMeta: { reason: string; startedAtMs: number } | null = null;
+
+const FORCE_HB_REASONS = new Set(['manual', 'init', 'watchdog', 'fetch-watchdog', 'after-bg-start', 'fg-refresh', 'bg-boost']);
+
+function isForceReason(reason?: string) {
+  return FORCE_HB_REASONS.has(String(reason || ''));
+}
+
+function shouldSkipHeartbeat({
+  reason,
+  latitude,
+  longitude,
+}: {
+  reason?: string;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const now = Date.now();
+  const ageSec = lastHeartbeatAt ? Math.floor((now - lastHeartbeatAt) / 1000) : null;
+
+  if (isForceReason(reason)) return { skip: false, why: 'force' };
+
+  if (ageSec != null && ageSec < HB_MIN_GAP_SECONDS) {
+    if (lastSentCoords && latitude != null && longitude != null) {
+      const movedM = haversineMeters(
+        lastSentCoords.latitude,
+        lastSentCoords.longitude,
+        latitude,
+        longitude
+      );
+      if (movedM >= BG_DISTANCE_METERS) return { skip: false, why: `moved:${Math.round(movedM)}m` };
+      return { skip: true, why: `dedupe:${ageSec}s moved:${Math.round(movedM)}m` };
+    }
+    return { skip: true, why: `dedupe:${ageSec}s` };
+  }
+
+  return { skip: false, why: 'gap-ok' };
+}
+
+async function sendHeartbeatSingleFlight(arg: {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  reason?: string;
+}) {
+  const r = String(arg.reason || 'unknown');
+  if (hbInFlight) {
+    if (isForceReason(r)) {
+      console.log(`[HB] join in-flight reason=${r} inFlightReason=${hbInFlightMeta?.reason || 'n/a'}`);
+      return hbInFlight;
+    }
+    console.log(`[HB] skip reason=${r} why=in-flight inFlightReason=${hbInFlightMeta?.reason || 'n/a'}`);
+    return { skipped: true, why: 'in-flight', inFlightReason: hbInFlightMeta?.reason || null };
+  }
+
+  hbInFlightMeta = { reason: r, startedAtMs: Date.now() };
+  const p = (async () => {
+    try {
+      return await _sendHeartbeatWithCoords({ ...arg, reason: r });
+    } finally {
+      if (hbInFlight === p) {
+        hbInFlight = null;
+        hbInFlightMeta = null;
+      }
+    }
+  })();
+
+  hbInFlight = p;
+  return p;
+}
 
 async function _sendHeartbeatWithCoords({
   latitude, longitude, accuracy, reason = 'timer',
@@ -917,43 +1030,58 @@ async function _sendHeartbeatWithCoords({
 
     const accVal = typeof accuracy === 'number' ? accuracy : undefined;
 
-    if (!REGISTERED_READY) {
-      console.log('[HB] skipped (not registered yet)');
-    } else {
-      const minWindowS = heartbeatWindowSeconds();
-      if (now - lastHeartbeatAt >= minWindowS * 1000) {
-        lastHeartbeatAt = now;
+    const token = await getCurrentExpoToken();
+    if (!token) {
+      console.log('[HB] skipped (no token)');
+      diagLog('hb.skip.no_token', { reason }, 'warn', 5000);
+      return;
+    }
+
+    const dec = shouldSkipHeartbeat({ reason, latitude, longitude });
+    if (dec.skip) {
+      console.log(`[HB] skip reason=${reason} why=${dec.why}`);
+      return;
+    }
+
+    const minWindowS = heartbeatWindowSeconds();
+    if (now - lastHeartbeatAt >= minWindowS * 1000 || isForceReason(reason)) {
+      lastHeartbeatAt = now;
+      try {
+        const deviceId = await getPersistentDeviceId();
+        diagLog('hb.send', { reason, lat: latitude, lng: longitude, acc: accVal, appState: appStateRef.current }, 'info', 1000);
+        const res = await fetch(`${API_BASE}/location/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: token || undefined, deviceId, lat: latitude, lng: longitude, accuracy: accVal,
+            platform: Platform.OS, projectId: RESOLVED_PROJECT_ID, reason, appState: appStateRef.current,
+          }),
+        });
+        let json: any = {};
+        try { json = await res.json(); } catch { json = {}; }
+
+        diagLog('hb.res', { reason, ok: res.ok, status: res.status }, res.ok ? 'info' : 'warn', 1000);
+        console.log('[HEARTBEAT] ok', {
+          status: res.status, acc: Math.round(accVal ?? 0), reason, windowS: minWindowS, appState: appStateRef.current,
+        });
         try {
-          const token = await getCurrentExpoToken();
-          const deviceId = await getPersistentDeviceId();
-          const res = await fetch(`${API_BASE}/location/heartbeat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token: token || undefined, deviceId, lat: latitude, lng: longitude, accuracy: accVal,
-              platform: Platform.OS, projectId: RESOLVED_PROJECT_ID, reason, appState: appStateRef.current,
-            }),
-          });
-          let json: any = {};
-          try { json = await res.json(); } catch { json = {}; }
+          await setGlobalState({ lastHeartbeatAt: now });
+        } catch {}
 
-          console.log('[HEARTBEAT] ok', {
-            status: res.status, acc: Math.round(accVal ?? 0), reason, windowS: minWindowS, appState: appStateRef.current,
-          });
-          try {
-            await setGlobalState({ lastHeartbeatAt: now });
-          } catch {}
+        if (res.ok && !REGISTERED_READY) REGISTERED_READY = true;
 
-          if (looksLikeInvalidToken(res, json)) {
-            console.log('[push] heartbeat signalled token refresh → self-heal');
-            await selfHealTokenFlow('heartbeat');
-          }
-
-          const geos = (json as any)?.geofences;
-          if (Array.isArray(geos) && geos.length) await refreshGeofencesAroundUser(true);
-        } catch (e: any) {
-          logErr('HEARTBEAT', e);
+        if (looksLikeInvalidToken(res, json)) {
+          console.log('[push] heartbeat signalled token refresh ? self-heal');
+          await selfHealTokenFlow('heartbeat');
         }
+
+        const geos = (json as any)?.geofences;
+        if (Array.isArray(geos) && geos.length) await refreshGeofencesAroundUser(true);
+
+        lastSentCoords = { latitude, longitude };
+      } catch (e: any) {
+        logErr('HEARTBEAT', e);
+        diagLog('hb.error', { reason, error: String(e?.message || e) }, 'error', 1000);
       }
     }
   } catch (e: any) {
@@ -965,7 +1093,7 @@ export async function sendHeartbeatOnce() {
   try {
     const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 4000 } as any);
     if (pos?.coords) {
-      await _sendHeartbeatWithCoords({
+      await sendHeartbeatSingleFlight({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
         accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
@@ -1248,12 +1376,12 @@ async function startAggressiveBgLocation() {
     if (warm?.coords?.latitude && warm?.coords?.longitude) {
       lastSpeedRef.current = warm.coords.speed ?? 0;
       if ((warm.coords.speed ?? 0) >= SPEED_ACTIVE_MS) lastMoveAtRef.current = nowMs();
-      await _sendHeartbeatWithCoords({
-        latitude: warm.coords.latitude,
-        longitude: warm.coords.longitude,
-        accuracy: typeof warm.coords.accuracy === 'number' ? warm.coords.accuracy : undefined,
-        reason: 'after-bg-start',
-      });
+        await sendHeartbeatSingleFlight({
+          latitude: warm.coords.latitude,
+          longitude: warm.coords.longitude,
+          accuracy: typeof warm.coords.accuracy === 'number' ? warm.coords.accuracy : undefined,
+          reason: 'after-bg-start',
+        });
     } else {
       await refreshGeofencesAroundUser(true);
     }
@@ -1282,12 +1410,12 @@ function useForegroundHighAccuracyRefresh() {
             if (loc?.coords) {
               lastSpeedRef.current = loc.coords.speed ?? 0;
               if ((loc.coords.speed ?? 0) >= SPEED_ACTIVE_MS) lastMoveAtRef.current = nowMs();
-              await _sendHeartbeatWithCoords({
-                latitude: loc.coords.latitude,
-                longitude: loc.coords.longitude,
-                accuracy: typeof loc.coords.accuracy === 'number' ? loc.coords.accuracy : undefined,
-                reason: 'fg-refresh',
-              });
+                await sendHeartbeatSingleFlight({
+                  latitude: loc.coords.latitude,
+                  longitude: loc.coords.longitude,
+                  accuracy: typeof loc.coords.accuracy === 'number' ? loc.coords.accuracy : undefined,
+                  reason: 'fg-refresh',
+                });
             }
           }
         } catch {}
@@ -1329,7 +1457,7 @@ function useHeartbeatScheduler() {
               return lk?.coords ? { latitude: lk.coords.latitude, longitude: lk.coords.longitude, accuracy: lk.coords.accuracy } : null;
             })());
           if (last) {
-            await _sendHeartbeatWithCoords({ ...last, reason: 'scheduler' });
+            await sendHeartbeatSingleFlight({ ...last, reason: 'scheduler' });
           }
         } catch {}
         tick();
@@ -1371,12 +1499,12 @@ function useLocationWatchdog() {
           if (pos?.coords) {
             lastSpeedRef.current = pos.coords.speed ?? 0;
             if ((pos.coords.speed ?? 0) >= SPEED_ACTIVE_MS) lastMoveAtRef.current = nowMs();
-            await _sendHeartbeatWithCoords({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
-              reason: 'watchdog',
-            });
+              await sendHeartbeatSingleFlight({
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+                accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
+                reason: 'watchdog',
+              });
           }
         } catch {}
 
@@ -1441,6 +1569,8 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       await AsyncStorage.setItem('lastFixAt', String(Date.now()));
     } catch {}
 
+    diagLog('bg.task', { count: locations.length, lat: latitude, lng: longitude, acc: accuracy, speed }, 'info', 5000);
+
     try {
       const improved = await ensureGoodAccuracyCoords({ latitude, longitude, accuracy } as any);
       if (improved) {
@@ -1455,16 +1585,33 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       if (speed >= SPEED_ACTIVE_MS) lastMoveAtRef.current = nowMs();
     }
 
-    if (latitude && longitude) {
-      await _sendHeartbeatWithCoords({
-        latitude,
-        longitude,
-        accuracy: typeof accuracy === 'number' ? accuracy : undefined,
-        reason: 'bg-task',
-      });
+      if (latitude && longitude) {
+        await sendHeartbeatSingleFlight({
+          latitude,
+          longitude,
+          accuracy: typeof accuracy === 'number' ? accuracy : undefined,
+          reason: 'bg-task',
+        });
 
-      await evaluateProximityForFallback(latitude, longitude, typeof accuracy === 'number' ? accuracy : undefined);
-    }
+        // Booster: bei groesserer Bewegung einen zweiten HB mit Mindestabstand senden
+        const now = Date.now();
+        const prev = lastCoordsForBooster;
+        const moved = prev ? haversineMeters(prev.latitude, prev.longitude, latitude, longitude) : 0;
+        if (!prev || moved >= BOOSTER_MOVE_METERS) {
+          if (now - lastBoosterAtMs >= BOOSTER_MIN_GAP_SECONDS * 1000) {
+            lastBoosterAtMs = now;
+            await sendHeartbeatSingleFlight({
+              latitude,
+              longitude,
+              accuracy: typeof accuracy === 'number' ? accuracy : undefined,
+              reason: 'bg-boost',
+            });
+          }
+          lastCoordsForBooster = { latitude, longitude };
+        }
+
+        await evaluateProximityForFallback(latitude, longitude, typeof accuracy === 'number' ? accuracy : undefined);
+      }
   } catch (e: any) {
     logErr('BGLOC:task', e);
   }
@@ -1492,20 +1639,22 @@ if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
         return BackgroundFetch.BackgroundFetchResult.NoData;
       }
 
+      diagLog('fetch.stale', { ageMs }, 'info', 60000);
       const pos = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 } as any);
       if (pos?.coords) {
-        await _sendHeartbeatWithCoords({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
-          reason: 'fetch-watchdog',
-        });
+          await sendHeartbeatSingleFlight({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
+            reason: 'fetch-watchdog',
+          });
         return BackgroundFetch.BackgroundFetchResult.NewData;
       }
 
       return BackgroundFetch.BackgroundFetchResult.NoData;
     } catch (e: any) {
       logErr('FETCH', e);
+      diagLog('fetch.error', { error: String(e?.message || e) }, 'error', 1000);
       return BackgroundFetch.BackgroundFetchResult.Failed;
     }
   });

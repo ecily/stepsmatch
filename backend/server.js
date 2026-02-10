@@ -16,6 +16,7 @@ import matchRoutes from './routes/match.js';
 import pushRoutes from './routes/push.js';
 import locationRoutes from './routes/location.js';
 import testerRoutes from './routes/testers.js';
+import diagRoutes from './routes/diag.js';
 import { startOfferPoller, stopOfferPoller } from './jobs/offerPoller.js';
 
 const app = express();
@@ -123,6 +124,7 @@ app.use('/api/push', pushRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/testers', testerRoutes);
+app.use('/api/diag', diagRoutes);
 
 // Bestehende Health-Endpunkte bleiben erhalten
 app.get('/api/ping', (_req, res) => res.status(200).send('pong'));

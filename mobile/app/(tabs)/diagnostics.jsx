@@ -259,7 +259,8 @@ export default function Diagnostics() {
       );
     } catch { setFetchStatus('unknown'); }
     try {
-      setFetchTaskReg(await (TaskManager as any).isTaskRegisteredAsync?.(HEARTBEAT_FETCH_TASK));
+      const fn = TaskManager?.isTaskRegisteredAsync;
+      setFetchTaskReg(fn ? await fn(HEARTBEAT_FETCH_TASK) : false);
     } catch { setFetchTaskReg(false); }
 
     try {
