@@ -564,9 +564,13 @@ router.post('/heartbeat', async (req, res) => {
           console.log(
             `[hb-geofence] offer=${x.offer._id} tried=1 sentOk=${okFirst ? 1 : 0} receipts=${JSON.stringify(summary)}`
           );
+        }
       }
-      }
-      return res.json({
+    } catch (geErr) {
+      console.error('[hb-geofence] error', geErr?.message || geErr);
+    }
+
+    return res.json({
       ok: true,
       id: pushTokenDoc?._id,
       lat,
