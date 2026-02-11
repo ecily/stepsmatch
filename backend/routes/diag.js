@@ -117,4 +117,38 @@ router.get('/heartbeat', async (req, res) => {
   }
 });
 
+router.get('/heartbeat-list', async (req, res) => {
+  try {
+    if (!canRead(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+    const limitRaw = Number(req.query?.limit || 20);
+    const limit = Math.max(1, Math.min(200, Number.isFinite(limitRaw) ? limitRaw : 20));
+
+    const docs = await PushToken.find({})
+      .select('_id token deviceId projectId platform lastHeartbeatAt lastSeenAt lastLocationAt lastLocation updatedAt createdAt')
+      .sort({ lastHeartbeatAt: -1, lastSeenAt: -1, updatedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const list = docs.map((d) => ({
+      id: d._id,
+      token: d.token ? String(d.token).slice(0, 22) + '…' : null,
+      deviceId: d.deviceId || null,
+      projectId: d.projectId || null,
+      platform: d.platform || null,
+      lastHeartbeatAt: d.lastHeartbeatAt || null,
+      lastSeenAt: d.lastSeenAt || null,
+      lastLocationAt: d.lastLocationAt || null,
+      lastLocation: d.lastLocation || null,
+      updatedAt: d.updatedAt || null,
+      createdAt: d.createdAt || null,
+    }));
+
+    return res.json({ ok: true, count: list.length, list });
+  } catch (e) {
+    console.error('[diag] heartbeat-list error', e?.message || e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 export default router;
