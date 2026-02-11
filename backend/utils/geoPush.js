@@ -164,6 +164,7 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
               source: 'offer-update-retry',
             },
             channelId: PUSH_CHANNEL_ID,
+      categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
             priority: PUSH_PRIORITY,
             sound: PUSH_SOUND,
             delayMs: 1500,
@@ -438,6 +439,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     logDiag(offer, 'push-send', {
       tried: tokens.length,
       channelId: PUSH_CHANNEL_ID,
+      categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
       priority: PUSH_PRIORITY,
       sound: PUSH_SOUND,
     });

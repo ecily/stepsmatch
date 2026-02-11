@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
 import ThemeProvider from '../theme/ThemeProvider';
 
@@ -17,6 +18,31 @@ import PushInitializer, {
 
 // Geführtes Onboarding (Notifs → FG/BG-Location)
 import PermissionGate from '../components/PermissionGate';
+
+const API_BASE =
+  (Constants?.expoConfig?.extra?.apiBase || Constants?.manifest?.extra?.apiBase) ??
+  'https://lobster-app-ie9a5.ondigitalocean.app/api';
+
+async function postNotifAction(action, data = {}, minutes) {
+  try {
+    const offerId = data?.offerId || data?.id || data?.offer || null;
+    if (!offerId) return;
+    const deviceId = data?.deviceId || null;
+    const tokenId = data?.tokenId || null;
+    if (!deviceId && !tokenId) return;
+    await fetch(`${API_BASE}/notifications/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        offerId,
+        deviceId,
+        tokenId,
+        minutes: minutes || undefined,
+      }),
+    });
+  } catch {}
+}
 
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
@@ -60,12 +86,17 @@ export default function RootLayout() {
 
         // Standardaktion oder "GO" → App in den Vordergrund + optional Navigation
         if (action === Notifications.DEFAULT_ACTION_IDENTIFIER || action === 'go') {
+          postNotifAction('go', data);
           if (offerId) {
             try { router.push(`/offer/${offerId}`); }
             catch { router.push('/(tabs)/diagnostics'); }
           } else {
             router.push('/(tabs)/diagnostics');
           }
+        } else if (action === 'later') {
+          postNotifAction('later', data);
+        } else if (action === 'no') {
+          postNotifAction('no', data);
         }
       } catch (e) {
         console.log('[notif] response handler error', String(e?.message || e));

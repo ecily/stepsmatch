@@ -71,6 +71,7 @@ const TZ = 'Europe/Vienna';
 const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
 const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
 const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
+const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
 
 // Projekt-Scope (Filter Tokens auf dieses Projekt, falls gesetzt)
 const PROJECT_ID =
@@ -293,6 +294,7 @@ export function startOfferPoller() {
             $or: [
               { status: 'snoozed', remindAt: { $gt: now } },
               { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: cutoff } },
+              { suppressUntil: { $gt: now } },
             ],
           }).select('deviceToken status remindAt lastNotifiedAt').lean();
 
@@ -326,6 +328,7 @@ export function startOfferPoller() {
             body,
             data,
             channelId: PUSH_CHANNEL_ID,
+            categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
             priority:  PUSH_PRIORITY,
             sound:     PUSH_SOUND,
             delayMs:   2500,
@@ -352,6 +355,7 @@ export function startOfferPoller() {
             const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
             const nowIso = new Date();
             const bulk = [];
+            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowIso.getTime() + RENOTIFY_COOLDOWN_MS) : null;
             for (const tok of sentTokens) {
               const deviceTokenId = byToken.get(tok);
               if (!deviceTokenId) continue;
@@ -360,7 +364,7 @@ export function startOfferPoller() {
                   filter: { offerId: offer._id, deviceToken: deviceTokenId },
                   update: {
                     $setOnInsert: { offerId: offer._id, deviceToken: deviceTokenId, firstSeenAt: nowIso },
-                    $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso },
+                    $set: { status: 'notified', remindAt: null, lastNotifiedAt: nowIso, updatedAt: nowIso, ...(suppressUntil ? { suppressUntil } : { suppressUntil: null }) },
                   },
                   upsert: true,
                 },

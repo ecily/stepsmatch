@@ -27,6 +27,7 @@ function envMs(name, def) {
 
 /** Wie lange nach einer NOTIFIED-Meldung darf erneut gepusht werden (Geofence-Enter)? */
 const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000); // 2h
+const REENTRY_MIN_GAP_MS = envMs('REENTRY_MIN_GAP_MS', 5 * 60 * 1000); // 5 min
 
 /* ────────────────────────────────────────────────────────────
    Schema
@@ -54,6 +55,12 @@ const OfferVisibilitySchema = new Schema(
       index: true,
     },
 
+    inside: { type: Boolean, default: false, index: true },
+    lastEnterAt: { type: Date, default: null, index: true },
+    lastExitAt: { type: Date, default: null, index: true },
+    lastDistanceM: { type: Number, default: null },
+    lastReason: { type: String, default: null },
+
     firstSeenAt: { type: Date, default: Date.now, index: true },
     lastNotifiedAt: { type: Date, default: null, index: true },
     remindAt: { type: Date, default: null, index: true },
@@ -76,6 +83,7 @@ OfferVisibilitySchema.index({ deviceToken: 1, offerId: 1 }, { unique: true });
 OfferVisibilitySchema.index({ updatedAt: -1 });
 OfferVisibilitySchema.index({ status: 1, remindAt: 1 });
 OfferVisibilitySchema.index({ offerId: 1, status: 1, updatedAt: -1 });
+OfferVisibilitySchema.index({ deviceToken: 1, inside: 1, updatedAt: -1 });
 
 /* ────────────────────────────────────────────────────────────
    Statics
@@ -172,13 +180,25 @@ OfferVisibilitySchema.statics.shouldNotify = async function shouldNotify(
   if (!doc) return true;
   if (doc.status === STATUS.DISMISSED) return false;
   if (doc.status === STATUS.SNOOZED) return !!doc.remindAt && doc.remindAt <= now;
-  if (doc.suppressUntil && doc.suppressUntil > now) return false;
+  const canReenterOverride = () => {
+    if (!doc.lastExitAt || !doc.lastNotifiedAt) return false;
+    const exitAt = new Date(doc.lastExitAt).getTime();
+    const notifiedAt = new Date(doc.lastNotifiedAt).getTime();
+    if (!Number.isFinite(exitAt) || !Number.isFinite(notifiedAt)) return false;
+    if (exitAt <= notifiedAt) return false;
+    return now.getTime() - exitAt >= REENTRY_MIN_GAP_MS;
+  };
+  if (doc.suppressUntil && doc.suppressUntil > now) {
+    return canReenterOverride();
+  }
   if (doc.status === STATUS.SEEN) return true;
   // NOTIFIED
   if (!doc.lastNotifiedAt) return false;
   try {
     const t = new Date(doc.lastNotifiedAt).getTime();
-    return Number.isFinite(t) && now.getTime() - t >= RENOTIFY_COOLDOWN_MS;
+    if (!Number.isFinite(t)) return false;
+    if (now.getTime() - t >= RENOTIFY_COOLDOWN_MS) return true;
+    return canReenterOverride();
   } catch {
     return false;
   }

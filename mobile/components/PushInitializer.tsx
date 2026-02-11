@@ -472,6 +472,7 @@ async function ensureChannels() {
     await Notifications.setNotificationCategoryAsync('offer-go-v2', [
       { identifier: 'go', buttonTitle: 'GO', options: { opensAppToForeground: true } },
       { identifier: 'later', buttonTitle: 'SPÄTER', options: { isDestructive: false } },
+      { identifier: 'no', buttonTitle: 'KEIN INTERESSE', options: { isDestructive: true } },
     ] as any);
 
     CHANNELS_READY_ONCE = true;

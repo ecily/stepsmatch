@@ -219,6 +219,7 @@ export async function ensureChannels() {
     await Notifications.setNotificationCategoryAsync(CATEGORIES.offerGo, [
       { identifier: 'go',     buttonTitle: 'Route',  options: { opensAppToForeground: true } },
       { identifier: 'later',  buttonTitle: 'Später', options: { isDestructive: false } },
+      { identifier: 'no',     buttonTitle: 'Kein Interesse', options: { isDestructive: true } },
     ]);
 
     // BG-Service Kanal

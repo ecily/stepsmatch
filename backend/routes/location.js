@@ -29,6 +29,14 @@ function isValidObjectId(v) {
     return false;
   }
 }
+function envMs(name, def) {
+  const v = process.env[name];
+  if (v === undefined) return def;
+  const s = String(v).trim().toLowerCase();
+  if (['', '0', 'false', 'off', 'null', 'none'].includes(s)) return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : def;
+}
 function distanceMeters(lng1, lat1, lng2, lat2) {
   function toRad(d) { return (d * Math.PI) / 180; }
   const R = 6371000;
@@ -100,6 +108,9 @@ const TZ = 'Europe/Vienna';
 // Mindest-Booster & Toleranz an den Client angeglichen
 const SERVER_MIN_ACCURACY_BOOST_M = Number(process.env.SERVER_MIN_ACCURACY_BOOST_M ?? 60);
 const SERVER_TOLERANCE_M = Number(process.env.SERVER_TOLERANCE_M ?? 5);
+const EXIT_BUFFER_M = Number(process.env.EXIT_BUFFER_M ?? 30);
+const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
+const REENTRY_MIN_GAP_MS = envMs('REENTRY_MIN_GAP_MS', 5 * 60 * 1000);
 
 // Fresh-Token Retry Delays (ms), default: 90s, 5min
 const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000,300000')
@@ -125,10 +136,10 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
           // Token neu laden
           let tokenDoc = null;
           if (pushTokenId) {
-            tokenDoc = await PushToken.findOne({ _id: pushTokenId }).select('_id token disabled projectId interests').lean();
+            tokenDoc = await PushToken.findOne({ _id: pushTokenId }).select('_id token disabled projectId interests deviceId').lean();
           }
           if (!tokenDoc && tokenString) {
-            tokenDoc = await PushToken.findOne({ token: tokenString }).select('_id token disabled projectId interests').lean();
+            tokenDoc = await PushToken.findOne({ token: tokenString }).select('_id token disabled projectId interests deviceId').lean();
           }
           if (!tokenDoc || tokenDoc.disabled) {
             console.log('[hb-retry] token missing/disabled -> skip', tokenString ? String(tokenString).slice(0,22)+'…' : String(pushTokenId));
@@ -147,6 +158,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             $or: [
               { status: 'snoozed', remindAt: { $gt: now } },
               { status: { $in: ['notified', 'dismissed'] }, lastNotifiedAt: { $gte: cutoff } },
+              { suppressUntil: { $gt: now } },
             ],
           }).select('_id').lean();
           if (exists) {
@@ -162,12 +174,15 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             offerId: String(offer._id),
             route: `/offers/${offer._id}`,
             source: 'heartbeat-retry',
+            deviceId: tokenDoc?.deviceId || null,
+            tokenId: String(tokenDoc?._id),
           };
 
           const diagRetry = await sendPushAndCheckReceipts({
             tokens: [tokenDoc.token],
             title, body, data,
             channelId: process.env.PUSH_CHANNEL_ID || 'offers',
+            categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
             priority: process.env.PUSH_PRIORITY || 'high',
             sound: process.env.PUSH_SOUND || 'default',
             delayMs: 1500,
@@ -181,7 +196,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
               { offerId: offer._id, deviceToken: tokenDoc._id },
               {
                 $setOnInsert: { offerId: offer._id, deviceToken: tokenDoc._id, firstSeenAt: now },
-                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null },
+                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, ...(RENOTIFY_COOLDOWN_MS > 0 ? { suppressUntil: new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) } : { suppressUntil: null }) },
               },
               { upsert: true }
             );
@@ -204,6 +219,35 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
   } catch (e) {
     console.error('[hb-retry] schedule error:', e?.message || e);
   }
+}
+
+function shouldNotifyDoc(doc, now = new Date()) {
+  if (!doc) return true;
+  if (doc.status === 'dismissed') return false;
+  if (doc.status === 'snoozed') return !!doc.remindAt && doc.remindAt <= now;
+
+  const canReenterOverride = () => {
+    if (!doc.lastExitAt || !doc.lastNotifiedAt) return false;
+    const exitAt = new Date(doc.lastExitAt).getTime();
+    const notifiedAt = new Date(doc.lastNotifiedAt).getTime();
+    if (!Number.isFinite(exitAt) || !Number.isFinite(notifiedAt)) return false;
+    if (exitAt <= notifiedAt) return false;
+    return now.getTime() - exitAt >= REENTRY_MIN_GAP_MS;
+  };
+
+  if (doc.suppressUntil && doc.suppressUntil > now) {
+    return canReenterOverride();
+  }
+
+  if (doc.status === 'notified') {
+    if (!doc.lastNotifiedAt) return false;
+    const t = new Date(doc.lastNotifiedAt).getTime();
+    if (!Number.isFinite(t)) return false;
+    if (now.getTime() - t >= RENOTIFY_COOLDOWN_MS) return true;
+    return canReenterOverride();
+  }
+
+  return true;
 }
 
 /* ───────────────── Heartbeat + server-side geofence ───────────────── */
@@ -341,8 +385,59 @@ router.post('/heartbeat', async (req, res) => {
         console.warn('heartbeat: $geoNear failed, fallback used:', aggErr?.message);
       }
 
-      // Feinauswahl
-      const activeCandidates = [];
+      
+// Feinauswahl + Presence (enter/exit) + Push-Dedupe
+      const offerIds = rows.map(o => o?._id).filter(Boolean);
+      const visDocs = await OfferVisibility.find({
+        offerId: { $in: offerIds },
+        deviceToken: pushTokenDoc._id,
+      }).lean();
+      const visMap = new Map(visDocs.map(v => [String(v.offerId), v]));
+
+      const bulk = [];
+      const enterCandidates = [];
+
+      const rowIdSet = new Set(offerIds.map(id => String(id)));
+      const insideDocs = visDocs.filter(v => v.inside === true && !rowIdSet.has(String(v.offerId)));
+
+      if (insideDocs.length) {
+        const insideOffers = await Offer.find(
+          { _id: { $in: insideDocs.map(v => v.offerId) } },
+          'name location radius validDays validTimes validDates interestsRequired category subcategory'
+        ).lean();
+        const insideMap = new Map(insideOffers.map(o => [String(o._id), o]));
+        for (const doc of insideDocs) {
+          const o = insideMap.get(String(doc.offerId));
+          if (!o) continue;
+          if (!isOfferActiveNow(o, TZ, now)) {
+            bulk.push({
+              updateOne: {
+                filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
+                update: { $set: { inside: false, lastExitAt: now, lastReason: 'inactive' } },
+              },
+            });
+            continue;
+          }
+          const coords = o?.location?.coordinates || [];
+          const [olng, olat] = coords;
+          if (!isValidNumber(olng) || !isValidNumber(olat)) continue;
+          if (!interestsMatch(o, pushTokenDoc)) continue;
+          const baseR = Number(o.radius || 0) || DEFAULT_RADIUS_M;
+          const accClamped = Math.max(0, Math.min(Number(accuracy || 0), ACCURACY_TOKEN_CAP));
+          const effR = baseR + Math.max(accClamped, SERVER_MIN_ACCURACY_BOOST_M) + SERVER_TOLERANCE_M;
+          const exitR = effR + EXIT_BUFFER_M;
+          const d = distanceMeters(lng, lat, olng, olat);
+          if (d >= exitR) {
+            bulk.push({
+              updateOne: {
+                filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
+                update: { $set: { inside: false, lastExitAt: now, lastDistanceM: d, lastReason: 'exit' } },
+              },
+            });
+          }
+        }
+      }
+
       for (const o of rows) {
         try {
           if (!isOfferActiveNow(o, TZ, now)) continue;
@@ -356,39 +451,70 @@ router.post('/heartbeat', async (req, res) => {
           const baseR = Number(o.radius || 0) || DEFAULT_RADIUS_M;
           const accClamped = Math.max(0, Math.min(Number(accuracy || 0), ACCURACY_TOKEN_CAP));
           const effR = baseR + Math.max(accClamped, SERVER_MIN_ACCURACY_BOOST_M) + SERVER_TOLERANCE_M;
+          const exitR = effR + EXIT_BUFFER_M;
 
           const d = distanceMeters(lng, lat, olng, olat);
-          if (d <= effR) {
-            activeCandidates.push({ offer: o, d, effR });
+          const insideNow = d <= effR;
+          const exitNow = d >= exitR;
+
+          const vid = String(o._id);
+          const vis = visMap.get(vid);
+          const wasInside = vis?.inside === true;
+
+          if (insideNow) {
+            if (!wasInside) {
+              enterCandidates.push({ offer: o, d, effR, vis });
+              bulk.push({
+                updateOne: {
+                  filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
+                  update: {
+                    $setOnInsert: { offerId: o._id, deviceToken: pushTokenDoc._id, firstSeenAt: now, status: 'seen' },
+                    $set: { inside: true, lastEnterAt: now, lastDistanceM: d, lastReason: 'enter' },
+                  },
+                  upsert: true,
+                },
+              });
+            } else {
+              bulk.push({
+                updateOne: {
+                  filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
+                  update: { $set: { inside: true, lastDistanceM: d, lastReason: 'inside' } },
+                },
+              });
+            }
             console.log(`[hb-geofence-diag] inside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
           } else {
+            if (exitNow && wasInside) {
+              bulk.push({
+                updateOne: {
+                  filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
+                  update: { $set: { inside: false, lastExitAt: now, lastDistanceM: d, lastReason: 'exit' } },
+                },
+              });
+            }
             console.log(`[hb-geofence-diag] outside offer=${String(o._id)} d=${Math.round(d)} effR=${Math.round(effR)} baseR=${baseR} acc=${accClamped}`);
           }
         } catch {}
       }
 
-      if (activeCandidates.length) {
-        // Dedup by visibility
-        const visDocs = await OfferVisibility.find({
-          offerId: { $in: activeCandidates.map(x => x.offer._id) },
-          deviceToken: pushTokenDoc._id,
-          $or: [
-            { status: 'notified' },
-            { status: 'dismissed' },
-            { status: 'snoozed', remindAt: { $gt: now } },
-          ]
-        }).select('offerId');
-        const already = new Set(visDocs.map(v => String(v.offerId)));
-        const toNotify = activeCandidates.filter(x => !already.has(String(x.offer._id)));
+      if (bulk.length) {
+        try { await OfferVisibility.bulkWrite(bulk, { ordered: false }); } catch {}
+      }
 
-        for (const x of toNotify) {
-          const title = x.offer.name || 'Angebot in deiner Nähe';
+      if (enterCandidates.length) {
+        for (const x of enterCandidates) {
+          const vis = x.vis || null;
+          if (!shouldNotifyDoc(vis, now)) continue;
+
+          const title = x.offer.name || 'Angebot in deiner N?he';
           const body = 'Tippe, um Details zu sehen.';
           const data = {
             type: 'offer',
             offerId: String(x.offer._id),
             route: `/offers/${x.offer._id}`,
-            source: 'heartbeat'
+            source: 'heartbeat',
+            deviceId: pushTokenDoc.deviceId || null,
+            tokenId: String(pushTokenDoc._id),
           };
 
           const diag = await sendPushAndCheckReceipts({
@@ -397,6 +523,7 @@ router.post('/heartbeat', async (req, res) => {
             body,
             data,
             channelId: process.env.PUSH_CHANNEL_ID || 'offers',
+            categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
             priority: process.env.PUSH_PRIORITY || 'high',
             sound: process.env.PUSH_SOUND || 'default'
           });
@@ -406,11 +533,12 @@ router.post('/heartbeat', async (req, res) => {
           const okFirst = tickets.some(t => t?.status === 'ok');
 
           if (okFirst) {
+            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) : null;
             await OfferVisibility.updateOne(
               { offerId: x.offer._id, deviceToken: pushTokenDoc._id },
               {
                 $setOnInsert: { offerId: x.offer._id, deviceToken: pushTokenDoc._id, firstSeenAt: now },
-                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null }
+                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, ...(suppressUntil ? { suppressUntil } : { suppressUntil: null }) }
               },
               { upsert: true }
             );
@@ -422,14 +550,10 @@ router.post('/heartbeat', async (req, res) => {
               if (dnr > 0) {
                 console.log('[hb-retry] schedule DeviceNotRegistered', {
                   offerId: String(x.offer._id),
-                  token: String(pushTokenDoc.token).slice(0,22) + '…',
+                  token: String(pushTokenDoc.token).slice(0,22) + '?',
                   delays: FRESH_RETRY_DELAYS_MS
                 });
-                scheduleHeartbeatRetries({
-                  offer: x.offer,
-                  pushTokenId: pushTokenDoc._id,
-                  tokenString: pushTokenDoc.token
-                });
+                scheduleHeartbeatRetries({ offer: x.offer, pushTokenId: pushTokenDoc._id, tokenString: pushTokenDoc.token });
               }
             } catch (e) {
               console.log('[hb-retry] scheduling failed (non-fatal):', e?.message || e);
@@ -440,18 +564,9 @@ router.post('/heartbeat', async (req, res) => {
           console.log(
             `[hb-geofence] offer=${x.offer._id} tried=1 sentOk=${okFirst ? 1 : 0} receipts=${JSON.stringify(summary)}`
           );
-
-          // disable invalid tokens if any
-          if (Array.isArray(diag?.disabledTokens) && diag.disabledTokens.length > 0) {
-            await PushToken.updateMany({ token: { $in: diag.disabledTokens } }, { $set: { disabled: true } });
-          }
-        }
       }
-    } catch (geErr) {
-      console.error('[hb] server-side geofence error:', geErr?.message || geErr);
-    }
-
-    return res.json({
+      }
+      return res.json({
       ok: true,
       id: pushTokenDoc?._id,
       lat,
@@ -562,7 +677,7 @@ router.post('/geofence-enter', async (req, res) => {
         { offerId: offer._id, deviceToken: targetDoc._id },
         {
           $setOnInsert: { offerId: offer._id, deviceToken: targetDoc._id, firstSeenAt: now },
-          $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null },
+          $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, lastEnterAt: now, lastReason: 'geofence-enter', ...(RENOTIFY_COOLDOWN_MS > 0 ? { suppressUntil: new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) } : { suppressUntil: null }) },
         },
         { upsert: true }
       );

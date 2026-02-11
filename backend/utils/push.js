@@ -129,6 +129,7 @@ export async function sendPush({
   body,
   data = {},
   channelId = 'offers',
+  categoryId = undefined,
   sound = 'default',
   priority = 'high',
 }) {
@@ -146,6 +147,7 @@ export async function sendPush({
     body,
     data,
     channelId,
+    ...(categoryId ? { categoryId } : {}),
     sound,
     priority,
   }));
@@ -250,6 +252,7 @@ export async function sendPushAndCheckReceipts({
   body,
   data = {},
   channelId = 'offers',
+  categoryId = undefined,
   sound = 'default',
   priority = 'high',
   delayMs = 3500,
@@ -264,7 +267,7 @@ export async function sendPushAndCheckReceipts({
   };
 
   // 1) Initial send
-  const sent = await sendPush({ tokens, title, body, data, channelId, sound, priority });
+  const sent = await sendPush({ tokens, title, body, data, channelId, categoryId, sound, priority });
   result.sent = sent;
 
   // 2) Receipts einsammeln
@@ -358,15 +361,16 @@ export async function sendPushAndCheckReceipts({
       result.retry.count = retryTokens.length;
       result.retry.targets = retryTokens;
       try {
-        const retrySend = await sendPush({
-          tokens: retryTokens,
-          title,
-          body,
-          data,
-          channelId,
-          sound,
-          priority,
-        });
+          const retrySend = await sendPush({
+            tokens: retryTokens,
+            title,
+            body,
+            data,
+            channelId,
+            categoryId,
+            sound,
+            priority,
+          });
 
         // optional: kurze Receipt-Wartezeit & Summen mergen
         if (retrySend.ticketIds?.length) {
