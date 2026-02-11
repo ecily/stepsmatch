@@ -1,6 +1,6 @@
 // stepsmatch/mobile/components/PushInitializer.tsx
 import React, { useEffect, useRef } from 'react';
-import { Platform, AppState } from 'react-native';
+import { Platform, AppState, NativeModules } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -252,6 +252,18 @@ async function getPersistentDeviceId() {
   try { await SecureStore.setItemAsync(DEVICE_ID_SECURE_KEY, nid); } catch {}
   try { await AsyncStorage.setItem(DEVICE_ID_ASYNC_KEY, nid); } catch {}
   return nid;
+}
+
+const NativeHeartbeatConfig = (NativeModules as any)?.NativeHeartbeatConfig;
+async function syncNativeHeartbeatConfig(reason: string, tokenOverride?: string | null) {
+  try {
+    if (!NativeHeartbeatConfig?.syncConfig) return;
+    const deviceId = await getPersistentDeviceId();
+    const token = tokenOverride ?? (await getCurrentExpoToken());
+    const projectId = RESOLVED_PROJECT_ID || null;
+    NativeHeartbeatConfig.syncConfig(API_BASE, token || null, deviceId, projectId, true);
+    diagLog('native.sync', { reason, hasToken: !!token, hasDeviceId: !!deviceId }, 'info', 5000);
+  } catch {}
 }
 
 // Lightweight client diag logger (writes to backend Mongo)
@@ -562,6 +574,7 @@ async function resolveExpoTokenAuthoritative(): Promise<string | null> {
       console.log('[push] token changed -> cache updated]');
     }
     CURRENT_EXPO_TOKEN = freshToken;
+    await syncNativeHeartbeatConfig('resolve-token', freshToken);
     return freshToken;
   } catch (e) {
     logErr('push:resolveToken', e);
@@ -585,6 +598,7 @@ async function registerTokenAtBackend(reason: string) {
       REGISTERED_READY = false;
       return;
     }
+    await syncNativeHeartbeatConfig(`register:${reason}`, token);
     const deviceId = await getPersistentDeviceId();
     const res = await fetch(`${API_BASE}/push/register`, {
       method: 'POST',
