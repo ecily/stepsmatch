@@ -1,19 +1,42 @@
+// C:\coding\stepsmatch\frontend\src\api\axios.js
 import axios from "axios";
 
 /**
  * Base-URL Priorität:
  * 1) VITE_API_BASE_URL (aus .env.*)
  * 2) window.__SM_API__ (optional per <script> setzbar)
- * 3) Production-Fallback: DO-API
+ * 3) Fallback: http://localhost:8080/api
+ *
+ * Policy:
+ * - Nur in "production" wird hart gefailt, wenn VITE_API_BASE_URL fehlt.
+ * - In allen anderen Modes (development/live/etc.) fällt es auf localhost zurück,
+ *   um Setup-/Mode-Probleme beim lokalen Arbeiten zu vermeiden.
  */
-const baseURL =
-  import.meta?.env?.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" ? window.__SM_API__ : undefined) ||
-  "https://lobster-app-ie9a5.ondigitalocean.app/api"; // <- sicherer Prod-Fallback
+const envBase = import.meta?.env?.VITE_API_BASE_URL;
+const winBase = typeof window !== "undefined" ? window.__SM_API__ : undefined;
+
+// IMPORTANT: default to development (not production)
+const mode = import.meta?.env?.MODE || "development";
+
+const resolved =
+  (envBase && String(envBase).trim()) ||
+  (winBase && String(winBase).trim()) ||
+  "";
+
+let baseURL = resolved;
+
+if (!baseURL) {
+  if (mode === "production") {
+    throw new Error(
+      "[StepsMatch] Missing VITE_API_BASE_URL (required in production builds)."
+    );
+  }
+  baseURL = "http://localhost:8080/api";
+}
 
 const axiosInstance = axios.create({
   baseURL,
-  withCredentials: true, // für spätere Session-Cookies
+  withCredentials: true,
   timeout: 20000,
   headers: {
     "Content-Type": "application/json",
@@ -22,9 +45,6 @@ const axiosInstance = axios.create({
 
 // ────────────────────────────────────────────────────────────
 // 🧪 Tester-Key: persistent & konsistent über Reloads
-// - Einheitlicher Storage-Key in localStorage
-// - Capture via URL-Param ?tester=... (optional Convenience)
-// - Header 'X-Tester-Key' wird bei JEDER Anfrage gesetzt (Interceptor)
 // ────────────────────────────────────────────────────────────
 const TESTER_STORAGE_KEY = "stepsmatch_tester_key";
 
@@ -40,35 +60,24 @@ function readTesterKey() {
 function writeTesterKey(value) {
   if (typeof window === "undefined") return;
   try {
-    if (value) {
-      window.localStorage.setItem(TESTER_STORAGE_KEY, value);
-    } else {
-      window.localStorage.removeItem(TESTER_STORAGE_KEY);
-    }
+    if (value) window.localStorage.setItem(TESTER_STORAGE_KEY, value);
+    else window.localStorage.removeItem(TESTER_STORAGE_KEY);
   } catch {
-    // Ignorieren (z. B. Privacy-Mode)
+    // ignore
   }
 }
 
-// Optional: Tester-Key aus URL übernehmen (?tester=...)
-// So bleibt er über Reloads erhalten, ohne dass andere Screens ihn setzen müssen.
 if (typeof window !== "undefined") {
   try {
     const params = new URLSearchParams(window.location.search);
     const testerFromUrl = params.get("tester");
-    if (testerFromUrl && testerFromUrl.trim()) {
-      writeTesterKey(testerFromUrl.trim());
-    }
-    // Optionaler globaler Fallback (falls per <script> gesetzt)
-    if (!readTesterKey() && window.__SM_TESTER__) {
-      writeTesterKey(String(window.__SM_TESTER__));
-    }
+    if (testerFromUrl && testerFromUrl.trim()) writeTesterKey(testerFromUrl.trim());
+    if (!readTesterKey() && window.__SM_TESTER__) writeTesterKey(String(window.__SM_TESTER__));
   } catch {
-    // still safe
+    // no-op
   }
 }
 
-// Defaults einmalig setzen (für sofortige Nutzung nach Import)
 const initialTesterKey = readTesterKey();
 if (initialTesterKey) {
   axiosInstance.defaults.headers.common["X-Tester-Key"] = initialTesterKey;
@@ -76,7 +85,6 @@ if (initialTesterKey) {
   delete axiosInstance.defaults.headers.common["X-Tester-Key"];
 }
 
-// Request-Interceptor: immer den aktuellsten Wert aus localStorage nehmen
 axiosInstance.interceptors.request.use((config) => {
   const tk = readTesterKey();
   if (tk && tk.trim()) {
@@ -91,6 +99,8 @@ axiosInstance.interceptors.request.use((config) => {
 // Debug
 if (typeof window !== "undefined") {
   console.log("🔗 Axios Base URL:", baseURL);
+  console.log("🌍 VITE_API_BASE_URL:", envBase);
+  console.log("🧭 MODE:", mode);
 }
 
 export default axiosInstance;

@@ -1,3 +1,4 @@
+// C:\coding\stepsmatch\frontend\src\pages\LandingPage.jsx
 // src/pages/LandingPage.jsx
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -166,10 +167,11 @@ const LandingPage = () => {
   const twitterHandle = "@stepsmatch";
   const location = useLocation();
 
-  // Backend-Redirect statt Direktlink: {VITE_BACKEND_URL}/apk
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "https://lobster-app-ie9a5.ondigitalocean.app";
-  const APK_REDIRECT_URL = `${BACKEND_URL}/apk`;
+  // Backend-Redirect statt Direktlink: {VITE_API_BASE_URL}/apk  (API_BASE_URL enthält /api am Ende)
+  // -> wir nehmen die Origin des API-Endpoints als Backend-Base.
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  const backendBaseUrl = apiBaseUrl ? String(apiBaseUrl).replace(/\/api\/?$/, "") : "https://lobster-app-ie9a5.ondigitalocean.app";
+  const APK_REDIRECT_URL = `${backendBaseUrl}/apk`;
 
   const [apkOpen, setApkOpen] = React.useState(false);
 

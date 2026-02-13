@@ -88,7 +88,7 @@ export default function RootLayout() {
         if (action === Notifications.DEFAULT_ACTION_IDENTIFIER || action === 'go') {
           postNotifAction('go', data);
           if (offerId) {
-            try { router.push(`/offer/${offerId}`); }
+            try { router.push({ pathname: '/(tabs)/offers/[id]', params: { id: String(offerId) } }); }
             catch { router.push('/(tabs)/diagnostics'); }
           } else {
             router.push('/(tabs)/diagnostics');

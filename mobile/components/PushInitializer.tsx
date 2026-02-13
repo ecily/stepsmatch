@@ -11,6 +11,7 @@ import * as Random from 'expo-random';
 import Constants from 'expo-constants';
 import { isOfferActiveNow as _isOfferActiveNow } from '../utils/isOfferActiveNow';
 import { csvToSet, matchesInterests as _matchesInterests } from '../utils/interests';
+import { getServiceState, isServiceActive, isServiceActiveNow } from './push/service-control';
 
 // ────────────────────────────────────────────────────────────
 // Notification handler
@@ -1031,6 +1032,10 @@ async function _sendHeartbeatWithCoords({
   latitude, longitude, accuracy, reason = 'timer',
 }: { latitude: number; longitude: number; accuracy?: number; reason?: string; }) {
   try {
+    if (!(await isServiceActiveNow())) {
+      console.log('[HB] skip (service inactive)');
+      return;
+    }
     const prev = lastKnownLocRef.current;
     const moved = prev ? haversineMeters(prev.latitude, prev.longitude, latitude, longitude) : 0;
     lastKnownLocRef.current = { latitude, longitude, accuracy };
@@ -1352,6 +1357,10 @@ async function startBgLocationWithOptions(timeMs: number, distM: number) {
 
 async function ensureBgLocMode(mode: BgMode) {
   const now = nowMs();
+  if (!(await isServiceActiveNow())) {
+    console.log('[BGLOC] mode change skipped (service inactive)');
+    return;
+  }
   if (mode === CURRENT_BG_MODE && now - LAST_BG_MODE_CHANGE_AT < 10_000) return;
   if (mode === CURRENT_BG_MODE) return;
 
@@ -1366,6 +1375,10 @@ async function ensureBgLocMode(mode: BgMode) {
 
 async function startAggressiveBgLocation() {
   await ensureChannels();
+  if (!(await isServiceActiveNow())) {
+    console.log('[BGLOC] start aborted (service inactive)');
+    return;
+  }
 
   // Wenn BG noch nicht gewährt, try-request (nur im FG sichtbar)
   try {
@@ -1416,6 +1429,11 @@ function useForegroundHighAccuracyRefresh() {
       const delay = jitter(FG_REFRESH_MIN_S, FG_REFRESH_MAX_S);
       timerRef.current = setTimeout(async () => {
         try {
+          if (!(await isServiceActiveNow())) {
+            console.log('[FG] skip (service inactive)');
+            schedule();
+            return;
+          }
           const perm = await Location.getForegroundPermissionsAsync();
           if (perm.status === 'granted') {
             const loc = await Location.getCurrentPositionAsync({
@@ -1465,6 +1483,11 @@ function useHeartbeatScheduler() {
       clearTimeout(timerRef.current);
       timerRef.current = setTimeout(async () => {
         try {
+          if (!(await isServiceActiveNow())) {
+            console.log('[HB] scheduler skip (service inactive)');
+            tick();
+            return;
+          }
           const last =
             lastKnownLocRef.current ||
             (await (async () => {
@@ -1495,6 +1518,10 @@ function useLocationWatchdog() {
 
     async function tick() {
       try {
+        if (!(await isServiceActiveNow())) {
+          console.log('[WD] skip (service inactive)');
+          return;
+        }
         const permsOk = await hasLocationPermissions();
 
         const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
@@ -1552,6 +1579,11 @@ function useAppStateWatchdog() {
       try {
         appStateRef.current = next;
         if (next === 'active' && appState.current !== 'active') {
+          if (!(await isServiceActiveNow())) {
+            console.log('[WD] appstate skip (service inactive)');
+            appState.current = next;
+            return;
+          }
           const permsOk = await hasLocationPermissions();
           const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
           if (permsOk && !started) {
@@ -1571,6 +1603,10 @@ function useAppStateWatchdog() {
 // ───────────── Task Definitions ─────────────
 TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   try {
+    if (!(await isServiceActiveNow())) {
+      console.log('[BGLOC] task skip (service inactive)');
+      return;
+    }
     if (error) {
       console.log('[BGLOC] Task error', String(error));
       return;
@@ -1636,6 +1672,10 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
 if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
   TaskManager.defineTask(HEARTBEAT_FETCH_TASK, async () => {
     try {
+      if (!(await isServiceActiveNow())) {
+        console.log('[FETCH] task skip (service inactive)');
+        return BackgroundFetch.BackgroundFetchResult.NoData;
+      }
       const permsOk = await hasLocationPermissions();
       if (!permsOk) return BackgroundFetch.BackgroundFetchResult.NoData;
 
@@ -1677,6 +1717,10 @@ if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
 
 TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   try {
+    if (!(await isServiceActiveNow())) {
+      console.log('[GEOFENCE] task skip (service inactive)');
+      return;
+    }
     if (error) {
       console.log('[GEOFENCE] Task error', String(error));
       return;
@@ -1843,8 +1887,47 @@ export async function roundtripTest(offerId: string) {
 }
 
 // ───────────── Init
+export async function stopBackgroundServices(reason = 'manual') {
+  try {
+    const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+    if (started) {
+      try { await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK); } catch {}
+    }
+  } catch {}
+
+  try {
+    const gfStarted = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
+    if (gfStarted) {
+      try { await Location.stopGeofencingAsync(GEOFENCE_TASK); } catch {}
+    }
+  } catch {}
+
+  try {
+    const registered = await TaskManager.isTaskRegisteredAsync(HEARTBEAT_FETCH_TASK);
+    if (registered) {
+      try { await BackgroundFetch.unregisterTaskAsync(HEARTBEAT_FETCH_TASK); } catch {}
+    }
+  } catch {}
+
+  try { await Notifications.cancelAllScheduledNotificationsAsync(); } catch {}
+  try {
+    const fn = (Notifications as any)?.dismissAllNotificationsAsync;
+    if (typeof fn === 'function') await fn();
+  } catch {}
+
+  try { CURRENT_REGIONS = []; } catch {}
+  console.log('[service] background stopped', reason);
+}
+
 async function initPush() {
   await ensureChannels().catch(() => {}); // FIX: Channel vor jeglichem Start
+
+  const svc = await getServiceState();
+  if (!isServiceActive(svc)) {
+    console.log('[init] service disabled or paused -> skip');
+    await stopBackgroundServices('init-inactive');
+    return;
+  }
 
   try {
     const notifOk = await hasNotificationPermissions();
@@ -1926,6 +2009,11 @@ export async function headlessBootstrap() {
 // ───────────── Öffentliche Helfer (Onboarding/Diag) ─────────────
 export async function ensureBgAfterOnboarding() {
   try {
+    const active = await isServiceActiveNow();
+    if (!active) {
+      console.log('[ensureBgAfterOnboarding] service disabled or paused');
+      return;
+    }
     await ensureChannels(); // FIX: Channel vor Start sicherstellen
     // Im Onboarding im FG: aktiv (nochmals) anfragen, um sicher zu sein
     const bg = await Location.getBackgroundPermissionsAsync();

@@ -59,6 +59,16 @@ export default function IndexGate() {
           return;
         }
 
+        const lastNotifResp = await Notifications.getLastNotificationResponseAsync();
+        const lastNotifData = lastNotifResp?.notification?.request?.content?.data || {};
+        const lastOfferId = lastNotifData?.offerId || lastNotifData?.id || lastNotifData?.offer || null;
+        if (lastOfferId) {
+          if (!mounted) return;
+          router.replace({ pathname: '/(tabs)/offers/[id]', params: { id: String(lastOfferId) } });
+          return;
+        }
+
+
         // 2) Onboarding-Gate
         const has = await AsyncStorage.getItem('hasOnboarded');
         if (!mounted) return;

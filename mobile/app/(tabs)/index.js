@@ -2,7 +2,7 @@
 // Robustheit: Standort-Fallback (LastKnown + Persist), Offers trotz fehlender Position, Axios-Timeout + Retry
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { sendHeartbeat } from '../../components/PushInitializer';
+import { sendHeartbeat, ensureBgAfterOnboarding, stopBackgroundServices } from '../../components/PushInitializer';
 import {
   View,
   Text,
@@ -36,6 +36,8 @@ import { DistanceBadge } from '../../components/DistanceBadge';
 
 import { csvToSet, matchesInterests } from '../../utils/interests';
 import { refreshGeofencesAroundUser } from '../../components/push/push-geofence';
+import { getServiceState, setServiceEnabled, pauseForMs, pauseUntil, resumeService, isPaused } from '../../components/push/service-control';
+
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -631,6 +633,87 @@ export default function HomeTab() {
 
   /* UI */
 
+
+  const [svcState, setSvcState] = useState(null);
+  const [svcBusy, setSvcBusy] = useState(false);
+
+  const loadServiceState = useCallback(async () => {
+    try {
+      const st = await getServiceState();
+      setSvcState(st);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadServiceState(); }, [loadServiceState]);
+
+  const formatPauseUntil = (ts) => {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString();
+    } catch {
+      return '';
+    }
+  };
+
+  const isSvcPaused = svcState ? isPaused(svcState) : false;
+  const isSvcEnabled = svcState ? !!svcState.enabled : true;
+  const isSvcActive = isSvcEnabled && !isSvcPaused;
+
+  const handleEnableService = useCallback(async () => {
+    if (svcBusy) return;
+    setSvcBusy(true);
+    try {
+      await resumeService('user-on');
+      await ensureBgAfterOnboarding();
+      await refreshGeofencesAroundUser(true).catch(() => {});
+      await loadServiceState();
+    } finally {
+      setSvcBusy(false);
+    }
+  }, [svcBusy, loadServiceState]);
+
+  const handleDisableService = useCallback(async () => {
+    if (svcBusy) return;
+    setSvcBusy(true);
+    try {
+      await setServiceEnabled(false, 'user-off');
+      await stopBackgroundServices('user-off');
+      await loadServiceState();
+    } finally {
+      setSvcBusy(false);
+    }
+  }, [svcBusy, loadServiceState]);
+
+  const handlePauseFor = useCallback(async (ms, reason) => {
+    if (svcBusy) return;
+    setSvcBusy(true);
+    try {
+      await pauseForMs(ms, reason || 'user-pause');
+      await stopBackgroundServices('user-pause');
+      await loadServiceState();
+    } finally {
+      setSvcBusy(false);
+    }
+  }, [svcBusy, loadServiceState]);
+
+  const handlePauseUntilTomorrow = useCallback(async () => {
+    if (svcBusy) return;
+    setSvcBusy(true);
+    try {
+      const now = new Date();
+      const until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
+      await pauseUntil(until, 'user-pause-tomorrow');
+      await stopBackgroundServices('user-pause');
+      await loadServiceState();
+    } finally {
+      setSvcBusy(false);
+    }
+  }, [svcBusy, loadServiceState]);
+
+  const handleResume = useCallback(async () => {
+    await handleEnableService();
+  }, [handleEnableService]);
+
   const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
 
   if (!hasLoadedOnce && initialLoading) {
@@ -672,6 +755,39 @@ export default function HomeTab() {
           contentContainerStyle={styles.categoryContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
+          <View style={[styles.serviceCard, { backgroundColor: t.colors.card }]}>
+            <View style={styles.serviceHeader}>
+              <Text style={[styles.serviceTitle, { color: t.colors.inkHigh }]}>Hintergrunddienst</Text>
+              <Text style={[styles.serviceStatus, { color: isSvcActive ? t.colors.success : (isSvcPaused ? t.colors.warning : t.colors.danger) }]}>
+                {isSvcActive ? 'Aktiv' : (isSvcPaused ? 'Pausiert' : 'Aus')}
+              </Text>
+            </View>
+            {isSvcPaused && svcState?.pausedUntil ? (
+              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Pausiert bis: {formatPauseUntil(svcState.pausedUntil)}</Text>
+            ) : (
+              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und Push-Angebote.</Text>
+            )}
+
+            <View style={styles.serviceActionsRow}>
+              {isSvcActive ? (
+                <Button title="Ausschalten" variant="danger" size="sm" onPress={handleDisableService} disabled={svcBusy} />
+              ) : (
+                <Button title="Aktivieren" variant="primary" size="sm" onPress={handleEnableService} disabled={svcBusy} />
+              )}
+              {isSvcPaused ? (
+                <Button title="Weiter" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
+              ) : null}
+            </View>
+
+            {isSvcActive ? (
+              <View style={styles.serviceActionsRow}>
+                <Button title="Pause 1h" variant="secondary" size="sm" onPress={() => handlePauseFor(60 * 60 * 1000, 'pause-1h')} disabled={svcBusy} />
+                <Button title="Pause 3h" variant="secondary" size="sm" onPress={() => handlePauseFor(3 * 60 * 60 * 1000, 'pause-3h')} disabled={svcBusy} />
+                <Button title="Bis morgen" variant="secondary" size="sm" onPress={handlePauseUntilTomorrow} disabled={svcBusy} />
+              </View>
+            ) : null}
+          </View>
+
           {lastUpdated && (
             <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
               Letztes Update: {formatRelative(lastUpdated)}
@@ -979,4 +1095,21 @@ const styles = StyleSheet.create({
   skel: { backgroundColor: '#e9eef5', borderRadius: 8 },
 
   error: { marginTop: 30, textAlign: 'center' },
+  serviceCard: {
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  serviceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  serviceTitle: { fontSize: 16, fontWeight: '800' },
+  serviceStatus: { fontSize: 12, fontWeight: '700' },
+  serviceHint: { fontSize: 12, marginBottom: 10 },
+  serviceActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
 });

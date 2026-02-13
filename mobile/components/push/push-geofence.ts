@@ -2,6 +2,7 @@
 import { DeviceEventEmitter } from 'react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import { isServiceActiveNow } from './service-control';
 import {
   ACCURACY_TOKEN_CAP_M,
   API_BASE,
@@ -190,6 +191,10 @@ export async function computeDistanceMeters(offerId:string, lat?:number|null, ln
 export type RefreshOptions = boolean | { force?: boolean; silent?: boolean };
 
 export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions = false) {
+  if (!(await isServiceActiveNow())) {
+    console.log('[geofence] skip refresh (service inactive)');
+    return;
+  }
   const opts = typeof forceOrOptions === 'boolean' ? { force: forceOrOptions, silent: false } : (forceOrOptions || { force: false, silent: false });
   const { force, silent } = { force: !!opts.force, silent: !!opts.silent };
 

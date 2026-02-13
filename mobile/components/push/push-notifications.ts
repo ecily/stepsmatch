@@ -2,6 +2,7 @@
 import { AppState, DeviceEventEmitter, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
+import { isServiceActiveNow } from './service-control';
 import {
   BRAND_BLUE,
   CHANNELS,
@@ -80,6 +81,10 @@ export async function shouldNotify(
   source: 'geofence-local' | 'synthetic-enter' | 'heartbeat' | 'remote-shadow' | 'manual',
   now = Date.now(),
 ): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await isServiceActiveNow())) {
+    if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[service-inactive]', { offerId, source });
+    return { ok: false, reason: 'service-inactive' };
+  }
   if (await isGlobalThrottled(now)) {
     if (DEDUE_LOG_FIX_GUARD()) console.log('DEDUPE[throttle-global]', { offerId, source });
     return { ok: false, reason: 'throttle-global' };
