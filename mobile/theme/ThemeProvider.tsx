@@ -1,4 +1,3 @@
-// stepsmatch/mobile/theme/ThemeProvider.tsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Appearance, ColorSchemeName, Platform } from 'react-native';
 import * as SystemUI from 'expo-system-ui';
@@ -19,12 +18,12 @@ const ThemeContext = createContext<Theme | null>(null);
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<NonNullable<ColorSchemeName>>(
-    (Appearance.getColorScheme() as NonNullable<ColorSchemeName>) || 'dark'
+    (Appearance.getColorScheme() as NonNullable<ColorSchemeName>) || 'light'
   );
 
   useEffect(() => {
     const sub = Appearance.addChangeListener(({ colorScheme }) => {
-      setMode((colorScheme as NonNullable<ColorSchemeName>) || 'dark');
+      setMode((colorScheme as NonNullable<ColorSchemeName>) || 'light');
     });
     return () => sub.remove();
   }, []);
@@ -44,11 +43,10 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   }, [mode]);
 
   useEffect(() => {
-    // Keep Android system bars visually consistent
     const c = value.colors.background;
     SystemUI.setBackgroundColorAsync(c).catch(() => {});
     if (Platform.OS === 'android') {
-      // StatusBar styling bleibt durch expo-router Header gesteuert
+      // status bar is controlled by screen headers
     }
   }, [value]);
 

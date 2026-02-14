@@ -1,4 +1,4 @@
-﻿// stepsmatch/mobile/components/push/service-control.ts
+// stepsmatch/mobile/components/push/service-control.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVICE_STATE_KEY = 'bg.service.state.v1';

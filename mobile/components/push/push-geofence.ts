@@ -16,14 +16,14 @@ import {
 } from './push-constants';
 import {
   getOfferPushState, setOfferPushState,
-  getGlobalState, setGlobalState,
+  setGlobalState,
   setOfferMeta, getOfferMeta,
   pruneObsoleteOfferStates, nowMs,
   getInterestSet, acquirePushLock,
 } from './push-state';
 import { isOfferActiveNow as _isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import { matchesInterests as _matchesInterests } from '../../utils/interests';
-import { presentLocalOfferNotification as _presentLocalOfferNotification } from './push-notifications';
+import { presentLocalOfferNotification as _presentLocalOfferNotification, shouldNotify as _shouldNotify } from './push-notifications';
 
 // ⬇️ Neu/Sicher: Fallbacks & Wrappers, damit „undefined is not a function“ nicht mehr auftreten kann
 const isOfferActiveNow: typeof _isOfferActiveNow =
@@ -36,16 +36,13 @@ const presentLocalOfferNotification: typeof _presentLocalOfferNotification =
   typeof _presentLocalOfferNotification === 'function'
     ? _presentLocalOfferNotification
     : (async () => { console.log('[warn] presentLocalOfferNotification noop'); });
-
-// ⬇️ zentrales Dedupe-Gate (falls export fehlt → No-Op, nie crashen)
-import { shouldNotify as _shouldNotify } from './push-notifications';
 const shouldNotify: (offerId: string, reason: string) => Promise<{ ok: boolean; reason?: string }> =
   typeof _shouldNotify === 'function'
     ? _shouldNotify
     : async () => ({ ok: true, reason: 'noop-shouldNotify' });
 
 // Regions cache (module-local)
-let CURRENT_REGIONS: Array<{identifier:string, latitude:number, longitude:number, radius:number}> = [];
+let CURRENT_REGIONS: {identifier:string, latitude:number, longitude:number, radius:number}[] = [];
 
 // Geofence sync guards
 let GEOFENCE_REFRESH_IN_FLIGHT = false;
@@ -57,7 +54,6 @@ const REFRESH_MIN_GAP_MS = 5000;
 export let lastGeofenceSyncAt = 0;
 
 // Event dedupe (ENTER/EXIT burst)
-const LAST_EVENT_SEEN: Record<string, number> = {};
 export const EVENT_DEDUP_WINDOW_MS = 5000;
 
 export function toRad(d:number) { return (d * Math.PI) / 180; }
@@ -215,7 +211,7 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
     const { latitude, longitude, accuracy: hereAcc } = loc.coords;
 
     const offers = await fetchCandidateOffers();
-    const activeNearby: Array<{offer:any, p:{lat:number,lng:number}, dist:number}> = [];
+    const activeNearby: {offer:any, p:{lat:number,lng:number}, dist:number}[] = [];
     for (const offer of offers) {
       try {
         if (!isOfferActiveNow(offer, EUROPE_VIENNA)) continue;
@@ -515,3 +511,4 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
 export function getCurrentRegionsSnapshot() {
   return CURRENT_REGIONS.slice();
 }
+

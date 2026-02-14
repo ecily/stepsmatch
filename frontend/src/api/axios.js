@@ -14,9 +14,16 @@ import axios from "axios";
  */
 const envBase = import.meta?.env?.VITE_API_BASE_URL;
 const winBase = typeof window !== "undefined" ? window.__SM_API__ : undefined;
-
-// IMPORTANT: default to development (not production)
 const mode = import.meta?.env?.MODE || "development";
+
+const PROD_API_FALLBACK = "https://lobster-app-ie9a5.ondigitalocean.app/api";
+
+const host = typeof window !== "undefined" ? window.location.hostname : "";
+const isLocalHost =
+  host === "localhost" ||
+  host === "127.0.0.1" ||
+  host === "::1" ||
+  host.endsWith(".local");
 
 const resolved =
   (envBase && String(envBase).trim()) ||
@@ -25,15 +32,24 @@ const resolved =
 
 let baseURL = resolved;
 
-if (!baseURL) {
-  if (mode === "production") {
-    throw new Error(
-      "[StepsMatch] Missing VITE_API_BASE_URL (required in production builds)."
-    );
-  }
+if (!baseURL && isLocalHost) {
   baseURL = "http://localhost:8080/api";
 }
 
+if (!isLocalHost) {
+  if (!baseURL) {
+    baseURL = PROD_API_FALLBACK;
+    console.warn("[StepsMatch] Missing VITE_API_BASE_URL on hosted frontend. Using PROD_API_FALLBACK.");
+  }
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|::1)(:\\d+)?/i.test(baseURL)) {
+    baseURL = PROD_API_FALLBACK;
+    console.warn("[StepsMatch] Hosted frontend resolved localhost API. Overriding to PROD_API_FALLBACK.");
+  }
+}
+
+if (!baseURL) {
+  throw new Error("[StepsMatch] Could not resolve API base URL.");
+}
 const axiosInstance = axios.create({
   baseURL,
   withCredentials: true,

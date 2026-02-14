@@ -193,3 +193,131 @@ Startzusammenfassung (5 Zeilen)
 3. Android BG-Stabilitaet via Foreground Service + BackgroundFetch + Watchdogs.
 4. Service-Control (Pause/Aus/Aktiv) ist in der Home-UI implementiert und steuert Background-Tasks.
 5. Wichtige IDs: package `com.ecily.mobile`, projectId `08559a29-b307-47e9-a130-d3b31f73b4ed`, channels `stepsmatch-bg-location-task`/`offers-v2`.
+
+## 11. Session-Update (2026-02-14)
+Zielbild UX/UI (festgelegt)
+- Stil: `premium-minimal`
+- Primär-Conversion: `Route starten`
+- Zielgruppe: `breit/allgemein`
+- Tonalität: `freundlich-aktivierend`
+- Startscreen-Strategie: `Feed-first mit Map-Preview`
+
+Bereits umgesetzt in dieser Session (Phase 1: visuelle Vereinheitlichung)
+- Zentrales Theme/Farbkonsistenz aktualisiert:
+  - `mobile/theme/colors.js`
+  - `mobile/theme/ThemeProvider.tsx`
+- Tab-Navigation/Header visuell vereinheitlicht:
+  - `mobile/app/(tabs)/_layout.js`
+- Auth-Screens auf konsistentes UI-System umgestellt:
+  - `mobile/app/(auth)/LoginScreen.js`
+  - `mobile/app/(auth)/RegisterScreen.js`
+- Onboarding-Screens auf konsistentes UI-System umgestellt:
+  - `mobile/app/(onboarding)/WelcomeScreen.js`
+  - `mobile/app/(onboarding)/LocationScreen.js`
+  - `mobile/app/(onboarding)/InterestsScreen.js`
+  - `mobile/app/(onboarding)/DoneScreen.js`
+- Profil-Screen visuell vereinheitlicht:
+  - `mobile/app/(tabs)/ProfileScreen.js`
+- Distance-Badge vereinheitlicht/kompatibel gemacht:
+  - `mobile/components/DistanceBadge.tsx`
+
+Lint-/Qualitätsstatus nach Cleanup
+- Mobile-Lint wurde komplett bereinigt.
+- Ergebnis: `npm run lint` in `mobile/` -> `0 errors`, `0 warnings`.
+- Relevante bereinigte Dateien (ohne Funktionsänderung):
+  - `mobile/app/(tabs)/index.js`
+  - `mobile/app/(tabs)/NavigationMap.jsx`
+  - `mobile/app/(tabs)/NavigationScreen.js`
+  - `mobile/app/(tabs)/OffersScreen.js`
+  - `mobile/app/(tabs)/[id].tsx`
+  - `mobile/app/(tabs)/offers/[id].tsx`
+  - `mobile/components/NotificationPermissionPrompt.tsx`
+  - `mobile/components/BackgroundLocationManager.js`
+  - `mobile/components/LocationPermissionPrompt.tsx`
+  - `mobile/components/PushInitializer.tsx`
+  - `mobile/components/push/push-geofence.ts`
+  - `mobile/components/push/push-location.ts`
+  - `mobile/components/push/push-notifications.ts`
+  - `mobile/components/push/push-state.ts`
+
+Offen fuer naechsten Chat (Phase 2: eigentliche UX/UI-Implementierung)
+- Vollstaendige Weltklasse-UX fuer Kern-Flows finalisieren (ohne Funktionseinbussen):
+  - Home/Feed (`mobile/app/(tabs)/index.js`)
+  - Offer-Detail (`mobile/app/(tabs)/offers/[id].tsx`)
+  - Map-Discovery (`mobile/app/(tabs)/NavigationMap.jsx`)
+  - Turn-by-turn Navigation (`mobile/app/(tabs)/NavigationScreen.js`)
+- Einheitliches Komponenten-Set weiterziehen (Cards, Hero, Bottom-CTA, Status/Badges, Empty/Loading States).
+- Service-Control-UX (Aktiv/Pause/Aus) in Home visuell und sprachlich weiter verfeinern.
+- DSGVO-Hinweise/Opt-in-Kommunikation als UX-Schicht integrieren.
+
+Hinweis fuer Fortsetzung
+- Technische Funktionalitaet (Heartbeat/Geofence/Push/Service-Control) bleibt weiterhin prioritaer unveraendert.
+- Naechster Schritt startet direkt mit visueller Endausarbeitung der Kernscreens (Phase 2).
+
+## 12. Session-Update (2026-02-14, Fortsetzung / Übergabe für naechsten Chat)
+
+Wichtige Arbeitsregel in dieser Session
+- Vorgabe des Users: Funktionalitaet darf nicht veraendert werden.
+- Relevante Erkenntnis: Bei UX-Refactors kann funktionaler Regress entstehen; Navigation/Directions wurde deshalb priorisiert hotfixed.
+
+Phase-2-Endimplementierung (UI/UX) wurde abgeschlossen in:
+- `mobile/app/(tabs)/index.js`
+- `mobile/app/(tabs)/offers/[id].tsx`
+- `mobile/app/(tabs)/NavigationMap.jsx`
+- `mobile/app/(tabs)/NavigationScreen.js`
+- `mobile/app/(tabs)/ProfileScreen.js`
+
+Zusatz in dieser Session
+- DSGVO-/Opt-in-Kommunikation eingebaut (Home, Offer-Detail, Profil).
+- Persistenz-Key fuer Einwilligung: `privacy.push.optin.v1` (AsyncStorage).
+- Service-Control-Texte und Statusdarstellung in Home verfeinert.
+
+Kritischer Regress, der auftrat
+- Symptom: In Navigation wurde nur eine gerade Linie statt Google-Wegroute gezeichnet.
+- Sichtbarer Hinweis in UI: `Google Directions: API-Key fehlt`.
+- User hat zu Recht eskaliert, da Funktionalitaet nicht veraendert werden durfte.
+
+Root Cause (technisch)
+- In `mobile/app/(tabs)/NavigationScreen.js` wurde `directionsFetch` mit falscher Signatur aufgerufen (Objekt statt Funktionssignatur).
+- Fallback-Code setzte dann `setRouteCoords([origin, dest])` -> gerade Linie.
+- Zusaetzlich wurde Key-Resolution robuster gemacht.
+
+Finaler Fix (umgesetzt)
+- `NavigationScreen.js` nutzt wieder den korrekten Call:
+  - `directionsFetch(origin, dest, DIRECTIONS_KEY, 'walking')`
+- Key-Resolution in `NavigationScreen.js` verbessert:
+  - `Constants.expoConfig?.extra`
+  - Fallback: `Constants.manifest?.extra`, `Constants.manifest2?.extra`, `process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY`
+- Ergebnis: Route kann wieder ueber Google Directions berechnet werden statt Gerade.
+
+Relevante Konfig-Pruefung
+- `mobile/app.config.js` traegt `extra.directionsKey` aus `EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY` ein.
+- Build-Log zeigte Export der ENV-Variablen waehrend Bundle:
+  - `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`
+  - `EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY`
+
+Qualitaetsstatus
+- Mehrfach geprueft: `npm run lint` in `mobile/` -> `0 errors`, `0 warnings`.
+- Release-Build erfolgreich:
+  - `cd mobile/android && ./gradlew.bat assembleRelease`
+
+ADB / Installation in dieser Session
+- Uninstall + Install erfolgreich:
+  - `adb uninstall com.ecily.mobile`
+  - `adb install -r "c:\coding\stepsmatch\mobile\android\app\build\outputs\apk\release\app-release.apk"`
+- Zwischenzeitlich: `adb.exe: no devices/emulators found` (temporar, danach wieder verbunden).
+- Letzter Status: Geraet erkannt und APK erfolgreich installiert (`Success`).
+
+Aktueller Stand fuer naechsten Chat
+- User startet nun Feldtest.
+- Erwartung fuer naechsten Chat: User berichtet Feldtest-Ergebnisse zuerst.
+- Prioritaet im naechsten Chat:
+  1. Verifizieren, dass Directions-Route stabil als echte Wegroute gezeichnet wird.
+  2. Falls erneut Ausfall: sofort Logs sammeln (NavigationScreen + directions service + runtime `extra.directionsKey`).
+  3. Nur minimalinvasive Fixes, keine Funktionseinschraenkung.
+
+Schnellbefehle (Merker)
+- Lint: `cd mobile && npm run lint`
+- Release-Build (Git Bash): `cd mobile/android && ./gradlew.bat assembleRelease`
+- APK installieren: `adb install -r "c:\coding\stepsmatch\mobile\android\app\build\outputs\apk\release\app-release.apk"`
+- APK Pfad: `mobile/android/app/build/outputs/apk/release/app-release.apk`

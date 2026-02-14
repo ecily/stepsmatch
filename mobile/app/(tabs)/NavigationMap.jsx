@@ -1,4 +1,3 @@
-// stepsmatch/mobile/app/(tabs)/NavigationMap.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
@@ -6,17 +5,16 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import colors from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import Constants from 'expo-constants';
 
 const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
-const VISIBLE_RADIUS_M = 2000; // 2 km (Offer-Radius wird ignoriert)
+const VISIBLE_RADIUS_M = 2000;
 const WALKING_SPEED_MPS = 1.33;
 
-/* Geo helpers */
 const toRad = (deg) => (deg * Math.PI) / 180;
 const haversineM = (a, b) => {
   const R = 6371000;
@@ -27,12 +25,13 @@ const haversineM = (a, b) => {
   const aa = s1 * s1 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * s2 * s2;
   return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
 };
-const fmtDistance = (m) => (m < 995 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+
+const fmtDistance = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 const etaMin = (m) => Math.max(1, Math.ceil(m / (WALKING_SPEED_MPS * 60)));
 
 function regionForRadius(center, radiusM) {
   const lat = center.latitude;
-  const deltaLat = (radiusM * 2) / 111_000;
+  const deltaLat = (radiusM * 2) / 111000;
   const cosLat = Math.max(0.1, Math.cos(toRad(lat)));
   const deltaLng = deltaLat / cosLat;
   return {
@@ -43,456 +42,311 @@ function regionForRadius(center, radiusM) {
   };
 }
 
-/* Offer helpers */
 function pickOfferLocation(offer) {
-  const coords = offer?.location?.coordinates || offer?.provider?.location?.coordinates || null;
+  const coords = offer?.location?.coordinates || offer?.provider?.location?.coordinates;
   if (Array.isArray(coords) && coords.length >= 2) {
     const [lng, lat] = coords;
-    const latN = Number(lat), lngN = Number(lng);
-    if (Number.isFinite(latN) && Number.isFinite(lngN)) return { latitude: latN, longitude: lngN };
-  }
-  return null;
-}
-
-function getRemainingMs(offer) {
-  const keys = ['activeUntil','activeEnd','validUntil','endAt','validTo','dateTo','activeWindowEnd','endTime'];
-  const vd = offer?.validDates;
-  if (vd && typeof vd === 'object') {
-    const toRaw = vd.to ?? vd.end ?? vd.toDate ?? vd.endDate;
-    if (toRaw) {
-      const d = new Date(toRaw); if (!isNaN(d)) { const diff = d.getTime() - Date.now(); if (diff > 0) return diff; }
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+      return { latitude: latN, longitude: lngN };
     }
   }
-  for (const k of keys) {
-    const v = offer?.[k]; if (!v) continue;
-    const d = new Date(v); if (!isNaN(d)) { const diff = d.getTime() - Date.now(); if (diff > 0) return diff; }
-  }
   return null;
-}
-function formatRemaining(diffMs) {
-  if (diffMs == null) return '—';
-  const totalMin = Math.ceil(diffMs / 60000);
-  if (totalMin <= 0) return '—';
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h <= 0) return `${m}\u00A0min`;
-  if (m === 0) return `${h}\u00A0h`;
-  return `${h}\u00A0h ${m}\u00A0min`;
-}
-
-function isInDateWindow(offer) {
-  const vd = offer?.validDates;
-  if (!vd) return false;
-  const now = Date.now();
-  const from = vd.from ?? vd.start ?? vd.dateFrom ?? vd.startDate;
-  const to   = vd.to   ?? vd.end   ?? vd.dateTo   ?? vd.endDate;
-  const f = from ? new Date(from).getTime() : -Infinity;
-  const t = to   ? new Date(to).getTime()   : +Infinity;
-  return now >= f && now <= t;
-}
-
-/* Sichtbarkeit: kein Zeitfenster → immer; sonst isOfferActiveNow ODER Datumsfenster */
-function isOfferVisibleByValidity(offer) {
-  const hasDates = !!offer?.validDates;
-  const hasTimes = !!offer?.validTimes;
-  if (!hasDates && !hasTimes) return true;
-  return isOfferActiveNow(offer, 'Europe/Vienna') || isInDateWindow(offer);
-}
-
-function formatValidity(offer) {
-  const vd = offer?.validDates || {};
-  const vt = offer?.validTimes || {};
-  const from = vd.from ?? vd.start ?? vd.dateFrom ?? vd.startDate;
-  const to   = vd.to   ?? vd.end   ?? vd.dateTo   ?? vd.endDate;
-  const dFmt = (v) => { try { return v ? new Date(v).toLocaleDateString('de-AT') : null; } catch { return null; } };
-  const timeFrom = vt.from || vt.start || null;
-  const timeTo   = vt.to   || vt.end   || null;
-  const parts = [];
-  const df = dFmt(from), dt = dFmt(to);
-  if (df || dt) parts.push([df || '—', dt || '—'].join(' – '));
-  if (timeFrom || timeTo) parts.push([timeFrom || '00:00', timeTo || '23:59'].join('–'));
-  return parts.length ? parts.join(', ') : '—';
 }
 
 export default function NavigationMap() {
   const router = useRouter();
+  const t = useTheme();
   const insets = useSafeAreaInsets();
 
   const [userPos, setUserPos] = useState(null);
   const [loadingPos, setLoadingPos] = useState(true);
-
   const [rawOffers, setRawOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(true);
-
   const [selectedRow, setSelectedRow] = useState(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
-  const firstFixDoneRef = useRef(false);
 
-  /* Standort laden + live verfolgen */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        setLoadingPos(true);
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { setUserPos(null); setPermissionDenied(true); return; }
+        if (status !== 'granted') {
+          if (mounted) setPermissionDenied(true);
+          return;
+        }
 
-        const loc = await Location.getCurrentPositionAsync({});
+        const current = await Location.getCurrentPositionAsync({});
         if (!mounted) return;
-        const first = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setUserPos(first);
 
-        try {
-          mapRef.current?.animateToRegion(regionForRadius(first, VISIBLE_RADIUS_M), 500);
-          firstFixDoneRef.current = true;
-        } catch {}
+        const p = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+        setUserPos(p);
 
         posSubRef.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 5 },
+          { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 10 },
           (l) => {
-            const p = { latitude: l.coords.latitude, longitude: l.coords.longitude };
-            setUserPos(p);
-            try { mapRef.current?.animateToRegion(regionForRadius(p, VISIBLE_RADIUS_M), 350); } catch {}
-            if (!firstFixDoneRef.current) firstFixDoneRef.current = true;
+            const next = { latitude: l.coords.latitude, longitude: l.coords.longitude };
+            setUserPos(next);
           }
         );
       } finally {
         if (mounted) setLoadingPos(false);
       }
     })();
-    return () => { mounted = false; try { posSubRef.current?.remove?.(); } catch {}; posSubRef.current = null; };
+
+    return () => {
+      mounted = false;
+      try {
+        posSubRef.current?.remove?.();
+      } catch {}
+      posSubRef.current = null;
+    };
   }, []);
 
-  // Offers laden
   const loadOffers = useCallback(async () => {
     const url = `${API_BASE_URL}/offers?withProvider=1&page=1&limit=300`;
     try {
       setLoadingOffers(true);
-      const tokenKeys = ['authToken', 'token', 'jwt', 'accessToken'];
       let token = null;
-      for (const tk of tokenKeys) {
-        const t = await AsyncStorage.getItem(tk);
-        if (t && String(t).trim()) { token = t.trim(); break; }
+      for (const k of ['authToken', 'token', 'jwt', 'accessToken']) {
+        const val = await AsyncStorage.getItem(k);
+        if (val && String(val).trim()) {
+          token = String(val).trim();
+          break;
+        }
       }
       const res = await fetch(url, {
-        headers: { 'Accept': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
       const text = await res.text();
       let json = null;
-      try { json = text ? JSON.parse(text) : null; } catch {}
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {}
+
       const rows =
-        (json?.offers && Array.isArray(json.offers) && json.offers) ||
-        (json?.data?.offers && Array.isArray(json.data.offers) && json.data.offers) ||
+        (Array.isArray(json?.offers) && json.offers) ||
+        (Array.isArray(json?.data?.offers) && json.data.offers) ||
         (Array.isArray(json?.data) && json.data) ||
-        (Array.isArray(json?.rows) && json.rows) ||
         (Array.isArray(json) && json) ||
         [];
-      setRawOffers(rows || []);
-      console.log('[NAVMAP] offers.loaded', rows?.length || 0);
-    } catch (e) {
-      console.log('[NAVMAP] offers.error', String(e));
+
+      setRawOffers(rows);
+    } catch {
       setRawOffers([]);
     } finally {
       setLoadingOffers(false);
     }
   }, []);
-  useEffect(() => { loadOffers(); }, [loadOffers]);
 
-  // Rows berechnen (Offer-Radius ignoriert)
-  const computedRows = useMemo(() => {
-    const user = userPos;
-    return (rawOffers || []).map((offer) => {
-      const loc = pickOfferLocation(offer);
-      const distanceM = (user && loc) ? haversineM(user, loc) : Number.POSITIVE_INFINITY;
-      const include = !!loc && isOfferVisibleByValidity(offer);
-      const remainingMs = getRemainingMs(offer);
-      return { offer, loc, distanceM, include, remainingMs, eta: Number.isFinite(distanceM) ? etaMin(distanceM) : null };
-    });
+  useEffect(() => {
+    loadOffers();
+  }, [loadOffers]);
+
+  const rows = useMemo(() => {
+    return (rawOffers || [])
+      .map((offer) => {
+        const loc = pickOfferLocation(offer);
+        const distanceM = userPos && loc ? haversineM(userPos, loc) : Number.POSITIVE_INFINITY;
+        const include = !!loc && isOfferActiveNow(offer, 'Europe/Vienna');
+        return { offer, loc, distanceM, include };
+      })
+      .filter((r) => r.include && r.distanceM <= VISIBLE_RADIUS_M)
+      .sort((a, b) => a.distanceM - b.distanceM);
   }, [rawOffers, userPos]);
-
-  // innerhalb 2 km um den User
-  const visibleRows = useMemo(
-    () => computedRows.filter((r) => r.include && r.distanceM <= VISIBLE_RADIUS_M).sort((a, b) => a.distanceM - b.distanceM),
-    [computedRows]
-  );
-
-  // Fit auf User + Marker sobald Position/Offers da
-  const inViewFitAll = useCallback(() => {
-    if (!mapRef.current) return;
-    const coords = [...visibleRows.map(r => r.loc).filter(Boolean), ...(userPos ? [userPos] : [])];
-    if (!coords.length) return;
-    try {
-      mapRef.current.fitToCoordinates(coords, {
-        edgePadding: { top: 80 + insets.top, right: 40, bottom: 200 + insets.bottom, left: 40 },
-        animated: true,
-      });
-    } catch {}
-  }, [visibleRows, userPos, insets]);
-  useEffect(() => { if (firstFixDoneRef.current) inViewFitAll(); }, [inViewFitAll, firstFixDoneRef.current]);
-
-  const onMarkerPress = (row) => setSelectedRow(row);
-
-  const onGoNavigateOffer = useCallback((row) => {
-    const id = row?.offer?._id || row?.offer?.id;
-    if (!id) return;
-    router.push(`/NavigationScreen?id=${id}`);
-  }, [router]);
 
   const recenter = () => {
     const c = userPos || FALLBACK_CENTER;
-    try { mapRef.current?.animateToRegion(regionForRadius(c, VISIBLE_RADIUS_M), 350); } catch {}
+    try {
+      mapRef.current?.animateToRegion(regionForRadius(c, VISIBLE_RADIUS_M), 350);
+    } catch {}
   };
 
-  /* ---------- RENDER ---------- */
-  const showEmpty = !loadingOffers && visibleRows.length === 0;
+  const onGoNavigateOffer = useCallback(
+    (row) => {
+      const id = row?.offer?._id || row?.offer?.id;
+      if (!id) return;
+      router.push(`/NavigationScreen?id=${id}`);
+    },
+    [router]
+  );
+
+  const loadingAny = loadingPos || loadingOffers;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
+      <View style={{ flex: 1 }}>
         <MapView
           ref={mapRef}
           style={{ flex: 1 }}
           provider={PROVIDER_GOOGLE}
-          initialRegion={regionForRadius(userPos ?? FALLBACK_CENTER, VISIBLE_RADIUS_M)}
+          initialRegion={regionForRadius(userPos || FALLBACK_CENTER, VISIBLE_RADIUS_M)}
+          customMapStyle={mapStyleStepsmatchLight}
           showsUserLocation
           showsMyLocationButton={false}
-          showsCompass={false}
-          toolbarEnabled={false}
           zoomControlEnabled={false}
-          showsIndoorLevelPicker={false}
-          customMapStyle={mapStyleStepsmatchLight}
-          accessibilityRole="image"
-          accessibilityLabel="Karte mit Angeboten in deiner Nähe"
-          testID="navmap-map"
+          toolbarEnabled={false}
         >
-          {userPos && (
+          {userPos ? (
             <>
-              <Circle
-                center={userPos}
-                radius={VISIBLE_RADIUS_M}
-                strokeColor="rgba(15,227,169,0.45)"
-                fillColor="rgba(15,227,169,0.07)"
-              />
-              <Circle
-                center={userPos}
-                radius={80}
-                strokeColor="rgba(15,227,169,0.9)"
-                fillColor="rgba(15,227,169,0.18)"
-              />
+              <Circle center={userPos} radius={VISIBLE_RADIUS_M} strokeColor="rgba(31,111,235,0.5)" fillColor="rgba(31,111,235,0.08)" />
+              <Circle center={userPos} radius={70} strokeColor="rgba(34,197,94,0.7)" fillColor="rgba(34,197,94,0.18)" />
             </>
-          )}
+          ) : null}
 
-          {/* Standard-Pins (keine Custom-Views) → sichtbar/performant auf Android */}
-          {visibleRows.map((r) => {
-            const o = r.offer;
-            const key = o?._id || o?.id || `${r.loc.latitude},${r.loc.longitude}-${o?.name}`;
-            return (
-              <Marker
-                key={key}
-                coordinate={r.loc}
-                pinColor={colors.primary}
-                tracksViewChanges={true}
-                onPress={() => onMarkerPress(r)}
-                title={o?.name || 'Angebot'}
-                description={`${o?.category || '—'} • ${o?.subcategory || '—'}`}
-              />
-            );
-          })}
+          {rows.map((row) => (
+            <Marker
+              key={row.offer?._id || `${row.loc.latitude}-${row.loc.longitude}`}
+              coordinate={row.loc}
+              pinColor={t.colors.primary}
+              onPress={() => setSelectedRow(row)}
+              title={row.offer?.name || 'Angebot'}
+              description={`${row.offer?.category || '-'} � ${fmtDistance(row.distanceM)}`}
+            />
+          ))}
         </MapView>
 
-        {(loadingPos || loadingOffers) && (
-          <View style={[styles.loading, { top: insets.top + 12 }]}>
-            <ActivityIndicator size="small" />
-            <Text style={styles.loadingText}>
-              {loadingPos ? 'Position… ' : ''}{loadingOffers ? 'Angebote…' : ''}
-            </Text>
+        <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+          <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Map Preview</Text>
+          <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
+            {rows.length} gueltige Angebote im Radius von 2 km
+          </Text>
+        </View>
+
+        {loadingAny ? (
+          <View style={[styles.loading, { top: insets.top + 70, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+            <ActivityIndicator size="small" color={t.colors.primary} />
+            <Text style={[styles.loadingText, { color: t.colors.ink }]}>{loadingPos ? 'Position' : 'Angebote'} werden geladen ...</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* Standort abgelehnt */}
-        {permissionDenied && !loadingPos && (
-          <View style={[styles.denied, { top: insets.top + 56 }]}>
-            <Text style={styles.deniedText}>
-              Standort ist deaktiviert. Bitte in den Einstellungen erlauben.
-            </Text>
-            <TouchableOpacity
-              onPress={() => Location.enableNetworkProviderAsync?.()}
-              style={styles.deniedBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Einstellungen öffnen"
-              testID="navmap-open-settings"
-            >
-              <Text style={styles.deniedBtnText}>Einstellungen öffnen</Text>
-            </TouchableOpacity>
+        {permissionDenied ? (
+          <View style={[styles.notice, { top: insets.top + 110, backgroundColor: t.colors.card, borderColor: t.colors.warning }]}> 
+            <Text style={[styles.noticeText, { color: t.colors.ink }]}>Standort ist deaktiviert. Bitte Berechtigung aktivieren.</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* Bottom-Sheet – Offer-Details */}
-        {selectedRow && (
-          <View style={[styles.cardWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
-            <View style={styles.card}>
-              <Text style={styles.cardTitle} numberOfLines={2}>
-                {selectedRow.offer?.name || 'Angebot'}
-              </Text>
+        {selectedRow ? (
+          <View style={[styles.sheet, { paddingBottom: 12 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+            <Text style={[styles.sheetTitle, { color: t.colors.inkHigh }]} numberOfLines={2}>
+              {selectedRow.offer?.name || 'Angebot'}
+            </Text>
+            <Text style={[styles.sheetMeta, { color: t.colors.inkLow }]}> 
+              {selectedRow.offer?.category || 'Kategorie'} � {fmtDistance(selectedRow.distanceM)} � ca. {etaMin(selectedRow.distanceM)} min
+            </Text>
+            <Text style={[styles.sheetDesc, { color: t.colors.ink }]} numberOfLines={3}>
+              {selectedRow.offer?.description || 'Keine Beschreibung verfuegbar.'}
+            </Text>
 
-              <View style={{ height: 8 }} />
-
-              <View style={styles.row}>
-                <Text style={styles.label}>Kategorie</Text>
-                <Text style={styles.value}>{selectedRow.offer?.category || '—'}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Subkategorie</Text>
-                <Text style={styles.value}>{selectedRow.offer?.subcategory || '—'}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Entfernung</Text>
-                <Text style={styles.value}>
-                  {Number.isFinite(selectedRow.distanceM) ? fmtDistance(selectedRow.distanceM) : '—'}
-                </Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Gehzeit</Text>
-                <Text style={styles.value}>
-                  {Number.isFinite(selectedRow.distanceM) ? `${etaMin(selectedRow.distanceM)} min` : '—'}
-                </Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Gültigkeit</Text>
-                <Text style={[styles.value, { flexShrink: 1 }]} numberOfLines={1}>
-                  {formatValidity(selectedRow.offer)}
-                </Text>
-              </View>
-
-              <View style={{ height: 10 }} />
-              <Text style={styles.sectionTitle}>Beschreibung</Text>
-              <View style={{ height: 6 }} />
-              <Text style={{ color: '#cfe0ff', fontSize: 13 }}>
-                {selectedRow.offer?.description || '—'}
-              </Text>
-
-              <View style={{ height: 12 }} />
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => onGoNavigateOffer(selectedRow)}
-                  style={[styles.btn, styles.btnPrimary]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Route in App starten"
-                >
-                  <Text style={styles.btnPrimaryText}>Route</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setSelectedRow(null)}
-                  style={[styles.btn, styles.btnGhost]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Schließen"
-                >
-                  <Text style={styles.btnGhostText}>Schließen</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.sheetActions}>
+              <TouchableOpacity onPress={() => onGoNavigateOffer(selectedRow)} style={[styles.btn, { backgroundColor: t.colors.primary }]}>
+                <Text style={styles.btnPrimaryText}>Route starten</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSelectedRow(null)} style={[styles.btnGhost, { borderColor: t.colors.divider }]}>
+                <Text style={[styles.btnGhostText, { color: t.colors.ink }]}>Schliessen</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        )}
+        ) : null}
 
-        {/* Floating Recenter */}
         <TouchableOpacity
           onPress={recenter}
-          style={[styles.fab, { bottom: 16 + insets.bottom }]}
-          accessibilityRole="button"
-          accessibilityLabel="Karte auf meinen Standort zentrieren"
-          testID="navmap-recenter"
+          style={[styles.fab, { bottom: 20 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}
           activeOpacity={0.9}
         >
-          <Text style={styles.fabText}>•</Text>
+          <Text style={[styles.fabText, { color: t.colors.primary }]}>?</Text>
         </TouchableOpacity>
-
-        {/* Leerzustand */}
-        {showEmpty && (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Keine gültigen Angebote im 2 km-Umkreis.</Text>
-          </View>
-        )}
       </View>
     </SafeAreaView>
   );
 }
 
-/* Styles */
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1 },
+
+  topCard: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  topTitle: { fontSize: 15, fontWeight: '800' },
+  topSub: { marginTop: 2, fontSize: 12 },
 
   loading: {
     position: 'absolute',
     right: 12,
-    backgroundColor: 'rgba(16,18,22,0.75)',
-    borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  loadingText: { color: '#cfd7e6', fontSize: 12 },
+  loadingText: { fontSize: 12 },
 
-  denied: {
+  notice: {
     position: 'absolute',
-    left: 12, right: 12,
-    backgroundColor: 'rgba(255,107,107,0.16)',
-    borderColor: 'rgba(255,255,255,0.35)',
+    left: 12,
+    right: 12,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  deniedText: { color: '#ffd7d7', fontSize: 13, marginBottom: 6 },
-  deniedBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  deniedBtnText: { color: '#fff', fontWeight: '700' },
+  noticeText: { fontSize: 13 },
 
-  /* Bottom Sheet */
-  cardWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12 },
-  card: {
-    backgroundColor: 'rgba(16,18,22,0.96)',
+  sheet: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 0,
+    borderWidth: 1,
     borderRadius: 16,
-    padding: 14,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    padding: 12,
   },
-  cardTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  sectionTitle: { color: '#E9F1FF', fontSize: 13, fontWeight: '800' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-  label: { color: '#9fb0c6', fontSize: 12 },
-  value: { color: '#0FE3A9', fontSize: 13, fontWeight: '800', marginLeft: 8 },
+  sheetTitle: { fontSize: 18, fontWeight: '900' },
+  sheetMeta: { marginTop: 4, fontSize: 12 },
+  sheetDesc: { marginTop: 10, fontSize: 13, lineHeight: 18 },
 
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  btn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
-  btnGhost: { borderColor: 'rgba(255,255,255,0.18)' },
-  btnPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
-  btnPrimaryText: { color: '#0b1220', fontWeight: '800', textAlign: 'center' },
-  btnGhostText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
+  sheetActions: { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
+  btn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  btnPrimaryText: { color: '#fff', fontWeight: '800' },
+  btnGhost: {
+    marginLeft: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  btnGhostText: { fontWeight: '700' },
 
-  /* Floating Action (Recenter) */
   fab: {
     position: 'absolute',
     right: 16,
-    width: 48, height: 48,
+    width: 48,
+    height: 48,
     borderRadius: 24,
-    backgroundColor: colors.background,
-    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
-    elevation: 6,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  fabText: { color: colors.primary, fontSize: 24, lineHeight: 24, fontWeight: '800' },
-
-  /* Empty */
-  empty: {
-    position: 'absolute', left: 0, right: 0, bottom: 130,
+    borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
   },
-  emptyText: { color: '#9fb0c6', fontWeight: '700' },
+  fabText: { fontSize: 22, fontWeight: '800' },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, Platform, Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,13 +23,13 @@ export default function NotificationPermissionPrompt({ remindAfterMs = 6 * 60 * 
     return false;
   }
 
-  async function hasEffectivePermission() {
+  const hasEffectivePermission = useCallback(async () => {
     const perm = await Notifications.getPermissionsAsync();
     const iosProvisional = (perm as any)?.ios?.status === 'provisional';
     return isGrantedLike(perm.status, iosProvisional);
-  }
+  }, []);
 
-  async function checkAndMaybeShow() {
+  const checkAndMaybeShow = useCallback(async () => {
     try {
       if (await hasEffectivePermission()) {
         setVisible(false);
@@ -45,11 +45,11 @@ export default function NotificationPermissionPrompt({ remindAfterMs = 6 * 60 * 
       setPhase('explain');
       setVisible(true);
     }
-  }
+  }, [hasEffectivePermission, onGranted]);
 
   useEffect(() => {
     checkAndMaybeShow();
-  }, []);
+  }, [checkAndMaybeShow]);
 
   async function handleAskNow() {
     try {
@@ -190,3 +190,6 @@ const styles = StyleSheet.create({
   tertiary: { backgroundColor: '#f3f4f6' },
   tertiaryText: { color: '#111827', fontWeight: '600' },
 });
+
+
+

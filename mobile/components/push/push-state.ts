@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Random from 'expo-random';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import { RESOLVED_PROJECT_ID } from './push-constants';
 
 const TOKEN_KEY = 'expoPushToken.v2';
@@ -144,3 +143,4 @@ export async function getOfferMeta(offerId: string) {
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
+

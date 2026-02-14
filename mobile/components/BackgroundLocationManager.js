@@ -1,5 +1,4 @@
 // stepsmatch/mobile/components/BackgroundLocationManager.js
-import React from 'react';
 import { sendHeartbeat } from './PushInitializer';
 
 // Hinweis in den Logs, damit klar ist, dass hier nichts mehr doppelt startet
@@ -22,3 +21,4 @@ export async function kickstartOnce() {
 export default function BackgroundLocationManager() {
   return null;
 }
+

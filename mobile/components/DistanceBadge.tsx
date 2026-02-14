@@ -1,76 +1,49 @@
-// components/DistanceBadge.tsx
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { useTheme } from '../theme/ThemeProvider';
 
-type Props = {
-  meters: number | null | undefined;
-  style?: ViewStyle;
-  testID?: string;
-  accessibilityLabel?: string;
-  size?: 'sm' | 'md'; // visueller Scale
-};
-
-const BRAND_BLUE = '#0d4ea6';
-
-function formatDistance(m?: number | null) {
-  if (m == null || Number.isNaN(m)) return '—';
+function formatDistance(m) {
+  if (m == null || Number.isNaN(m)) return '-';
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
-export const DistanceBadge: React.FC<Props> = ({
-  meters,
-  style,
-  testID,
-  accessibilityLabel,
-  size = 'sm',
-}) => {
-  const label = useMemo(() => formatDistance(meters), [meters]);
-  const s = size === 'md' ? styles.md : styles.sm;
+export function DistanceBadge({ meters, distanceM, style, testID, accessibilityLabel, size = 'sm' }) {
+  const t = useTheme();
+  const value = typeof meters === 'number' ? meters : distanceM;
+  const label = useMemo(() => formatDistance(value), [value]);
 
   return (
     <View
-      style={[styles.base, s.wrap, style]}
+      style={[
+        styles.base,
+        {
+          backgroundColor: t.mode === 'dark' ? 'rgba(31,111,235,0.24)' : 'rgba(31,111,235,0.12)',
+          borderColor: t.mode === 'dark' ? 'rgba(31,111,235,0.4)' : 'rgba(31,111,235,0.24)',
+          paddingHorizontal: size === 'md' ? 10 : 8,
+          paddingVertical: size === 'md' ? 5 : 3,
+        },
+        style,
+      ]}
       testID={testID}
       accessibilityRole="text"
       accessibilityLabel={accessibilityLabel ?? `Entfernung ${label}`}
     >
-      <Text style={[styles.text, s.text]} allowFontScaling>
+      <Text style={[styles.text, { color: t.colors.primary, fontSize: size === 'md' ? 13 : 12 }]} allowFontScaling>
         {label}
       </Text>
     </View>
   );
-};
+}
 
-const R = { s1: 4, s2: 8, radius: 10 };
+export default DistanceBadge;
 
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: `${BRAND_BLUE}1A`, // ~10% Alpha
-    borderRadius: R.radius,
+    borderRadius: 999,
+    borderWidth: 1,
     alignSelf: 'flex-start',
   },
   text: {
-    color: BRAND_BLUE,
-    fontWeight: '600',
-  },
-  sm: {
-    wrap: {
-      paddingHorizontal: R.s2,
-      paddingVertical: 2,
-    },
-    text: {
-      fontSize: 12,
-      lineHeight: 16,
-    },
-  },
-  md: {
-    wrap: {
-      paddingHorizontal: R.s2 + 2,
-      paddingVertical: 4,
-    },
-    text: {
-      fontSize: 14,
-      lineHeight: 18,
-    },
+    fontWeight: '700',
   },
 });

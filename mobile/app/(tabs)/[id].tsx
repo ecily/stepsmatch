@@ -19,7 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@react-navigation/native';
 
 // ✅ relative Pfade angepasst (2 Ebenen hoch, nicht 3)
-import DistanceBadge from '../../components/DistanceBadge';
+import OfferDistanceBadge from '../../components/DistanceBadge';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import colors from '../../theme/colors';
 
@@ -38,7 +38,6 @@ function haversineM(a: { latitude: number; longitude: number }, b: { latitude: n
   const aa = s1 * s1 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * s2 * s2;
   return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
 }
-function fmtDistance(m: number) { return m < 995 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
 function pickOfferLocation(offer: any) {
   const coords = offer?.location?.coordinates || offer?.provider?.location?.coordinates || null;
   if (Array.isArray(coords) && coords.length >= 2) {
@@ -46,13 +45,6 @@ function pickOfferLocation(offer: any) {
     const latN = Number(lat), lngN = Number(lng);
     if (Number.isFinite(latN) && Number.isFinite(lngN)) return { latitude: latN, longitude: lngN };
   }
-  return null;
-}
-function pickRadiusMeters(offer: any) {
-  const r1 = Number(offer?.radius);
-  if (Number.isFinite(r1) && r1 >= 0) return r1;
-  const r2 = Number(offer?.provider?.radius);
-  if (Number.isFinite(r2) && r2 >= 0) return r2;
   return null;
 }
 function getRemainingMs(offer: any) {
@@ -153,14 +145,12 @@ export default function OfferDetail() {
   }, [id]);
 
   const loc = useMemo(() => (offer ? pickOfferLocation(offer) : null), [offer]);
-  const radiusM = useMemo(() => (offer ? pickRadiusMeters(offer) : null), [offer]);
-  const distanceM = useMemo(() => {
+    const distanceM = useMemo(() => {
     if (!offer || !loc || !userPosRef.current) return null as number | null;
     return haversineM(userPosRef.current, loc);
   }, [offer, loc]);
   const remainingMs = offer ? getRemainingMs(offer) : null;
-  const updatedAtRel = offer?.updatedAt ? formatRelative(offer.updatedAt) : null;
-  const activeNow = offer ? isOfferActiveNow(offer, 'Europe/Vienna') : false;
+    const activeNow = offer ? isOfferActiveNow(offer, 'Europe/Vienna') : false;
 
   // WOW: sanfter Headline-Fade/Slide
   const titleAnim = useRef(new Animated.Value(0)).current;
@@ -245,7 +235,7 @@ export default function OfferDetail() {
           )}
           {Number.isFinite(distanceM as number) && (
             <View style={[styles.badgeUniform, styles.badgeBlue, { paddingVertical: 0, paddingHorizontal: 0 }]}>
-              <DistanceBadge distanceM={distanceM as number} compact />
+              <OfferDistanceBadge distanceM={distanceM as number} compact />
             </View>
           )}
         </View>
@@ -466,3 +456,5 @@ const styles = StyleSheet.create({
   ctaGhost: { backgroundColor: '#eef2ff' },
   ctaGhostText: { color: '#111827', fontWeight: '700' },
 });
+
+

@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import colors from '../../theme/colors';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../theme/ThemeProvider';
+import Button from '../../components/ui/Button';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const t = useTheme();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,90 +22,66 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     setError('');
     if (!name || !email || !password || !password2) {
-      setError('Bitte alle Felder ausfüllen.');
+      setError('Bitte alle Felder ausfuellen.');
       return;
     }
     if (password !== password2) {
-      setError('Die Passwörter stimmen nicht überein.');
+      setError('Die Passwoerter stimmen nicht ueberein.');
       return;
     }
+
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/users/register`, { name, email, password });
-      if (res.data && res.data.token && res.data.user) {
-        await AsyncStorage.setItem('token', res.data.token);
-        await AsyncStorage.setItem('userId', res.data.user._id);
-        if (res.data.user.interests) {
-          await AsyncStorage.setItem('userInterests', JSON.stringify(res.data.user.interests));
-        }
-        // Sicherstellen, dass alles gespeichert wurde, dann ins Onboarding/WelcomeScreen leiten:
-        setTimeout(async () => {
-          const confirmToken = await AsyncStorage.getItem('token');
-          if (confirmToken) {
-            router.replace('/(onboarding)/WelcomeScreen');
-          } else {
-            setError('Registrierung erfolgreich, aber Token nicht gespeichert. Bitte nochmal versuchen.');
-          }
-        }, 200);
-      } else {
-        setError('Registrierung fehlgeschlagen. Bitte probiere es erneut.');
-      }
+      await AsyncStorage.setItem('token', res.data.token);
+      await AsyncStorage.setItem('userId', res.data.user._id);
+      await AsyncStorage.setItem('userInterests', JSON.stringify(res?.data?.user?.interests || []));
+      router.replace('/(onboarding)/WelcomeScreen');
     } catch (err) {
       setError(err?.response?.data?.message || 'Registrierung fehlgeschlagen.');
-      console.log('Register error:', err?.response?.data);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.headline}>Registrieren</Text>
-      <TextInput
-        placeholder="Name"
-        style={styles.input}
-        autoCapitalize="words"
-        value={name}
-        onChangeText={setName}
-      />
-      <TextInput
-        placeholder="E-Mail"
-        style={styles.input}
-        autoCapitalize="none"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-      />
-      <TextInput
-        placeholder="Passwort"
-        style={styles.input}
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      <TextInput
-        placeholder="Passwort wiederholen"
-        style={styles.input}
-        secureTextEntry
-        value={password2}
-        onChangeText={setPassword2}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Registrieren</Text>}
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => router.replace('/(auth)/LoginScreen')}>
-        <Text style={styles.link}>Bereits ein Konto? Jetzt anmelden</Text>
-      </TouchableOpacity>
-    </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
+      <View style={styles.wrap}>
+        <Text style={[styles.title, { color: t.colors.inkHigh }]}>Konto erstellen</Text>
+        <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>In weniger als einer Minute startklar.</Text>
+
+        <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+          <TextInput placeholder="Name" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} value={name} onChangeText={setName} />
+          <TextInput placeholder="E-Mail" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} autoCapitalize="none" value={email} onChangeText={setEmail} keyboardType="email-address" />
+          <TextInput placeholder="Passwort" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} secureTextEntry value={password} onChangeText={setPassword} />
+          <TextInput placeholder="Passwort wiederholen" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} secureTextEntry value={password2} onChangeText={setPassword2} />
+
+          {error ? <Text style={[styles.error, { color: t.colors.danger }]}>{error}</Text> : null}
+
+          {loading ? <ActivityIndicator color={t.colors.primary} /> : <Button title="Registrieren" variant="primary" size="lg" onPress={handleRegister} />}
+
+          <TouchableOpacity onPress={() => router.replace('/(auth)/LoginScreen')}>
+            <Text style={[styles.link, { color: t.colors.primary }]}>Bereits ein Konto? Jetzt anmelden</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 32, backgroundColor: colors.background },
-  headline: { fontSize: 24, fontWeight: 'bold', color: colors.primary, marginBottom: 20, textAlign: 'center' },
-  input: { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 16, marginBottom: 16, fontSize: 16 },
-  button: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 17 },
-  error: { color: 'red', marginBottom: 12, textAlign: 'center' },
-  link: { color: colors.accent || colors.primary, marginTop: 24, textAlign: 'center', textDecorationLine: 'underline' },
+  safe: { flex: 1 },
+  wrap: { flex: 1, justifyContent: 'center', padding: 24 },
+  title: { fontSize: 30, fontWeight: '800', marginBottom: 8 },
+  subtitle: { fontSize: 15, lineHeight: 21, marginBottom: 20 },
+  card: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 12 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+  },
+  error: { fontSize: 13 },
+  link: { marginTop: 8, textAlign: 'center', fontWeight: '600' },
 });

@@ -1,7 +1,7 @@
 // stepsmatch/mobile/app/(tabs)/index.js
 // Robustheit: Standort-Fallback (LastKnown + Persist), Offers trotz fehlender Position, Axios-Timeout + Retry
 
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { sendHeartbeat, ensureBgAfterOnboarding, stopBackgroundServices } from '../../components/PushInitializer';
 import {
   View,
@@ -9,9 +9,7 @@ import {
   FlatList,
   StyleSheet,
   TouchableWithoutFeedback,
-  ActivityIndicator,
-  Image,
-  ScrollView,
+  ActivityIndicator,  ScrollView,
   RefreshControl,
   AppState,
   Animated,
@@ -84,12 +82,6 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
-}
-
-function formatDistance(metersLike) {
-  const meters = toNumber(metersLike);
-  if (meters == null) return null;
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
 }
 
 /* ─────────── Geo-Helpers (robust) ─────────── */
@@ -254,7 +246,7 @@ export default function HomeTab() {
   const t = useTheme();
 
   // Data
-  const [offers, setOffers] = useState([]);
+  const [, setOffers] = useState([]);
   const [grouped, setGrouped] = useState({});
   // Paging
   const [page, setPage] = useState(1);
@@ -276,9 +268,7 @@ export default function HomeTab() {
   const inFlightRef = useRef(false);
   const abortRef = useRef(null);
   const refreshTimerRef = useRef(null);
-  const heartbeatTimerRef = useRef(null);
-  const lastFocusAtRef = useRef(0);
-  const appState = useRef(AppState.currentState);
+  const heartbeatTimerRef = useRef(null);  const appState = useRef(AppState.currentState);
 
   const fetchFnRef = useRef(null);
 
@@ -295,7 +285,7 @@ export default function HomeTab() {
     (async () => {
       try {
         await sendHeartbeat();
-      } catch (e) {
+      } catch (_e) {
         /* noop */
       }
     })();
@@ -367,7 +357,7 @@ export default function HomeTab() {
       // Persistieren für späteren Fallback
       try { await AsyncStorage.setItem(LAST_LOC_KEY, JSON.stringify(loc)); } catch {}
       return loc;
-    } catch (e) {
+    } catch (_e) {
       // 3) Bei Timeout: nutze lastKnown oder persistierten Fallback – kein harter Fehler
       if (last?.coords) {
         const loc = { lat: last.coords.latitude, lng: last.coords.longitude };
@@ -424,15 +414,15 @@ export default function HomeTab() {
         let res;
         try {
           res = await api.get('/offers', { params, signal: controller.signal });
-        } catch (e) {
+        } catch (_e) {
           // gezielter Retry nur bei Timeout/Abort
-          const isTimeout = e?.code === 'ECONNABORTED' || String(e?.message || '').toLowerCase().includes('timeout');
-          const isAborted = String(e?.message || '').toLowerCase().includes('aborted');
+          const isTimeout = _e?.code === 'ECONNABORTED' || String(_e?.message || '').toLowerCase().includes('timeout');
+          const isAborted = String(_e?.message || '').toLowerCase().includes('aborted');
           if (isTimeout || isAborted) {
             const apiRetry = axios.create({ baseURL: API_URL, timeout: AXIOS_RETRY_TIMEOUT_MS });
             res = await apiRetry.get('/offers', { params }); // ohne signal (um Race zu vermeiden)
           } else {
-            throw e;
+            throw _e;
           }
         }
 
@@ -530,14 +520,14 @@ export default function HomeTab() {
 
         console.log(`[HomeTab] GET /offers p=${pageToLoad} n=${rows.length} kept=${filtered.length} hasMore=${serverHasMore} net=${(t1 - t0).toFixed(0)}ms loc=${loc ? 'yes' : 'no'}`);
         if (newlySeenThisRun.length > 0) { await saveSeenIds(); }
-      } catch (e) {
+      } catch (_e) {
         if (mountedRef.current) {
-          const isTimeout = String(e?.message || '').toLowerCase().includes('timeout');
+          const isTimeout = String(_e?.message || '').toLowerCase().includes('timeout');
           const msg = isTimeout
             ? 'Netzwerk langsam – erneut versuchen.'
             : 'Fehler beim Laden der Angebote.';
           setError(msg);
-          console.warn('[HomeTab] fetch error:', e?.message || e);
+          console.warn('[HomeTab] fetch error:', _e?.message || _e);
         }
       } finally {
         inFlightRef.current = false;
@@ -569,11 +559,13 @@ export default function HomeTab() {
       lastFgSyncAtRef.current = Date.now();
     });
 
+    const refreshTimer = refreshTimerRef.current;
+    const heartbeatTimer = heartbeatTimerRef.current;
     return () => {
       mountedRef.current = false;
       if (abortRef.current) try { abortRef.current.abort(); } catch {}
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
   }, []);
 
@@ -616,10 +608,12 @@ export default function HomeTab() {
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
     }, 180000);
 
+    const refreshTimer = refreshTimerRef.current;
+    const heartbeatTimer = heartbeatTimerRef.current;
     return () => {
       sub.remove();
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
   }, [foregroundSync]);
 
@@ -636,6 +630,8 @@ export default function HomeTab() {
 
   const [svcState, setSvcState] = useState(null);
   const [svcBusy, setSvcBusy] = useState(false);
+  const [privacyOptIn, setPrivacyOptIn] = useState(null);
+  const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
 
   const loadServiceState = useCallback(async () => {
     try {
@@ -646,10 +642,33 @@ export default function HomeTab() {
 
   useEffect(() => { loadServiceState(); }, [loadServiceState]);
 
+  const loadPrivacyState = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(PRIVACY_OPTIN_KEY);
+      if (raw == null) {
+        setPrivacyOptIn(null);
+        return;
+      }
+      setPrivacyOptIn(raw === '1');
+    } catch {
+      setPrivacyOptIn(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPrivacyState();
+  }, [loadPrivacyState]);
+
   const formatPauseUntil = (ts) => {
     try {
       const d = new Date(ts);
-      return d.toLocaleString();
+      return d.toLocaleString('de-AT', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } catch {
       return '';
     }
@@ -714,7 +733,12 @@ export default function HomeTab() {
     await handleEnableService();
   }, [handleEnableService]);
 
-  const groupedEntries = useMemo(() => Object.entries(grouped), [grouped]);
+  const handlePrivacyOptIn = useCallback(async (next) => {
+    try {
+      await AsyncStorage.setItem(PRIVACY_OPTIN_KEY, next ? '1' : '0');
+      setPrivacyOptIn(!!next);
+    } catch {}
+  }, []);
 
   if (!hasLoadedOnce && initialLoading) {
     return (
@@ -755,6 +779,16 @@ export default function HomeTab() {
           contentContainerStyle={styles.categoryContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
+          <View style={[styles.heroCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+            <View style={styles.heroTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.heroEyebrow, { color: t.colors.inkLow }]}>In deiner Naehe</Text>
+                <Text style={[styles.heroTitle, { color: t.colors.inkHigh }]}>Entdecke Angebote und starte direkt deine Route</Text>
+                <Text style={[styles.heroSubtitle, { color: t.colors.ink }]}>Feed-first mit schneller Karte und Navigation.</Text>
+              </View>
+              <Badge label="Live" tone="success" />
+            </View>
+          </View>
           <View style={[styles.serviceCard, { backgroundColor: t.colors.card }]}>
             <View style={styles.serviceHeader}>
               <Text style={[styles.serviceTitle, { color: t.colors.inkHigh }]}>Hintergrunddienst</Text>
@@ -765,7 +799,7 @@ export default function HomeTab() {
             {isSvcPaused && svcState?.pausedUntil ? (
               <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Pausiert bis: {formatPauseUntil(svcState.pausedUntil)}</Text>
             ) : (
-              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und Push-Angebote.</Text>
+              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und liefert Push-Angebote auch bei gesperrtem Display.</Text>
             )}
 
             <View style={styles.serviceActionsRow}>
@@ -775,7 +809,7 @@ export default function HomeTab() {
                 <Button title="Aktivieren" variant="primary" size="sm" onPress={handleEnableService} disabled={svcBusy} />
               )}
               {isSvcPaused ? (
-                <Button title="Weiter" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
+                <Button title="Fortsetzen" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
               ) : null}
             </View>
 
@@ -786,6 +820,17 @@ export default function HomeTab() {
                 <Button title="Bis morgen" variant="secondary" size="sm" onPress={handlePauseUntilTomorrow} disabled={svcBusy} />
               </View>
             ) : null}
+          </View>
+
+          <View style={[styles.privacyCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+            <Text style={[styles.privacyTitle, { color: t.colors.inkHigh }]}>Datenschutz & Push-Einwilligung</Text>
+            <Text style={[styles.privacyCopy, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund genutzt. Push informiert nur ueber passende Angebote in deiner Naehe.</Text>
+            <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
+            <View style={styles.serviceActionsRow}>
+              <Button title="Einwilligen" variant="primary" size="sm" onPress={() => handlePrivacyOptIn(true)} />
+              <Button title="Ablehnen" variant="secondary" size="sm" onPress={() => handlePrivacyOptIn(false)} />
+              <Button title="Mehr im Profil" variant="ghost" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
+            </View>
           </View>
 
           {lastUpdated && (
@@ -869,7 +914,8 @@ export default function HomeTab() {
 /* ───────────── Card (Badges ÜBER dem Hero, WOW: Fade-In & Press-Scale) ───────────── */
 
 function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
-  const t = theme || useTheme();
+  const themeFromHook = useTheme();
+  const t = theme || themeFromHook;
 
   // Enter animation
   const enterOpacity = useRef(new Animated.Value(0)).current;
@@ -1030,6 +1076,35 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   categoryContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
   containerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  heroCard: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  heroTitle: {
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
 
   categoryBlock: { marginBottom: 16 },
   categoryTitle: { fontSize: 20, fontWeight: '800', marginBottom: 10 },
@@ -1112,4 +1187,16 @@ const styles = StyleSheet.create({
   serviceStatus: { fontSize: 12, fontWeight: '700' },
   serviceHint: { fontSize: 12, marginBottom: 10 },
   serviceActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  privacyCard: {
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  privacyTitle: { fontSize: 15, fontWeight: '800' },
+  privacyCopy: { fontSize: 12, lineHeight: 18, marginTop: 6 },
+  privacyState: { fontSize: 12, fontWeight: '700', marginTop: 8, marginBottom: 10 },
 });
+
+
+

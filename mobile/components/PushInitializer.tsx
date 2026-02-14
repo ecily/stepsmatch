@@ -1,5 +1,5 @@
 // stepsmatch/mobile/components/PushInitializer.tsx
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform, AppState, NativeModules } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
@@ -128,7 +128,7 @@ const FGS_NOTIFICATION_TITLE = 'StepsMatch ist aktiv';
 const FGS_NOTIFICATION_BODY  = 'Standortaktualisierung läuft';
 
 // Laufzeit-Cache
-let CURRENT_REGIONS: Array<{ identifier: string; latitude: number; longitude: number; radius: number }> = [];
+let CURRENT_REGIONS: { identifier: string; latitude: number; longitude: number; radius: number }[] = [];
 let LAST_REGION_HASH = '';
 let lastGeofenceSyncAt = 0;
 let lastNonEmptyRegionsAt = 0;
@@ -870,7 +870,7 @@ async function refreshGeofencesAroundUser(force = false) {
     lastKnownLocRef.current = { latitude, longitude, accuracy: loc.coords.accuracy };
 
     const offers = await fetchCandidateOffers();
-    const activeNearby: Array<{ offer: any; p: { lat: number; lng: number }; dist: number }> = [];
+    const activeNearby: { offer: any; p: { lat: number; lng: number }; dist: number }[] = [];
     for (const offer of offers) {
       try {
         if (!isOfferActiveNowSafe(offer, EUROPE_VIENNA)) continue;
@@ -2057,3 +2057,4 @@ export async function getBgStatus() {
 export async function kickstartBackgroundLocation() { await startAggressiveBgLocation(); }
 export const sendHeartbeat = sendHeartbeatOnce;
 export const sendRoundtripTest = roundtripTest;
+

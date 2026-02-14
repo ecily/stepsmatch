@@ -1,7 +1,6 @@
 // stepsmatch/mobile/components/push/push-notifications.ts
 import { AppState, DeviceEventEmitter, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Haptics from 'expo-haptics';
 import { isServiceActiveNow } from './service-control';
 import {
   BRAND_BLUE,
@@ -343,3 +342,4 @@ export async function presentLocalOfferNotification(
     await setGroupState(groupId, { lastPushedAt: now, lastSummaryAt: now, events: pruned });
   }
 }
+

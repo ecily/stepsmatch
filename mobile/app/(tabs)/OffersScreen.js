@@ -7,9 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   RefreshControl,
-  Platform,
-  Image,
-  ScrollView,
+  Platform,  ScrollView,
   Dimensions,
   Animated,
   Easing,
@@ -21,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@react-navigation/native';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
-import DistanceBadge from '../../components/DistanceBadge';
+import OfferDistanceBadge from '../../components/DistanceBadge';
 
 import colors from '../../theme/colors';
 
@@ -291,7 +289,7 @@ export default function OffersScreen() {
               </Text>
             )}
             <View style={[styles.badgeUniform, styles.badgeBlue, { paddingVertical: 0, paddingHorizontal: 0 }]}>
-              <DistanceBadge distanceM={distanceM} compact />
+              <OfferDistanceBadge distanceM={distanceM} compact />
             </View>
           </View>
 
@@ -450,7 +448,7 @@ export default function OffersScreen() {
             )}
             {Number.isFinite(distanceMDetail) && (
               <View style={[styles.badgeUniform, styles.badgeBlue, { paddingVertical: 0, paddingHorizontal: 0 }]}>
-                <DistanceBadge distanceM={distanceMDetail} compact />
+                <OfferDistanceBadge distanceM={distanceMDetail} compact />
               </View>
             )}
           </View>
@@ -761,3 +759,4 @@ const styles = StyleSheet.create({
   ctaGhost: { backgroundColor: '#eef2ff' },
   ctaGhostText: { color: '#111827', fontWeight: '700' },
 });
+

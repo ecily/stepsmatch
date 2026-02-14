@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import {
@@ -26,7 +27,6 @@ let lastHeartbeatAt = 0;
 
 /** 🔒 NEU: Idempotenz-/Debounce-Guards gegen Doppelstarts & Binder-Flut */
 let __bgLocStarting = false;           // verhindert parallele Starts
-let __bgLocArmed = false;              // merkt, ob wir selbst „armed“ haben
 let __lastStartAt = 0;                 // letztes erfolgreiches Start-Zeitstempel
 const RESTART_DEBOUNCE_MS = 60_000;    // NEU: kein Restart < 60s
 const STALE_WARM_FIX_MS = 10_000;      // NEU: Warm-Fix-Frist, ohne Restart
@@ -253,9 +253,7 @@ export async function startAggressiveBgLocation() {
     const now = Date.now();
 
     // NEU: Neustarts nur, wenn wirklich notwendig und außerhalb Debounce-Fenster
-    if (started) {
-      __bgLocArmed = true;
-      // Bereits laufend → kein Stop/Start (Binder-Schonung)
+    if (started) {      // Bereits laufend → kein Stop/Start (Binder-Schonung)
       console.log('[BGLOC] start: already running → no-op');
       return;
     }
@@ -284,10 +282,7 @@ export async function startAggressiveBgLocation() {
         notificationChannelId: channelId, // safe
         killServiceOnDestroy: false,
       },
-    });
-
-    __bgLocArmed = true;
-    __lastStartAt = now;
+    });    __lastStartAt = now;
 
     try {
       // Warmer Fix ohne harten Neustart – reduziert Binder-Last
@@ -376,10 +371,7 @@ export async function kickstartBackgroundLocation() {
 // ────────────────────────────────────────────────────────────
 // Watchdog
 // ────────────────────────────────────────────────────────────
-export function useLocationWatchdog() {
-  const React = require('react');
-  const { useEffect, useRef } = React as typeof import('react');
-  const timerRef = useRef<any>(null);
+export function useLocationWatchdog() {  const timerRef = useRef<any>(null);
   useEffect(() => {
     async function tick() {
       try {
@@ -474,3 +466,4 @@ export function useLocationWatchdog() {
     };
   }, []);
 }
+
