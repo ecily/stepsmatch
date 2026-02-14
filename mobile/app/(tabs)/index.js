@@ -9,6 +9,7 @@ import {
   FlatList,
   StyleSheet,
   TouchableWithoutFeedback,
+  TouchableOpacity,
   ActivityIndicator,  ScrollView,
   RefreshControl,
   AppState,
@@ -16,6 +17,7 @@ import {
   Easing,
   Platform,
   InteractionManager,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
@@ -269,6 +271,7 @@ export default function HomeTab() {
   const abortRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const heartbeatTimerRef = useRef(null);  const appState = useRef(AppState.currentState);
+  const fgNoticeTimerRef = useRef(null);
 
   const fetchFnRef = useRef(null);
 
@@ -631,6 +634,9 @@ export default function HomeTab() {
   const [svcState, setSvcState] = useState(null);
   const [svcBusy, setSvcBusy] = useState(false);
   const [privacyOptIn, setPrivacyOptIn] = useState(null);
+  const [fgNotice, setFgNotice] = useState('');
+  const [serviceExpanded, setServiceExpanded] = useState(false);
+  const [privacyExpanded, setPrivacyExpanded] = useState(false);
   const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
 
   const loadServiceState = useCallback(async () => {
@@ -658,6 +664,24 @@ export default function HomeTab() {
   useEffect(() => {
     loadPrivacyState();
   }, [loadPrivacyState]);
+
+  useEffect(() => {
+    setPrivacyExpanded(privacyOptIn !== true);
+  }, [privacyOptIn]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('offers:foreground-signal', (payload) => {
+      const title = String(payload?.title || 'Neues Angebot in deiner Naehe');
+      setFgNotice(title);
+      fetchFnRef.current?.({ pageToLoad: 1, mode: 'push' });
+      if (fgNoticeTimerRef.current) clearTimeout(fgNoticeTimerRef.current);
+      fgNoticeTimerRef.current = setTimeout(() => setFgNotice(''), 2600);
+    });
+    return () => {
+      try { sub?.remove?.(); } catch {}
+      if (fgNoticeTimerRef.current) clearTimeout(fgNoticeTimerRef.current);
+    };
+  }, []);
 
   const formatPauseUntil = (ts) => {
     try {
@@ -790,48 +814,79 @@ export default function HomeTab() {
             </View>
           </View>
           <View style={[styles.serviceCard, { backgroundColor: t.colors.card }]}>
-            <View style={styles.serviceHeader}>
+            <TouchableOpacity style={styles.serviceHeader} activeOpacity={0.85} onPress={() => setServiceExpanded((v) => !v)}>
               <Text style={[styles.serviceTitle, { color: t.colors.inkHigh }]}>Hintergrunddienst</Text>
-              <Text style={[styles.serviceStatus, { color: isSvcActive ? t.colors.success : (isSvcPaused ? t.colors.warning : t.colors.danger) }]}>
-                {isSvcActive ? 'Aktiv' : (isSvcPaused ? 'Pausiert' : 'Aus')}
-              </Text>
-            </View>
-            {isSvcPaused && svcState?.pausedUntil ? (
-              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Pausiert bis: {formatPauseUntil(svcState.pausedUntil)}</Text>
-            ) : (
-              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und liefert Push-Angebote auch bei gesperrtem Display.</Text>
-            )}
-
-            <View style={styles.serviceActionsRow}>
-              {isSvcActive ? (
-                <Button title="Ausschalten" variant="danger" size="sm" onPress={handleDisableService} disabled={svcBusy} />
-              ) : (
-                <Button title="Aktivieren" variant="primary" size="sm" onPress={handleEnableService} disabled={svcBusy} />
-              )}
-              {isSvcPaused ? (
-                <Button title="Fortsetzen" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
-              ) : null}
-            </View>
-
-            {isSvcActive ? (
-              <View style={styles.serviceActionsRow}>
-                <Button title="Pause 1h" variant="secondary" size="sm" onPress={() => handlePauseFor(60 * 60 * 1000, 'pause-1h')} disabled={svcBusy} />
-                <Button title="Pause 3h" variant="secondary" size="sm" onPress={() => handlePauseFor(3 * 60 * 60 * 1000, 'pause-3h')} disabled={svcBusy} />
-                <Button title="Bis morgen" variant="secondary" size="sm" onPress={handlePauseUntilTomorrow} disabled={svcBusy} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.serviceStatus, { color: isSvcActive ? t.colors.success : (isSvcPaused ? t.colors.warning : t.colors.danger) }]}>
+                  {isSvcActive ? 'Aktiv' : (isSvcPaused ? 'Pausiert' : 'Aus')}
+                </Text>
+                <Text style={[styles.collapseToggle, { color: t.colors.inkLow }]}>{serviceExpanded ? 'Ausblenden' : 'Anzeigen'}</Text>
               </View>
-            ) : null}
+            </TouchableOpacity>
+
+            {serviceExpanded ? (
+              <>
+                {isSvcPaused && svcState?.pausedUntil ? (
+                  <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Pausiert bis: {formatPauseUntil(svcState.pausedUntil)}</Text>
+                ) : (
+                  <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und liefert Push-Angebote auch bei gesperrtem Display.</Text>
+                )}
+
+                <View style={styles.serviceActionsRow}>
+                  {isSvcActive ? (
+                    <Button title="Ausschalten" variant="danger" size="sm" onPress={handleDisableService} disabled={svcBusy} />
+                  ) : (
+                    <Button title="Aktivieren" variant="primary" size="sm" onPress={handleEnableService} disabled={svcBusy} />
+                  )}
+                  {isSvcPaused ? (
+                    <Button title="Fortsetzen" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
+                  ) : null}
+                </View>
+
+                {isSvcActive ? (
+                  <View style={styles.serviceActionsRow}>
+                    <Button title="Pause 1h" variant="secondary" size="sm" onPress={() => handlePauseFor(60 * 60 * 1000, 'pause-1h')} disabled={svcBusy} />
+                    <Button title="Pause 3h" variant="secondary" size="sm" onPress={() => handlePauseFor(3 * 60 * 60 * 1000, 'pause-3h')} disabled={svcBusy} />
+                    <Button title="Bis morgen" variant="secondary" size="sm" onPress={handlePauseUntilTomorrow} disabled={svcBusy} />
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Tippe, um Optionen zu oeffnen.</Text>
+            )}
           </View>
 
           <View style={[styles.privacyCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
-            <Text style={[styles.privacyTitle, { color: t.colors.inkHigh }]}>Datenschutz & Push-Einwilligung</Text>
-            <Text style={[styles.privacyCopy, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund genutzt. Push informiert nur ueber passende Angebote in deiner Naehe.</Text>
-            <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
-            <View style={styles.serviceActionsRow}>
-              <Button title="Einwilligen" variant="primary" size="sm" onPress={() => handlePrivacyOptIn(true)} />
-              <Button title="Ablehnen" variant="secondary" size="sm" onPress={() => handlePrivacyOptIn(false)} />
-              <Button title="Mehr im Profil" variant="ghost" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
-            </View>
+            <TouchableOpacity style={styles.serviceHeader} activeOpacity={0.85} onPress={() => setPrivacyExpanded((v) => !v)}>
+              <Text style={[styles.privacyTitle, { color: t.colors.inkHigh }]}>Datenschutz & Push-Einwilligung</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success, marginTop: 0, marginBottom: 0 }]}>
+                  {privacyOptIn ? 'Einwilligung aktiv' : (privacyOptIn === false ? 'Einwilligung pausiert' : 'Nicht festgelegt')}
+                </Text>
+                <Text style={[styles.collapseToggle, { color: t.colors.inkLow }]}>{privacyExpanded ? 'Ausblenden' : 'Anzeigen'}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {!privacyExpanded ? (
+              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Tippe, um Optionen zu oeffnen.</Text>
+            ) : (
+              <>
+                <Text style={[styles.privacyCopy, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund genutzt. Push informiert nur ueber passende Angebote in deiner Naehe.</Text>
+                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
+                <View style={styles.serviceActionsRow}>
+                  <Button title="Einwilligen" variant="primary" size="sm" onPress={() => handlePrivacyOptIn(true)} />
+                  <Button title="Ablehnen" variant="secondary" size="sm" onPress={() => handlePrivacyOptIn(false)} />
+                  <Button title="Mehr im Profil" variant="ghost" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
+                </View>
+              </>
+            )}
           </View>
+
+          {fgNotice ? (
+            <View style={[styles.inlineNotice, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+              <Text style={[styles.inlineNoticeText, { color: t.colors.ink }]}>{fgNotice}</Text>
+            </View>
+          ) : null}
 
           {lastUpdated && (
             <Text style={[styles.updatedHint, { color: t.colors.inkLow }]}>
@@ -1197,6 +1252,11 @@ const styles = StyleSheet.create({
   privacyCopy: { fontSize: 12, lineHeight: 18, marginTop: 6 },
   privacyState: { fontSize: 12, fontWeight: '700', marginTop: 8, marginBottom: 10 },
 });
+
+
+
+
+
 
 
 

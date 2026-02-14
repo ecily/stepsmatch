@@ -321,3 +321,118 @@ Schnellbefehle (Merker)
 - Release-Build (Git Bash): `cd mobile/android && ./gradlew.bat assembleRelease`
 - APK installieren: `adb install -r "c:\coding\stepsmatch\mobile\android\app\build\outputs\apk\release\app-release.apk"`
 - APK Pfad: `mobile/android/app/build/outputs/apk/release/app-release.apk`
+
+## 13. Session-Update (2026-02-14, Live-Frontend Incident + Hotfix)
+
+Ausgangslage (kritisch)
+- Auf `https://www.stepsmatch.com` schlugen Registrierungen/Logins fehl (`ERR_NETWORK`, `ERR_CONNECTION_REFUSED`).
+- Browser-Fehler zeigte Requests an `localhost:8080/api/users/register`.
+- Impact: Live-User konnten nicht angelegt werden, Login/Admin ebenfalls betroffen.
+
+Root Cause
+- Frontend-API-Resolver in `frontend/src/api/axios.js` hatte einen localhost-Fallback.
+- Unter bestimmten Build-/Env-Konstellationen (fehlendes/fehlaufgeloestes `VITE_API_BASE_URL`) konnte der gehostete Build auf localhost fallen.
+
+Sofort-Hotfix (umgesetzt)
+- Datei angepasst: `frontend/src/api/axios.js`
+- Neue Policy:
+  - Auf gehosteten Domains (`nicht localhost`) wird localhost niemals als API verwendet.
+  - Falls `VITE_API_BASE_URL` fehlt, wird als Live-Fallback verwendet:
+    - `https://lobster-app-ie9a5.ondigitalocean.app/api`
+  - Falls gehostet und API trotzdem auf localhost aufloest, wird hart auf Live-Fallback ueberschrieben.
+  - Lokaler Dev-Fallback auf `http://localhost:8080/api` bleibt fuer localhost erhalten.
+
+Build-/Qualitaetsstatus
+- Frontend Build geprueft: `cd frontend && npm run build` -> erfolgreich.
+- Mobile Lint/Build-Status aus vorherigen Updates bleibt unveraendert (sauber).
+
+Wichtige Dateien (dieser Chat)
+- Geaendert: `frontend/src/api/axios.js`
+- Referenz geprueft:
+  - `frontend/.env.production`
+  - `frontend/.env.live`
+  - `frontend/vite.config.js`
+
+Operative Hinweise fuer Deploy (naechster Schritt)
+- Frontend neu deployen auf DO App Platform (empfohlen mit Clear Build Cache).
+- Sicherstellen:
+  - Build Command: `npm run build`
+  - Output Dir: `dist`
+  - Env: `VITE_API_BASE_URL=https://lobster-app-ie9a5.ondigitalocean.app/api`
+- Nach Deploy Browser Hard-Refresh (`Ctrl+F5`) und Register/Login/Admin erneut testen.
+
+Status am Ende dieser Session
+- User-Rueckmeldung: "soweit zufrieden".
+- Feldtest laeuft parallel weiter.
+- Naechster Chat soll auf `CONTEXT.md` referenzieren und direkt mit Testergebnissen fortsetzen.
+
+## 14. Session-Update (2026-02-14, Mobile-Finetuning final + Uebergabe)
+
+Ziel dieser Session
+- Letzte UX-/Verhaltens-Feinjustierung vor MVP-Freeze, ohne Aenderung der Kernarchitektur (Heartbeat/Geofence/Service-Control).
+
+Umgesetzte Kernpunkte (Mobile)
+1) Foreground-Notifications konsequent unterdrueckt
+- Anforderung: Solange App im Vordergrund offen ist, keine System-Pushes/Banner/Sound.
+- Umsetzung:
+  - `mobile/components/push/push-notifications.ts`:
+    - Foreground-Offer-Events werden als In-App-Signal emittiert (`offers:foreground-signal`) statt OS-Notification.
+    - Lokale Offer-Notifs im Foreground werden weiterhin deduped/markiert, aber nicht als System-Notification angezeigt.
+  - `mobile/components/PushInitializer.tsx`:
+    - Zweite globale `Notifications.setNotificationHandler` korrigiert (Root Cause fuer weiter auftretende Initial-Pushes).
+    - Bei App offen (`AppState != background`) jetzt: kein Banner, keine Liste, kein Alert, kein Sound.
+  - `mobile/app/_layout.js`:
+    - Beim Wechsel nach `active`: `dismissAllNotificationsAsync()` + `setBadgeCountAsync(0)` (Cleanup eventuell bereits gezeigter Notifs).
+
+2) In-App-Hinweis statt Push im Foreground
+- `mobile/app/(tabs)/index.js`:
+  - Lauscht auf `offers:foreground-signal`.
+  - Zeigt dezenten Inline-Hinweis fuer neue relevante Offers (statt System-Push).
+  - Triggered gleichzeitig einen leichten Feed-Refresh.
+
+3) DSGVO-Card: minimiert + wieder aufklappbar
+- `mobile/app/(tabs)/index.js`:
+  - DSGVO-Bereich ist jetzt collapsible.
+  - Minimierte Zeile ist antippbar und klappt Optionen wieder aus.
+  - Status wird in der Header-Zeile angezeigt, Inhalte/Aktionen im Expanded-State.
+
+4) Hintergrunddienst-Card: gleiche Collapse-Logik
+- `mobile/app/(tabs)/index.js`:
+  - Hintergrunddienst-Bereich ebenfalls aufklappbar/zuklappbar.
+  - Im kompakten Zustand nur Status + Hinweis, Optionen im Expanded-State.
+
+5) Logout beendet Hintergrunddienst sicher
+- `mobile/app/(tabs)/ProfileScreen.js`:
+  - Vor Logout/Clear: `setServiceEnabled(false, 'logout')` + `stopBackgroundServices('logout')`.
+
+6) Karten-/Navigation-Feinschliff aus dieser Session
+- `mobile/app/(tabs)/NavigationMap.jsx`:
+  - Beim Aufruf initial auf aktuellen User-Standort zentrieren.
+- `mobile/app/(tabs)/NavigationScreen.js`:
+  - Fit auf Route/Koordinaten statt unnoetig weitem Zoom.
+  - Fussgaenger-orientiertes Follow-Verhalten (Kamera/Heading/Pitch-Logik).
+  - Positive Arrival-Meldung bei Zielerreichung.
+
+Qualitaetsstatus
+- `npm run lint` in `mobile/` mehrfach gruen (0 errors, 0 warnings) nach den finalen Anpassungen.
+
+Wichtige Arbeitspraeferenz des Users (verbindlich)
+- Build/Install/Uninstall IMMER manuell durch User.
+- Befehle IMMER in Bash-Form bereitstellen.
+- Keine automatische Ausfuehrung dieser Schritte durch den Agent ohne explizite neue Aufforderung.
+
+Bash-Merker (manuell)
+- Lint:
+  - `cd /c/coding/stepsmatch/mobile && npm run lint`
+- Release APK:
+  - `cd /c/coding/stepsmatch/mobile/android && ./gradlew.bat assembleRelease`
+- Uninstall/Install:
+  - `adb uninstall com.ecily.mobile`
+  - `adb install -r "/c/coding/stepsmatch/mobile/android/app/build/outputs/apk/release/app-release.apk"`
+
+MVP-Status / Uebergabe
+- User-Einschaetzung: App ist MVP-bereit.
+- Naechster Chat-Fokus (explizit gewuenscht):
+  1. Frontend (Web/Admin) UX/UI vollstaendig optimieren.
+  2. Mobile-Funktionalitaet stabil lassen, nur falls explizit angefordert anfassen.
+  3. CONTEXT.md als alleinige Projektwahrheit weiterverwenden.

@@ -29,6 +29,30 @@ function distanceMeters(a, b) {
   return Math.round(2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa)));
 }
 
+function bearingDegrees(from, to) {
+  if (!from || !to) return 0;
+  const y = Math.sin(toRad(to.longitude - from.longitude)) * Math.cos(toRad(to.latitude));
+  const x =
+    Math.cos(toRad(from.latitude)) * Math.sin(toRad(to.latitude)) -
+    Math.sin(toRad(from.latitude)) * Math.cos(toRad(to.latitude)) * Math.cos(toRad(to.longitude - from.longitude));
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+}
+
+function nearestRouteIndex(route, point) {
+  if (!Array.isArray(route) || route.length < 2 || !point) return 0;
+  let best = 0;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < route.length; i += 1) {
+    const d = distanceMeters(route[i], point);
+    if (d != null && d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
 function resolveDirectionsKey() {
   const extra =
     Constants?.expoConfig?.extra ||
@@ -63,6 +87,7 @@ export default function NavigationScreen() {
   const [routeError, setRouteError] = useState(null);
   const [follow, setFollow] = useState(true);
   const [arrived, setArrived] = useState(false);
+  const [showArrivalCard, setShowArrivalCard] = useState(false);
   const [mapType, setMapType] = useState('standard');
 
   const mapRef = useRef(null);
@@ -78,8 +103,20 @@ export default function NavigationScreen() {
 
   const initialRegion = useMemo(() => {
     const p = userLocation || offerPos || FALLBACK_CENTER;
-    return { latitude: p.latitude, longitude: p.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 };
+    return { latitude: p.latitude, longitude: p.longitude, latitudeDelta: 0.012, longitudeDelta: 0.012 };
   }, [userLocation, offerPos]);
+
+  const fitToRoute = useCallback(() => {
+    if (!mapRef.current) return;
+    const points = routeCoords.length >= 2 ? routeCoords : [userLocation, offerPos].filter(Boolean);
+    if (points.length < 2) return;
+    try {
+      mapRef.current.fitToCoordinates(points, {
+        edgePadding: { top: 120, right: 70, bottom: 180, left: 70 },
+        animated: true,
+      });
+    } catch {}
+  }, [routeCoords, userLocation, offerPos]);
 
   useEffect(() => {
     let mounted = true;
@@ -114,11 +151,6 @@ export default function NavigationScreen() {
           (next) => {
             const point = { latitude: next.coords.latitude, longitude: next.coords.longitude };
             setUserLocation(point);
-            if (follow) {
-              try {
-                mapRef.current?.animateCamera({ center: point }, { duration: 350 });
-              } catch {}
-            }
           }
         );
       } catch (e) {
@@ -135,7 +167,7 @@ export default function NavigationScreen() {
       } catch {}
       posSub.current = null;
     };
-  }, [id, follow]);
+  }, [id]);
 
   const loadRoute = useCallback(async (origin, dest) => {
     if (!origin || !dest) return;
@@ -146,7 +178,6 @@ export default function NavigationScreen() {
     }
 
     try {
-
       setRouteError(null);
       const coords = await directionsFetch(origin, dest, DIRECTIONS_KEY, 'walking');
       if (Array.isArray(coords) && coords.length >= 2) {
@@ -157,8 +188,6 @@ export default function NavigationScreen() {
     } catch (e) {
       setRouteError(String(e?.message || 'Route konnte nicht berechnet werden.'));
       setRouteCoords([origin, dest]);
-    } finally {
-
     }
   }, []);
 
@@ -169,12 +198,38 @@ export default function NavigationScreen() {
   }, [userLocation, offerPos, loadRoute]);
 
   useEffect(() => {
+    fitToRoute();
+  }, [fitToRoute]);
+
+  useEffect(() => {
+    if (!follow || !userLocation || !mapRef.current) return;
+
+    const idx = nearestRouteIndex(routeCoords, userLocation);
+    const nextPoint = routeCoords[Math.min(idx + 1, routeCoords.length - 1)] || offerPos;
+    const heading = bearingDegrees(userLocation, nextPoint || offerPos);
+
+    try {
+      mapRef.current.animateCamera(
+        {
+          center: userLocation,
+          heading,
+          pitch: 46,
+          zoom: 18,
+          altitude: 380,
+        },
+        { duration: 400 }
+      );
+    } catch {}
+  }, [follow, userLocation, routeCoords, offerPos]);
+
+  useEffect(() => {
     if (!userLocation || !offerPos) return;
     const m = distanceMeters(userLocation, offerPos);
     setRemaining(m);
     if (m != null && m <= ARRIVAL_THRESHOLD_METERS && !arrivalNotified.current) {
       arrivalNotified.current = true;
       setArrived(true);
+      setShowArrivalCard(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [userLocation, offerPos]);
@@ -192,7 +247,7 @@ export default function NavigationScreen() {
     if (remaining == null) return '...';
     if (remaining <= ARRIVAL_THRESHOLD_METERS) return 'Ziel erreicht';
     const mins = Math.max(1, Math.ceil(remaining / 80));
-    return `${mins} min`; // walking rough estimate
+    return `${mins} min`;
   }, [remaining]);
 
   if (loading) {
@@ -267,6 +322,16 @@ export default function NavigationScreen() {
         {routeCoords.length < 2 ? <Text style={[styles.warn, { color: t.colors.inkLow }]}>Route wird vorbereitet ...</Text> : null}
       </View>
 
+      {showArrivalCard ? (
+        <View style={[styles.arrivalCard, { top: insets.top + 94, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+          <Text style={[styles.arrivalTitle, { color: t.colors.success }]}>Du bist angekommen</Text>
+          <Text style={[styles.arrivalText, { color: t.colors.ink }]}>Super, dein Ziel ist erreicht. Viel Spass beim Angebot.</Text>
+          <TouchableOpacity onPress={() => setShowArrivalCard(false)} style={[styles.arrivalClose, { borderColor: t.colors.divider }]}>
+            <Text style={{ color: t.colors.ink, fontWeight: '700' }}>OK</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <View style={[styles.fabColumn, { bottom: 110 + insets.bottom }]}> 
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}
@@ -274,7 +339,7 @@ export default function NavigationScreen() {
             if (!userLocation) return;
             setFollow(true);
             try {
-              mapRef.current?.animateCamera({ center: userLocation }, { duration: 280 });
+              mapRef.current?.animateCamera({ center: userLocation, zoom: 18, pitch: 46 }, { duration: 280 });
             } catch {}
           }}
         >
@@ -332,6 +397,26 @@ const styles = StyleSheet.create({
   offerTitle: { fontSize: 16, fontWeight: '900' },
   offerMeta: { marginTop: 4, fontSize: 13 },
   warn: { marginTop: 6, fontSize: 12 },
+
+  arrivalCard: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  arrivalTitle: { fontSize: 15, fontWeight: '900' },
+  arrivalText: { marginTop: 4, fontSize: 13 },
+  arrivalClose: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
 
   fabColumn: {
     position: 'absolute',

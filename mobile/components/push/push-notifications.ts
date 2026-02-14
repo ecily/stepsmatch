@@ -126,9 +126,18 @@ function DEDUE_LOG_FIX_GUARD() {
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const c: any = notification?.request?.content || {};
-    if (isForeground() && isOfferNotification(c)) {
-      if (DEDUE_LOG_FIX_GUARD()) console.log('[FG-SUPPRESS] remote offer suppressed in foreground');
-      // keine Haptik, kein In-App-Signal, kein Banner
+    if (isForeground()) {
+      if (isOfferNotification(c)) {
+        const data = c?.data || {};
+        DeviceEventEmitter.emit('offers:foreground-signal', {
+          offerId: typeof data?.offerId === 'string' ? data.offerId : '',
+          title: c?.title || 'Neues Angebot in deiner Naehe',
+        });
+        if (DEDUE_LOG_FIX_GUARD()) console.log('[FG-SUPPRESS] remote offer suppressed in foreground');
+      } else if (DEDUE_LOG_FIX_GUARD()) {
+        console.log('[FG-SUPPRESS] notification suppressed in foreground');
+      }
+      // App im Vordergrund: keine System-Notification anzeigen
       return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
     }
     return { shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false };
@@ -279,6 +288,10 @@ export async function presentLocalOfferNotification(
     await setOfferPushState(offerId, {
       lastLocalNotifiedAt: now,
       ...(source === 'synthetic-enter' ? { lastSyntheticEnterAt: now } : null),
+    });
+    DeviceEventEmitter.emit('offers:foreground-signal', {
+      offerId,
+      title: meta?.title || 'Neues Angebot in deiner Naehe',
     });
     return;
   }

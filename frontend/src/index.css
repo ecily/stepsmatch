@@ -2,3 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --sm-bg: #f6fbff;
+    --sm-surface: #ffffff;
+    --sm-ink: #0f172a;
+    --sm-muted: #475569;
+    --sm-primary: #0ea5e9;
+    --sm-primary-strong: #0284c7;
+  }
+
+  body {
+    color: var(--sm-ink);
+    background:
+      radial-gradient(900px 500px at 0% 0%, rgba(56, 189, 248, 0.12), transparent 55%),
+      radial-gradient(700px 420px at 100% 10%, rgba(99, 102, 241, 0.1), transparent 55%),
+      var(--sm-bg);
+  }
+}
+
+@layer components {
+  .sm-shell {
+    @apply max-w-7xl mx-auto px-6;
+  }
+
+  .sm-card {
+    @apply rounded-3xl border border-sky-100 bg-white shadow-sm;
+  }
+
+  .sm-btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 font-semibold text-white transition hover:bg-sky-700;
+  }
+
+  .sm-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50;
+  }
+}

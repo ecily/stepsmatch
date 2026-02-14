@@ -326,12 +326,18 @@ export default function OfferDetailsScreen() {
           )}
 
           <View style={[styles.privacyBox, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
-            <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Datenschutz-Hinweis</Text>
-            <Text style={[styles.infoSub, { color: t.colors.inkLow }]}>Standortdaten werden fuer passende Angebote und Navigation genutzt. Push-Mitteilungen basieren auf deiner Einwilligung.</Text>
-            <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
-            <View style={{ marginTop: 8, width: 180 }}>
-              <Button title="Im Profil aendern" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
-            </View>
+            {privacyOptIn ? (
+              <Text style={[styles.privacyState, { color: t.colors.success }]}>DSGVO: Einwilligung aktiv.</Text>
+            ) : (
+              <>
+                <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Datenschutz-Hinweis</Text>
+                <Text style={[styles.infoSub, { color: t.colors.inkLow }]}>Standortdaten werden fuer passende Angebote und Navigation genutzt. Push-Mitteilungen basieren auf deiner Einwilligung.</Text>
+                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : 'Einwilligung pausiert'}</Text>
+                <View style={{ marginTop: 8, width: 180 }}>
+                  <Button title="Im Profil aendern" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
+                </View>
+              </>
+            )}
           </View>
         </ScrollView>
 

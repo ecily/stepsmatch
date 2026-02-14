@@ -114,6 +114,8 @@ export default function RootLayout() {
     const sub = AppState.addEventListener('change', async (next) => {
       appStateRef.current = next;
       if (next === 'active' && appReady) {
+        try { await Notifications.dismissAllNotificationsAsync(); } catch {}
+        try { await Notifications.setBadgeCountAsync(0); } catch {}
         try { await ensureBgAfterOnboarding(); } catch {}
       }
     });
@@ -154,3 +156,4 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+

@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
+import { stopBackgroundServices } from '../../components/PushInitializer';
+import { setServiceEnabled } from '../../components/push/service-control';
 
 const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
 
@@ -44,6 +46,10 @@ export default function ProfileScreen() {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
+          try {
+            await setServiceEnabled(false, 'logout');
+            await stopBackgroundServices('logout');
+          } catch {}
           await AsyncStorage.clear();
           router.replace('/(auth)/LoginScreen');
         },

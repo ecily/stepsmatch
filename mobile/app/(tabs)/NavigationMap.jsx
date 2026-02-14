@@ -69,6 +69,7 @@ export default function NavigationMap() {
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
+  const hasCenteredRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -150,6 +151,14 @@ export default function NavigationMap() {
     loadOffers();
   }, [loadOffers]);
 
+
+  useEffect(() => {
+    if (!userPos || hasCenteredRef.current) return;
+    hasCenteredRef.current = true;
+    try {
+      mapRef.current?.animateToRegion(regionForRadius(userPos, VISIBLE_RADIUS_M), 450);
+    } catch {}
+  }, [userPos]);
   const rows = useMemo(() => {
     return (rawOffers || [])
       .map((offer) => {

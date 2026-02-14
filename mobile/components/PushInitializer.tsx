@@ -17,13 +17,26 @@ import { getServiceState, isServiceActive, isServiceActiveNow } from './push/ser
 // Notification handler
 // ────────────────────────────────────────────────────────────
 Notifications.setNotificationHandler({
-  handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (): Promise<Notifications.NotificationBehavior> => {
+    const state = AppState.currentState;
+    const appOpen = state !== 'background';
+    if (appOpen) {
+      return {
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      };
+    }
+    return {
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 // ────────────────────────────────────────────────────────────
@@ -2057,4 +2070,5 @@ export async function getBgStatus() {
 export async function kickstartBackgroundLocation() { await startAggressiveBgLocation(); }
 export const sendHeartbeat = sendHeartbeatOnce;
 export const sendRoundtripTest = roundtripTest;
+
 

@@ -1,186 +1,50 @@
-// C:\coding\stepsmatch\frontend\src\pages\LandingPage.jsx
-// src/pages/LandingPage.jsx
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
-import { motion } from "motion/react";
-import Navbar from "../components/Navbar";
-import logoIcon from "../assets/stepsmatch-icon.svg"; // bleibt für Footer
-import heroBg from "../assets/hero-bg-pitch2.jpg";
 import { QRCodeCanvas } from "qrcode.react";
+import Navbar from "../components/Navbar";
+import logoIcon from "../assets/stepsmatch-icon.svg";
+import heroBg from "../assets/hero-bg-urban.jpg";
 
-/* ───────────────── Animations ───────────────── */
-const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 14 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.55, ease: "easeOut", delay } },
-});
-const fadeIn = (delay = 0) => ({
-  initial: { opacity: 0 },
-  animate: { opacity: 1, transition: { duration: 0.55, ease: "easeOut", delay } },
-});
-
-/* ───────────────── Phone Mockup ───────────────── */
-const PhonePushMock = () => {
-  return (
-    <motion.div className="relative mx-auto mt-10 md:mt-0 w-[290px] sm:w-[320px]" {...fadeUp(0.2)}>
-      {/* Glow */}
-      <div
-        className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-cyan-400/10 blur-2xl rounded-[40px]"
-        aria-hidden
-      />
-      {/* Phone frame */}
-      <div className="relative rounded-[36px] border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl overflow-hidden">
-        {/* Notch */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-0 h-6 w-36 bg-black/70 rounded-b-2xl z-20" />
-        {/* Map placeholder */}
-        <div className="h-[520px] w-full bg-gradient-to-br from-blue-900/30 via-blue-700/30 to-indigo-700/30 relative">
-          {/* Radius bubble */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div className="relative">
-              <span className="absolute inset-0 rounded-full bg-blue-400/20 animate-ping" />
-              <span className="block h-28 w-28 rounded-full bg-blue-500/25 border border-white/30" />
-            </div>
-          </div>
-          {/* Location dot */}
-          <div className="absolute left-1/2 top-[54%] -translate-x-1/2 -translate-y-1/2">
-            <span className="block h-3 w-3 rounded-full bg-emerald-400 shadow shadow-emerald-900/40" />
-          </div>
-        </div>
-        {/* Push bubble */}
-        <motion.div className="absolute left-4 right-4 top-16" {...fadeUp(0.35)}>
-          <div className="rounded-2xl bg-white text-gray-900 shadow-xl shadow-black/10 border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">S</div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">StepsMatch</div>
-                <div className="text-xs text-gray-600">
-                  <b>Jetzt in der Nähe:</b> Pasta ‧ <b>−10%</b> ‧ <b>120 m</b> ‧ <b>11–14 Uhr</b>
-                </div>
-              </div>
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-};
-
-/* ───────────────── APK MODAL ───────────────── */
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
-    <div
-      aria-modal="true"
-      role="dialog"
-      aria-labelledby="apk-modal-title"
-      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px]" onClick={onClose} />
-      {/* Dialog */}
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.25 }}
-        className="relative z-[101] mx-4 sm:mx-6 w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200"
-      >
-        <div className="p-6 sm:p-8">
-          <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#0d4ea6] text-white grid place-items-center font-bold shrink-0">
-              S
-            </div>
-            <div className="flex-1">
-              <h3 id="apk-modal-title" className="text-xl font-extrabold tracking-tight">
-                Sicher & einfach: App per QR-Code installieren
-              </h3>
-              <p className="mt-1 text-gray-700">
-                Scanne den Code mit der Kamera deines Android-Phones. Der Browser startet den APK-Download. iOS
-                folgt im Beta-Programm.
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                <b>Version 2.0 19.10.25 – FGS, UX/UI, Onboarding.</b>
-              </p>
-            </div>
-          </div>
-
-          {/* QR-Code */}
-          <div className="mt-6 flex flex-col items-center">
-            <div className="rounded-3xl p-4 border border-gray-200 bg-white shadow-sm ring-4 ring-[#0d4ea6]/10">
-              <QRCodeCanvas value={qrValue} size={232} includeMargin level="M" />
-            </div>
-            <ol className="mt-6 w-full grid gap-2 text-sm text-gray-700">
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Kamera öffnen oder QR-Scanner verwenden
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> Code scannen → Download bestätigen
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-[#0d4ea6]" /> „Installieren“ tippen (ggf. „Unbekannte
-                Apps erlauben“)
-              </li>
-            </ol>
-          </div>
-
-          {/* Hinweise & Controls */}
-          <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-            <p className="text-xs text-gray-500">Download erfolgt über unseren gesicherten Server.</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={onDontShowAgain} className="text-sm underline underline-offset-2 hover:text-gray-700">
-                Nicht mehr anzeigen
-              </button>
-              <button
-                onClick={onClose}
-                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition"
-              >
-                Schließen
-              </button>
-            </div>
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} />
+      <div className="relative z-[101] mx-4 w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-6 shadow-2xl">
+        <h3 className="text-xl font-extrabold text-slate-900">App installieren in 30 Sekunden</h3>
+        <p className="mt-2 text-slate-600">QR-Code scannen, APK laden, fertig. Dann bekommst du passende Angebote in deiner N�he.</p>
+        <div className="mt-5 flex justify-center">
+          <div className="rounded-3xl border border-sky-100 p-4">
+            <QRCodeCanvas value={qrValue} size={220} includeMargin level="M" />
           </div>
         </div>
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          aria-label="Modal schließen"
-          className="absolute top-3 right-3 h-9 w-9 grid place-items-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.89 18.3 9.18 12 2.89 5.71 4.3 4.29l6.29 6.3 6.29-6.3z" />
-          </svg>
-        </button>
-      </motion.div>
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <button onClick={onDontShowAgain} className="text-sm text-slate-500 underline">Nicht mehr anzeigen</button>
+          <button onClick={onClose} className="sm-btn-secondary">Schlie�en</button>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ───────────────── Page ───────────────── */
-const LandingPage = () => {
-  const title = "StepsMatch – finden. nicht suchen.";
-  const description =
-    "StepsMatch pingt nur dann, wenn ein Angebot genau jetzt in deiner Nähe wirklich passt – Zero-Search, DSGVO-konform und in Echtzeit.";
-  const url = "https://www.stepsmatch.com/";
-  const ogImage = heroBg;
-  const twitterHandle = "@stepsmatch";
+export default function LandingPage() {
   const location = useLocation();
+  const title = "StepsMatch - finden. nicht suchen.";
+  const description = "Die App zeigt Menschen genau jetzt passende Angebote in der N�he. Anbieter erreichen genau die richtigen Leute im richtigen Moment.";
+  const url = "https://www.stepsmatch.com/";
 
-  // Backend-Redirect statt Direktlink: {VITE_API_BASE_URL}/apk  (API_BASE_URL enthält /api am Ende)
-  // -> wir nehmen die Origin des API-Endpoints als Backend-Base.
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
   const backendBaseUrl = apiBaseUrl ? String(apiBaseUrl).replace(/\/api\/?$/, "") : "https://lobster-app-ie9a5.ondigitalocean.app";
   const APK_REDIRECT_URL = `${backendBaseUrl}/apk`;
-
   const [apkOpen, setApkOpen] = React.useState(false);
 
-  // Guard/Trigger: ?apk=1 ODER (NDA vorhanden + noch nicht gesehen)
   React.useEffect(() => {
     try {
       const params = new URLSearchParams(location.search);
       const fromQuery = params.get("apk") === "1";
-
       const ndaAcceptedAt = localStorage.getItem("ndaAcceptedAt");
       const modalSeen = localStorage.getItem("apkModalSeen") === "1";
 
@@ -194,496 +58,149 @@ const LandingPage = () => {
       }
 
       if (ndaAcceptedAt && !modalSeen) setApkOpen(true);
-    } catch {
-      // no-op
+    } catch (e) {
+      void e;
     }
   }, [location.pathname, location.search, location.hash]);
 
-  const handleCloseApk = () => setApkOpen(false);
-  const handleDontShowAgain = () => {
-    try {
-      localStorage.setItem("apkModalSeen", "1");
-    } catch {}
-    setApkOpen(false);
-  };
-
-  const jsonLdOrganization = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "StepsMatch",
-    url,
-    logo: logoIcon,
-    sameAs: ["https://www.ecily.com"],
-  };
-
-  const jsonLdApp = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: "StepsMatch",
-    operatingSystem: "Android",
-    applicationCategory: "LifestyleApplication",
-    description,
-    offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" },
-  };
+  const cards = [
+    {
+      title: "F�r Nutzer",
+      lead: "Du suchst nicht mehr.",
+      text: "Du bekommst nur Angebote, die jetzt passen: nah, relevant, g�ltig.",
+      cta: { label: "So funktioniert es", href: "/why" },
+    },
+    {
+      title: "F�r Anbieter",
+      lead: "Du erreichst Leute im richtigen Moment.",
+      text: "Dein Angebot wird genau dann sichtbar, wenn Menschen in der N�he sind.",
+      cta: { label: "Als Anbieter starten", href: "/register" },
+    },
+    {
+      title: "Warum neu",
+      lead: "Ort x Zeit x Interesse.",
+      text: "Nicht Suchmaschine, sondern Live-Matching. Genau das ist StepsMatch.",
+      cta: { label: "Neuheit ansehen", href: "/why" },
+    },
+  ];
 
   return (
-    <div className="bg-white min-h-screen flex flex-col font-sans text-gray-900">
-      {/* ───────── SEO / SHARING ───────── */}
+    <div className="min-h-screen text-slate-900">
       <Helmet>
         <title>{title}</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={url} />
-        <link rel="preload" as="image" href={heroBg} />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        {/* OG / Twitter */}
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="StepsMatch" />
-        <meta property="og:title" content={title} />
-        <meta property="og:description" content={description} />
-        <meta property="og:url" content={url} />
-        <meta property="og:image" content={ogImage} />
-        <meta property="og:image:alt" content="StepsMatch – Zero-Search Benachrichtigungsvorschau" />
-        <meta name="twitter:card" content="summary_large_image" />
-        {twitterHandle && <meta name="twitter:site" content={twitterHandle} />}
-        <meta name="twitter:title" content={title} />
-        <meta name="twitter:description" content={description} />
-        <meta name="twitter:image" content={ogImage} />
-        {/* JSON-LD */}
-        <script type="application/ld+json">{JSON.stringify(jsonLdOrganization)}</script>
-        <script type="application/ld+json">{JSON.stringify(jsonLdApp)}</script>
       </Helmet>
 
-      {/* ───────── NAVBAR ───────── */}
       <Navbar />
 
-      {/* ───────── HERO ───────── */}
-      <header
-        className="relative w-full min-h-[92vh] md:min-h-screen bg-cover bg-center pt-16"
-        style={{ backgroundImage: `url(${heroBg})` }}
-        aria-label="Hero Hintergrundbild Stadtansicht"
-      >
-        {/* Overlay for contrast */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/65 to-black/85" />
-        {/* Decorative glows */}
-        <div
-          className="pointer-events-none absolute inset-0 [background:radial-gradient(900px_500px_at_5%_10%,rgba(59,130,246,.25),transparent_40%),radial-gradient(900px_500px_at_95%_0%,rgba(99,102,241,.18),transparent_45%)]"
-          aria-hidden
-        />
-        {/* Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24">
-          <div className="grid md:grid-cols-2 gap-10 items-center">
-            {/* Left: Text */}
-            <motion.div className="max-w-3xl" {...fadeIn(0.05)}>
-              {/* Brand Chip */}
-              <motion.span
-                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur"
-                {...fadeUp(0.1)}
-              >
-                <img src={logoIcon} alt="StepsMatch" className="h-4 w-4 rounded-sm" />
-                StepsMatch
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Zero-Search • DSGVO
-              </motion.span>
+      <header className="relative overflow-hidden border-b border-sky-100">
+        <div className="absolute inset-0 bg-cover bg-center opacity-15" style={{ backgroundImage: `url(${heroBg})` }} />
+        <div className="relative sm-shell py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-800">
+              <img src={logoIcon} alt="StepsMatch" className="h-4 w-4" />
+              Neu: Live-Angebote ohne Suchen
+            </span>
+            <h1 className="mt-5 text-5xl md:text-7xl font-black tracking-tight text-slate-900">finden.<br />nicht suchen.</h1>
+            <p className="mt-6 text-lg text-slate-700 max-w-2xl">
+              StepsMatch ist die App, die Menschen und lokale Angebote automatisch zusammenbringt.
+              Wenn es in deiner N�he jetzt wirklich passt, bekommst du einen Hinweis.
+              Kein Scrollen. Kein Suchen. Kein Streuverlust.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link to="/register" className="sm-btn-primary">Anbieter kostenlos starten</Link>
+              <Link to="/login" className="sm-btn-secondary">Anbieter Login</Link>
+              <button onClick={() => setApkOpen(true)} className="sm-btn-secondary">App per QR laden</button>
+            </div>
+          </div>
 
-              {/* Headline with premium visual emphasis */}
-              <motion.h1
-                className="mt-5 text-[3.2rem] leading-[1.02] md:text-7xl font-black tracking-tight text-white relative"
-                {...fadeUp(0.15)}
-              >
-                {/* Animated gradient text for 'Finden.' */}
-                <motion.span
-                  className="inline-block"
-                  initial={{ y: 6, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
-                >
-                  <motion.span
-                    className="inline-block"
-                    animate={{ backgroundPositionX: ["0%", "100%"] }}
-                    transition={{ repeat: Infinity, repeatType: "mirror", duration: 6, ease: "linear" }}
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(90deg, #a7f3d0, #93c5fd, #a5b4fc, #93c5fd, #a7f3d0)",
-                      backgroundSize: "200% 100%",
-                      WebkitBackgroundClip: "text",
-                      backgroundClip: "text",
-                      color: "transparent",
-                    }}
-                  >
-                    Finden.
-                  </motion.span>
-
-                  {/* Underline grow animation */}
-                  <motion.span className="block relative" initial={false}>
-                    <motion.span
-                      className="absolute left-0 -bottom-2 h-2 rounded-full"
-                      style={{
-                        right: 0,
-                        background:
-                          "linear-gradient(90deg, rgba(16,185,129,0.9), rgba(59,130,246,0.9), rgba(99,102,241,0.9))",
-                      }}
-                      initial={{ scaleX: 0 }}
-                      animate={{ scaleX: 1 }}
-                      transition={{ duration: 0.8, ease: "easeOut", delay: 0.35 }}
-                    />
-                  </motion.span>
-                </motion.span>
-
-                <span className="block text-white/90">Nicht suchen.</span>
-              </motion.h1>
-
-              {/* ⬇️ REPLACED: Hervorgehobenes Marketing-Statement */}
-              <motion.div className="mt-6" {...fadeUp(0.25)}>
-                <div className="relative rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-5 py-4 shadow-lg text-white">
-                  {/* Akzentleiste links */}
-                  <span
-                    aria-hidden
-                    className="absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-emerald-400 via-sky-400 to-indigo-400"
-                  />
-                  <p className="text-base md:text-lg leading-relaxed">
-                    <strong>StepsMatch</strong> ist eine <b>APP</b>, die dich im{" "}
-                    <b>genau richtigen Moment</b> mit dem <b>genau richtigen Angebot</b> zusammenbringt:
-                    <span className="whitespace-nowrap"> Ort × Zeit × Interesse</span> → <b>ein relevanter Push</b>,
-                    <span className="whitespace-nowrap"> keine Suche</span>,{" "}
-                    <span className="whitespace-nowrap">kein Streuverlust</span>.
-                  </p>
-                </div>
-              </motion.div>
-
-              {/* CTAs */}
-              <motion.div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3" {...fadeUp(0.3)}>
-                <Link
-                  to="/register"
-                  className="group inline-flex items-center justify-between rounded-2xl bg-white px-5 py-4 text-base font-semibold text-blue-700 shadow-lg shadow-black/10 hover:bg-gray-100 transition"
-                  title="Anbieter registrieren"
-                >
-                  Anbieter
-                  <span className="ml-3 text-blue-700/70 group-hover:translate-x-0.5 transition">→</span>
-                </Link>
-                {/* Nutzer → Login */}
-                <Link
-                  to="/login"
-                  className="group inline-flex items-center justify-between rounded-2xl border border-white/30 bg-white/10 px-5 py-4 text-base font-semibold text-white hover:bg-white/15 transition"
-                  title="Login"
-                >
-                  Nutzer
-                  <span className="ml-3 opacity-80 group-hover:translate-x-0.5 transition">→</span>
-                </Link>
-                <Link
-                  to="/pitch"
-                  className="group inline-flex items-center justify-between rounded-2xl bg-blue-600/90 px-5 py-4 text-base font-semibold text-white shadow-lg hover:bg-blue-700 transition"
-                  title="Investor Pitch"
-                >
-                  Investoren
-                  <span className="ml-3 opacity-90 group-hover:translate-x-0.5 transition">→</span>
-                </Link>
-              </motion.div>
-
-              {/* Trust bar */}
-              <motion.div className="mt-8 flex flex-wrap items-center gap-4 text-white/85" {...fadeUp(0.35)}>
-                {["DSGVO", "Zero-Search", "≤30 s Push", "Keine Wege-Tracks"].map((t, i) => (
-                  <div key={i} className="inline-flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white/85" />
-                    <span className="tracking-wide">{t}</span>
-                  </div>
-                ))}
-              </motion.div>
-
-              {/* Admin Demo (dezent) */}
-              <motion.div className="mt-6" {...fadeUp(0.4)}>
-                <Link
-                  to="/admin/offers"
-                  className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/90 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 transition"
-                  title="Admin-Demo: Angebote auf der Karte"
-                >
-                  Admin-Demo öffnen
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="scale(-1,1) translate(-24,0)" />
-                  </svg>
-                </Link>
-              </motion.div>
-            </motion.div>
-
-            {/* Right: Visual */}
-            <div className="hidden md:block">
-              <PhonePushMock />
+          <div className="sm-card p-7">
+            <p className="text-sm font-semibold text-sky-700">MVP in einem Satz</p>
+            <h2 className="mt-2 text-2xl font-bold">Die richtigen Menschen sehen das richtige Angebot zur richtigen Zeit am richtigen Ort.</h2>
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              <div className="rounded-2xl bg-sky-50 p-3 border border-sky-100"><b>Ort</b><p className="text-slate-600">in deiner N�he</p></div>
+              <div className="rounded-2xl bg-sky-50 p-3 border border-sky-100"><b>Zeit</b><p className="text-slate-600">jetzt g�ltig</p></div>
+              <div className="rounded-2xl bg-sky-50 p-3 border border-sky-100"><b>Interesse</b><p className="text-slate-600">wirklich passend</p></div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* ───────── USP / PERSONAS ───────── */}
-      <section id="features" className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-3xl">
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-              <span className="text-blue-700">Warum StepsMatch?</span>
-            </h2>
+      <section className="sm-shell py-16">
+        <h2 className="text-3xl md:text-4xl font-extrabold">Warum StepsMatch sofort verst�ndlich ist</h2>
+        <p className="mt-3 text-lg text-slate-600 max-w-3xl">Stell dir vor: Du gehst durch die Stadt. Genau dann meldet sich nur das Angebot, das jetzt f�r dich Sinn macht. Das ist alles.</p>
+        <div className="mt-8 grid md:grid-cols-3 gap-5">
+          {cards.map((c) => (
+            <div key={c.title} className="sm-card p-6">
+              <p className="text-xs uppercase tracking-wide text-slate-500">{c.title}</p>
+              <h3 className="mt-2 text-xl font-bold">{c.lead}</h3>
+              <p className="mt-2 text-slate-600">{c.text}</p>
+              <Link to={c.cta.href} className="mt-4 inline-block text-sky-700 font-semibold">{c.cta.label} {"->"}</Link>
+            </div>
+          ))}
+        </div>
+      </section>
 
-            {/* NEW copy: 2–3 extrem klare Sätze */}
-            <p className="mt-3 text-gray-700 text-lg">
-              StepsMatch meldet sich nur, wenn in deiner Nähe gerade etwas wirklich passt. Keine Suche, kein Spam – du
-              wirst gefunden. Einzigartig, weil Ort × Zeit × Interesse in <b>Echtzeit</b> gematcht wird –{" "}
-              <span className="whitespace-nowrap">ohne Wegetracking.</span>
-            </p>
+      <section className="bg-white border-y border-sky-100">
+        <div className="sm-shell py-14 grid md:grid-cols-2 gap-8 items-start">
+          <div className="sm-card p-6">
+            <p className="text-sm font-semibold text-sky-700">F�r App-Nutzer</p>
+            <h3 className="mt-2 text-2xl font-bold">Mehr gute Treffer, weniger L�rm.</h3>
+            <ul className="mt-4 space-y-2 text-slate-700">
+              <li>Nur relevante Hinweise statt Werbeflut</li>
+              <li>Angebote mit echtem Bezug zu deinem Ort</li>
+              <li>Sofort reagieren und Route starten</li>
+            </ul>
           </div>
-
-          <div className="mt-10 grid md:grid-cols-3 gap-6">
-            {[
-              {
-                title: "Für Nutzer",
-                lead: "Nichts mehr suchen.",
-                text: "Nur Angebote, die jetzt passen – am Ort, zur Zeit, mit deinen Interessen.",
-                cta: { label: "So funktioniert’s", href: "https://www.stepsmatch.com/why" },
-              },
-              {
-                title: "Für Anbieter",
-                lead: "Im richtigen Moment sichtbar.",
-                text: "Erreiche Menschen in der Nähe. Null Streuverlust, volle Relevanz.",
-                cta: { label: "Jetzt starten", href: "/register" },
-              },
-              {
-                title: "Für Investoren",
-                lead: "Skalierbar & datengetrieben.",
-                text: "Event-Streams, Privacy-by-Design, klare Unit-Economics.",
-                cta: { label: "Pitch ansehen", href: "/pitch" },
-              },
-            ].map((f, i) => (
-              <motion.div
-                key={i}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition"
-                whileHover={{ y: -3, transition: { duration: 0.2 } }}
-                {...fadeUp(0.05 * i)}
-              >
-                <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-700 grid place-items-center mb-4">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <circle cx="6" cy="12" r="2" />
-                    <circle cx="12" cy="12" r="2" />
-                    <circle cx="18" cy="12" r="2" />
-                  </svg>
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{f.title}</p>
-                <h3 className="mt-1 text-lg font-semibold">{f.lead}</h3>
-                <p className="mt-2 text-gray-600">{f.text}</p>
-                <div className="mt-4">
-                  <Link to={f.cta.href} className="text-sm text-blue-700 group-hover:text-blue-800 transition" title={f.cta.label}>
-                    {f.cta.label} →
-                  </Link>
-                </div>
-              </motion.div>
-            ))}
+          <div className="sm-card p-6">
+            <p className="text-sm font-semibold text-sky-700">F�r Anbieter</p>
+            <h3 className="mt-2 text-2xl font-bold">Mehr Sichtbarkeit, wenn Kunden wirklich da sind.</h3>
+            <ul className="mt-4 space-y-2 text-slate-700">
+              <li>Angebote lokal und zeitlich pr�zise ausspielen</li>
+              <li>Weniger Streuverlust als klassische Werbung</li>
+              <li>Schnell aufsetzen, direkt live gehen</li>
+            </ul>
           </div>
         </div>
       </section>
 
-      {/* ───────── HOW IT WORKS ───────── */}
-      <section id="how" className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-10 items-center">
-            <div>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-                In drei Schritten <span className="text-blue-700">zum perfekten Match</span>
-              </h2>
-              <ol className="mt-6 space-y-5">
-                {[
-                  { step: "01", title: "Interessen & Radius", text: "Definiere Interessen, Ort und Radius – oder richte ein Angebot ein." },
-                  { step: "02", title: "Zeitfenster aktivieren", text: "Mittags, abends oder flexibel – du bestimmst, wann es relevant ist." },
-                  { step: "03", title: "Automatisch gefunden werden", text: "Wir benachrichtigen nur passende Personen in der Nähe – ohne Suche." },
-                ].map((s, i) => (
-                  <motion.li key={i} className="flex gap-4" {...fadeUp(0.05 * i)}>
-                    <div className="shrink-0 h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">{s.step}</div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{s.title}</h3>
-                      <p className="text-gray-600">{s.text}</p>
-                    </div>
-                  </motion.li>
-                ))}
-              </ol>
-
-              <motion.div className="mt-8 flex flex-wrap gap-3" {...fadeUp(0.2)}>
-                <Link to="/register" className="rounded-full bg-blue-600 px-5 py-3 text-white font-semibold shadow hover:bg-blue-700 transition">
-                  Kostenlos registrieren
-                </Link>
-                <Link to="/login" className="rounded-full border border-gray-300 px-5 py-3 font-semibold text-gray-800 hover:bg-gray-100 transition">
-                  Anbieter-Login
-                </Link>
-              </motion.div>
-            </div>
-
-            {/* Glass Card – Live-Beispiel */}
-            <motion.div className="relative" {...fadeUp(0.1)}>
-              <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-lg">
-                <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-6">
-                  <p className="text-sm font-semibold text-blue-700">Live-Beispiel</p>
-                  <p className="mt-2 text-gray-700">
-                    „Heute <b>11–14 Uhr</b> frische Pasta – <b>10 %</b> für alle in <b>150 m</b>.“
-                  </p>
-                  <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                    <div className="rounded-xl bg-white p-3 border border-gray-200">
-                      <p className="font-semibold">Radius</p>
-                      <p className="text-gray-600">150 m</p>
-                    </div>
-                    <div className="rounded-xl bg-white p-3 border border-gray-200">
-                      <p className="font-semibold">Zeit</p>
-                      <p className="text-gray-600">11:00–14:00</p>
-                    </div>
-                    <div className="rounded-xl bg-white p-3 border border-gray-200">
-                      <p className="font-semibold">Kategorie</p>
-                      <p className="text-gray-600">Gastronomie</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 flex items-center gap-2 text-emerald-700">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Aktiv – wird an passende Nutzer im Umkreis ausgespielt
-                  </div>
-                </div>
-              </div>
-
-              {/* Floating Admin Demo button on mobile */}
-              <Link
-                to="/admin/offers"
-                className="md:hidden fixed right-4 bottom-4 z-40 rounded-full bg-blue-600 px-4 py-3 text-white font-semibold shadow-lg hover:bg-blue-700 transition"
-                title="Admin-Demo: Angebote auf der Karte"
-              >
-                Admin-Demo
-              </Link>
-            </motion.div>
+      <section className="sm-shell py-16">
+        <div className="rounded-3xl bg-sky-700 p-8 md:p-10 text-white">
+          <h3 className="text-3xl font-extrabold">StepsMatch ist keine weitere Suchseite.</h3>
+          <p className="mt-3 text-sky-100 max-w-3xl">StepsMatch ist ein neues Live-Konzept: Angebot und Nachfrage finden sich automatisch. Genau dadurch entsteht echter Mehrwert auf beiden Seiten.</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link to="/why" className="rounded-full bg-white px-5 py-3 font-semibold text-sky-800">Warum das neu ist</Link>
+            <Link to="/pitch" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Investor Pitch</Link>
           </div>
         </div>
       </section>
 
-      {/* ───────── MINI-KPI / PRIVACY STRIP ───────── */}
-      <section className="py-8 bg-gray-900">
-        <div className="max-w-7xl mx-auto px-6 text-gray-100">
-          <div className="grid sm:grid-cols-3 gap-6 text-sm">
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Sofort-Push beim Radius-Enter (≤ 30 s)
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-sky-400" /> DSGVO-konform • Privacy-by-Design
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-amber-400" /> Ereignisse statt Pfade: Enter / Exit / Heartbeat
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-gray-300">Wir tracken keine Wege. Wir triggern nur kontextuelle Ereignisse.</p>
-        </div>
-      </section>
-
-      {/* ───────── PROVIDER ROI ───────── */}
-      <section id="trust" className="py-16 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <h3 className="text-2xl md:text-3xl font-extrabold">
-            Zeig dich genau dann, wenn Kund:innen <span className="text-blue-700">vorbeikommen</span>.
-          </h3>
-          <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
-            Ideal für Gastronomie, lokale Shops, Services & Events – zeitlich limitiert, ortsgenau und ohne
-            Streuverlust.
-          </p>
-
-          <div className="mt-8 grid sm:grid-cols-3 gap-4 text-left max-w-4xl mx-auto">
-            {[
-              "Nur Personen im definierten Radius & Zeitfenster",
-              "Null Streuverlust – nur Relevanz",
-              "Selbstverwaltete Kampagnen in Minuten",
-            ].map((b, i) => (
-              <motion.div
-                key={i}
-                className="rounded-xl border border-gray-200 bg-white p-4"
-                whileHover={{ scale: 1.01 }}
-                transition={{ type: "spring", stiffness: 250, damping: 20 }}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-blue-600" />
-                  <p className="text-gray-800">{b}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          <motion.div className="mt-8 flex flex-wrap justify-center gap-3" {...fadeUp(0.05)}>
-            <Link to="/register" className="rounded-full bg-blue-600 px-6 py-3 text-white font-semibold shadow hover:bg-blue-700 transition">
-              Jetzt kostenlos testen
-            </Link>
-            <Link
-              to="/admin/offers"
-              className="rounded-full border border-blue-200 bg-blue-50 px-6 py-3 text-blue-800 font-semibold hover:bg-blue-100 transition"
-            >
-              Admin-Demo ansehen
-            </Link>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ───────── PITCH STRIP ───────── */}
-      <section className="py-8 bg-blue-900">
-        <div className="max-w-7xl mx-auto px-6 text-white">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-lg font-semibold">
-              Die Infrastruktur für <span className="opacity-90">Zero-Search</span> in der realen Welt.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link to="/pitch" className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition">
-                Pitch ansehen
-              </Link>
-              <Link
-                to="/admin/offers"
-                className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/15 transition"
-              >
-                Tech-Demo (Karte)
-              </Link>
-              <Link
-                to="/register"
-                className="rounded-full bg-white text-blue-900 px-5 py-2 font-semibold hover:bg-gray-100 transition"
-              >
-                Anbieter: Jetzt starten
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── FOOTER ───────── */}
-      <footer className="mt-auto bg-gray-100 py-8">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600">
-          <div className="flex items-center gap-3">
-            <img src={logoIcon} alt="StepsMatch Logo" className="h-7 w-7 rounded-md" />
-            <span>© {new Date().getFullYear()} stepsmatch.com</span>
-          </div>
+      <footer className="border-t border-sky-100 bg-white">
+        <div className="sm-shell py-8 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-slate-600">
+          <div className="flex items-center gap-2"><img src={logoIcon} alt="StepsMatch" className="h-6 w-6" /> � {new Date().getFullYear()} StepsMatch</div>
           <div className="flex items-center gap-4">
-            <a href="#features" className="hover:text-gray-900">
-              Features
-            </a>
-            <a href="/why" className="hover:text-gray-900">
-              So funktioniert’s
-            </a>
-            <Link to="/login" className="hover:text-gray-900">
-              Login
-            </Link>
-            <Link to="/register" className="hover:text-gray-900">
-              Registrieren
-            </Link>
-            <Link to="/admin/offers" className="font-semibold text-blue-700 hover:text-blue-800">
-              Admin-Demo
-            </Link>
-            <Link to="/pitch" className="hover:text-gray-900">
-              Pitch
-            </Link>
-          </div>
-          <div>
-            Ein Projekt von{" "}
-            <a href="https://www.ecily.com" target="_blank" rel="noopener noreferrer" className="hover:underline">
-              ecily / Webentwicklung
-            </a>
+            <Link to="/home">Home</Link>
+            <Link to="/why">Warum neu</Link>
+            <Link to="/register">Registrieren</Link>
+            <Link to="/admin/offers">Admin Demo</Link>
           </div>
         </div>
       </footer>
 
-      {/* ───────── APK MODAL MOUNT ───────── */}
-      <ApkModal open={apkOpen} onClose={handleCloseApk} onDontShowAgain={handleDontShowAgain} apkUrl={APK_REDIRECT_URL} />
+      <ApkModal
+        open={apkOpen}
+        onClose={() => setApkOpen(false)}
+        onDontShowAgain={() => {
+          try {
+            localStorage.setItem("apkModalSeen", "1");
+          } catch (e) {
+            void e;
+          }
+          setApkOpen(false);
+        }}
+        apkUrl={APK_REDIRECT_URL}
+      />
     </div>
   );
-};
-
-export default LandingPage;
+}
