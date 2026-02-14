@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+ï»¿import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import axiosInstance from "../api/axios";
 
@@ -42,10 +42,10 @@ export default function TesterGate() {
         if (res?.data?.tester) localStorage.setItem("stepsmatch_tester_info", JSON.stringify(res.data.tester));
         navigate("/nda", { replace: true });
       } else {
-        setErrorMsg("Ungültiger Key. Bitte überprüfe deine Eingabe.");
+        setErrorMsg("UngÃ¼ltiger Key. Bitte Ã¼berprÃ¼fe deine Eingabe.");
       }
     } catch (err) {
-      setErrorMsg(err?.response?.data?.message || "Validierung derzeit nicht möglich.");
+      setErrorMsg(err?.response?.data?.message || "Validierung derzeit nicht mÃ¶glich.");
     } finally {
       setLoading(false);
     }
@@ -55,7 +55,7 @@ export default function TesterGate() {
     <div className="min-h-screen px-6 py-12">
       <div className="max-w-xl mx-auto sm-card p-7 md:p-8">
         <h1 className="text-3xl font-extrabold tracking-tight">Tester-Zugang</h1>
-        <p className="mt-2 text-slate-600">Diese Vorabversion ist nur für eingeladene Tester. Bitte gib deinen Key ein.</p>
+        <p className="mt-2 text-slate-600">Diese Vorabversion ist nur fÃ¼r eingeladene Tester. Bitte gib deinen Key ein.</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -66,10 +66,11 @@ export default function TesterGate() {
           {errorMsg ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMsg}</div> : null}
 
           <button type="submit" disabled={loading} className={`w-full rounded-xl px-4 py-2 font-semibold text-white ${loading ? "bg-sky-300" : "bg-sky-600 hover:bg-sky-700"}`}>
-            {loading ? "Prüfe Key..." : "Weiter"}
+            {loading ? "PrÃ¼fe Key..." : "Weiter"}
           </button>
         </form>
       </div>
     </div>
   );
 }
+

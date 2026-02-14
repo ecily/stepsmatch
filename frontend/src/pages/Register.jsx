@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axiosInstance from "../api/axios";
 
@@ -55,7 +55,7 @@ const Register = ({ onRegisterSuccess }) => {
               <div className="mt-1 relative">
                 <input id="password" type={showPw ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} required className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10" />
                 <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute inset-y-0 right-2 my-auto h-8 w-8 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={showPw ? "Passwort verbergen" : "Passwort anzeigen"}>
-                  {showPw ? "�" : "?"}
+                  {showPw ? "•" : "?"}
                 </button>
               </div>
             </div>
@@ -76,3 +76,4 @@ const Register = ({ onRegisterSuccess }) => {
 };
 
 export default Register;
+

@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { Link, NavLink } from "react-router-dom";
 import icon from "../assets/stepsmatch-icon.svg";
 
@@ -42,3 +42,4 @@ export default function Navbar() {
     </div>
   );
 }
+
