@@ -6,6 +6,7 @@ import AddProviderForm from './components/AddProviderForm';
 import AddOfferForm from './components/AddOfferForm';
 import EditOfferForm from './components/EditOfferForm';
 import ProviderDashboard from './components/ProviderDashboard';
+import CookieNotice from './components/CookieNotice';
 import Pitch from './pages/Pitch';
 import Register from './pages/Register';
 import Login from './pages/Login';
@@ -16,6 +17,7 @@ import EditProviderForm from './components/EditProviderForm';
 import WhyStepsMatch from './pages/WhyStepsMatch';
 import TesterGate from './pages/TesterGate';
 import NDA from './pages/NDA';
+import PrivacyPage from './pages/PrivacyPage';
 
 function BootGuard() {
   const navigate = useNavigate();
@@ -88,6 +90,7 @@ const AppRoutes = () => {
         <Route path="/home" element={<LandingPage />} />
         <Route path="/why" element={<WhyStepsMatch />} />
         <Route path="/pitch" element={<Pitch />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
 
         <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
         <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />
@@ -111,6 +114,7 @@ const App = () => {
     <HelmetProvider>
       <Router>
         <AppRoutes />
+        <CookieNotice />
       </Router>
     </HelmetProvider>
   );
