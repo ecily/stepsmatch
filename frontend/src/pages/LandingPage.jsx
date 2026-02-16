@@ -15,7 +15,7 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
       <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} />
       <div className="relative z-[101] mx-4 w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-6 shadow-2xl">
         <h3 className="text-xl font-extrabold text-slate-900">In 30 Sekunden starten</h3>
-        <p className="mt-2 text-slate-600">QR-Code scannen, APK laden, fertig. Danach findet StepsMatch passende Angebote für dich, auch im Hintergrund.</p>
+        <p className="mt-2 text-slate-600">QR-Code scannen, APK laden, fertig. Danach findet StepsMatch passende Angebote fÃ¼r dich, auch im Hintergrund.</p>
         <div className="mt-5 flex justify-center">
           <div className="rounded-3xl border border-sky-100 p-4">
             <QRCodeCanvas value={qrValue} size={220} includeMargin level="M" />
@@ -23,7 +23,7 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
         </div>
         <div className="mt-6 flex items-center justify-between gap-3">
           <button onClick={onDontShowAgain} className="text-sm text-slate-500 underline">Nicht mehr anzeigen</button>
-          <button onClick={onClose} className="sm-btn-secondary">Schließen</button>
+          <button onClick={onClose} className="sm-btn-secondary">SchlieÃŸen</button>
         </div>
       </div>
     </div>
@@ -36,12 +36,12 @@ const steps = [
     text: "Mit Radius bis 2 km, Zeitfenster und Kategorie.",
   },
   {
-    title: "2. Du wählst Interessen",
+    title: "2. Du wÃ¤hlst Interessen",
     text: "Zum Beispiel Essen, Jobs, Rabatte, Nightlife oder Services.",
   },
   {
     title: "3. StepsMatch meldet sich nur wenn es passt",
-    text: "Bist du in der Nähe, kommt ein Push. Sonst bleibt es ruhig.",
+    text: "Bist du in der NÃ¤he, kommt ein Push. Sonst bleibt es ruhig.",
   },
 ];
 
@@ -51,9 +51,9 @@ const useCases = [
   "Rabatte: Du aktivierst Sales und bekommst nur passende Hinweise.",
   "Happy Hour: Beim Ausgehen siehst du Specials genau im richtigen Moment.",
   "Neu in der Gegend: Du entdeckst lokale Angebote ohne Suchstress.",
-  "Abseits der Hauptstraße: Spannende Anbieter werden sichtbar, wenn du nahe bist.",
+  "Abseits der HauptstraÃŸe: Spannende Anbieter werden sichtbar, wenn du nahe bist.",
   "Jobs in Gehweite: Wenn dein Profil gebraucht wird, bekommst du sofort Bescheid.",
-  "Singles: Keine Reizüberflutung, nur passende Kontexte.",
+  "Singles: Keine ReizÃ¼berflutung, nur passende Kontexte.",
   "Pilgern: Nur relevante Hinweise entlang deiner Route.",
 ];
 
@@ -63,12 +63,10 @@ export default function LandingPage() {
   const [apkOpen, setApkOpen] = React.useState(false);
 
   const title = "StepsMatch - finden. nicht suchen.";
-  const description = "Die neuartige App für lokale Angebote: Ort x Zeit x Interesse. StepsMatch findet für dich auch im Hintergrund.";
+  const description = "Die neuartige App fÃ¼r lokale Angebote: Ort x Zeit x Interesse. StepsMatch findet fÃ¼r dich auch im Hintergrund.";
   const url = "https://www.stepsmatch.com/";
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-  const backendBaseUrl = apiBaseUrl ? String(apiBaseUrl).replace(/\/api\/?$/, "") : "https://lobster-app-ie9a5.ondigitalocean.app";
-  const APK_REDIRECT_URL = `${backendBaseUrl}/apk`;
+  const APK_REDIRECT_URL = "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
 
   React.useEffect(() => {
     try {
@@ -119,7 +117,7 @@ export default function LandingPage() {
               </h1>
 
               <p className="mt-5 text-lg md:text-xl text-slate-700 max-w-xl">
-                Du gehst deinen Weg. StepsMatch meldet sich nur dann, wenn ein Angebot in deiner Nähe wirklich zu dir passt.
+                Du gehst deinen Weg. StepsMatch meldet sich nur dann, wenn ein Angebot in deiner NÃ¤he wirklich zu dir passt.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
@@ -153,7 +151,7 @@ export default function LandingPage() {
         <section className="sm-shell pb-8">
           <div className="rounded-3xl border border-sky-100 bg-white p-7 md:p-9">
             <h2 className="text-3xl md:text-4xl font-black tracking-tight">Was ist der MVP von StepsMatch?</h2>
-            <p className="mt-4 text-lg text-slate-700 max-w-4xl">Anbieter stellen lokale Angebote mit Radius und Zeit ein. Du wählst Interessen. Sobald du in Schrittweite bist, bekommst du einen Push. Die App muss dafür nicht offen sein.</p>
+            <p className="mt-4 text-lg text-slate-700 max-w-4xl">Anbieter stellen lokale Angebote mit Radius und Zeit ein. Du wÃ¤hlst Interessen. Sobald du in Schrittweite bist, bekommst du einen Push. Die App muss dafÃ¼r nicht offen sein.</p>
           </div>
         </section>
 
@@ -171,8 +169,8 @@ export default function LandingPage() {
 
         <section className="sm-shell py-8">
           <div className="rounded-3xl border border-sky-100 bg-white p-7">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">So fühlt sich StepsMatch im Alltag an</h2>
-            <p className="mt-3 text-slate-700 text-lg">Neun einfache Beispiele, bei denen die App für dich sucht.</p>
+            <h2 className="text-3xl md:text-4xl font-black tracking-tight">So fÃ¼hlt sich StepsMatch im Alltag an</h2>
+            <p className="mt-3 text-slate-700 text-lg">Neun einfache Beispiele, bei denen die App fÃ¼r dich sucht.</p>
             <div className="mt-6 grid md:grid-cols-2 xl:grid-cols-3 gap-4">
               {useCases.map((item, idx) => (
                 <article key={idx} className="rounded-2xl border border-sky-100 bg-sky-50/40 p-5">
@@ -185,8 +183,8 @@ export default function LandingPage() {
 
         <section className="sm-shell pt-6 pb-16">
           <div className="rounded-3xl border border-sky-200 bg-sky-700 p-8 md:p-10 text-white">
-            <h3 className="text-3xl font-extrabold">Bereit für Relevanz statt Suche?</h3>
-            <p className="mt-3 text-sky-100 max-w-3xl">Für User: mehr passende Treffer, weniger Aufwand. Für Anbieter: Sichtbarkeit genau im richtigen Moment.</p>
+            <h3 className="text-3xl font-extrabold">Bereit fÃ¼r Relevanz statt Suche?</h3>
+            <p className="mt-3 text-sky-100 max-w-3xl">FÃ¼r User: mehr passende Treffer, weniger Aufwand. FÃ¼r Anbieter: Sichtbarkeit genau im richtigen Moment.</p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => setApkOpen(true)} className="rounded-full bg-white px-5 py-3 font-semibold text-sky-800">App jetzt testen</button>
               <Link to="/register" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Anbieter Onboarding</Link>
@@ -197,7 +195,7 @@ export default function LandingPage() {
 
         <footer className="border-t border-sky-100 bg-white/80">
           <div className="sm-shell py-8 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-slate-600">
-            <div className="flex items-center gap-2"><img src={logoIcon} alt="StepsMatch" className="h-6 w-6" /> © {new Date().getFullYear()} StepsMatch</div>
+            <div className="flex items-center gap-2"><img src={logoIcon} alt="StepsMatch" className="h-6 w-6" /> Â© {new Date().getFullYear()} StepsMatch</div>
             <div className="flex items-center gap-4">
               <Link to="/home">Home</Link>
               <Link to="/why">Warum neu</Link>
