@@ -436,3 +436,62 @@ MVP-Status / Uebergabe
   1. Frontend (Web/Admin) UX/UI vollstaendig optimieren.
   2. Mobile-Funktionalitaet stabil lassen, nur falls explizit angefordert anfassen.
   3. CONTEXT.md als alleinige Projektwahrheit weiterverwenden.
+
+## 15. Session-Update (2026-02-19)
+Zuletzt geklaerte Punkte (Notifications / Background)
+- Ja, es gab kuerzlich Logik-Aenderungen bei Notifications/Background.
+- Relevante Commits:
+  - `50322cd` (2026-02-11, "logik härten"): Notification-Actions erweitert (`go`, `later`, `no`) und Action-POST nach `/api/notifications/action`.
+  - `0ecb675` (2026-02-13, "chore: sync local project changes"): zentrale Service-Guards (`isServiceActiveNow()`) in BG-Tasks/Scheduler/Heartbeat/Geofence + `stopBackgroundServices()` + Gate in `shouldNotify()`.
+  - `d2665ca` (2026-02-14, "new deploy"): Folgeanpassungen/Refactorings in Push-Dateien.
+- Erwartung gemaess Architektur: Bei aktivem Background-Service + korrekten Permissions + ohne OEM-Kill sollten passende Notifications auch bei gesperrtem Screen und nicht geoeffneter App ankommen.
+- Hauptrisiken fuer "nicht verlässlich":
+  - Android Akku-Optimierung/Doze/OEM-Kill
+  - fehlende BG-Location-Berechtigung "Immer"
+  - Notification-Kanal/App-Notifs stumm/gesperrt
+  - Service-State auf `paused/disabled` (blockt bewusst)
+
+Build & Install (zuletzt verwendet)
+- Native Release APK bauen:
+  - `cd mobile/android && ./gradlew assembleRelease`
+- APK-Pfad:
+  - `mobile/android/app/build/outputs/apk/release/app-release.apk`
+- Paketname:
+  - `com.ecily.mobile`
+- ADB Uninstall/Install:
+  - `adb uninstall com.ecily.mobile`
+  - `adb install -r "C:\\coding\\stepsmatch\\mobile\\android\\app\\build\\outputs\\apk\\release\\app-release.apk"`
+- Letzter Blocker:
+  - `adb: no devices/emulators found` (kein verbundenes Geraet/Emulator)
+
+## 16. Handoff-Prompt fuer neuen Chat (Copy/Paste)
+Nutze diesen Prompt als erste Nachricht im neuen Chat:
+
+```text
+Arbeite in `C:\\coding\\stepsmatch` weiter und nutze `CONTEXT.md` als verbindliche Projektbasis.
+
+Ziel fuer diese Session:
+1) Notification-Zuverlaessigkeit im Hintergrund auf Android hart pruefen und verbessern.
+2) Falls noetig Code direkt anpassen (kein Theorie-Only), dann Build- und Testschritte liefern.
+3) Fokus auf die aktuelle Architektur mit Service-Control (`isServiceActiveNow`) und Dedupe.
+
+Wichtiger aktueller Stand:
+- Relevante Aenderungen: `50322cd`, `0ecb675`, `d2665ca` (siehe `CONTEXT.md` Abschnitt 15).
+- Release-Build: `cd mobile/android && ./gradlew assembleRelease`
+- APK: `mobile/android/app/build/outputs/apk/release/app-release.apk`
+- Paket: `com.ecily.mobile`
+
+Arbeitsauftrag:
+- Pruefe zuerst die End-to-End-Kette fuer Hintergrund-Notifications:
+  - Permission-Status (Notif + BG-Location)
+  - Service-State (active/paused/disabled)
+  - BG-Tasks (Location, Geofence, Heartbeat Fetch)
+  - Dedupe/Throttle-Gates
+  - Notification-Channels/Category
+- Identifiziere konkrete Fehlerquellen mit Dateipfad+Codezeilen.
+- Implementiere zielgerichtete Fixes.
+- Gib mir danach:
+  1) kurze Ursachenliste,
+  2) exakte Codeaenderungen,
+  3) validierte Test-Checkliste fuer "App nicht offen + Screen aus".
+```

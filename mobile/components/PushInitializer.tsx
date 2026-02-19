@@ -1614,7 +1614,8 @@ function useAppStateWatchdog() {
 }
 
 // ───────────── Task Definitions ─────────────
-TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
+if (!TaskManager.isTaskDefined(BG_LOCATION_TASK)) {
+  TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   try {
     if (!(await isServiceActiveNow())) {
       console.log('[BGLOC] task skip (service inactive)');
@@ -1679,7 +1680,8 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   } catch (e: any) {
     logErr('BGLOC:task', e);
   }
-});
+  });
+}
 
 // BackgroundFetch watchdog (Ultreia-style): rearm + stale heartbeat
 if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
@@ -1728,7 +1730,8 @@ if (!TaskManager.isTaskDefined(HEARTBEAT_FETCH_TASK)) {
   });
 }
 
-TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
+if (!TaskManager.isTaskDefined(GEOFENCE_TASK)) {
+  TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   try {
     if (!(await isServiceActiveNow())) {
       console.log('[GEOFENCE] task skip (service inactive)');
@@ -1853,7 +1856,8 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   } catch (e: any) {
     logErr('GEOFENCE:handler', e);
   }
-});
+  });
+}
 
 // Meta for notifications
 async function getOfferMeta(offerId: string) {

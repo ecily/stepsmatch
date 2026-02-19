@@ -68,7 +68,10 @@ const SEARCH_BUFFER = Math.max(ACCURACY_BUFFER_MAX, ACCURACY_TOKEN_CAP);
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (müssen zur App passen)
-const PUSH_CHANNEL_ID = process.env.PUSH_CHANNEL_ID || 'offers';
+const PUSH_CHANNEL_ID =
+  process.env.EXPO_PUSH_CHANNEL_ID ||
+  process.env.PUSH_CHANNEL_ID ||
+  'offers-v2';
 const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
 const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);

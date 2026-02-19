@@ -111,6 +111,11 @@ const SERVER_TOLERANCE_M = Number(process.env.SERVER_TOLERANCE_M ?? 5);
 const EXIT_BUFFER_M = Number(process.env.EXIT_BUFFER_M ?? 30);
 const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
 const REENTRY_MIN_GAP_MS = envMs('REENTRY_MIN_GAP_MS', 5 * 60 * 1000);
+const PUSH_CHANNEL_ID =
+  process.env.EXPO_PUSH_CHANNEL_ID ||
+  process.env.PUSH_CHANNEL_ID ||
+  'offers-v2';
+const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go-v2';
 
 // Fresh-Token Retry Delays (ms), default: 90s, 5min
 const FRESH_RETRY_DELAYS_MS = String(process.env.FRESH_RETRY_DELAYS_MS || '90000,300000')
@@ -181,8 +186,8 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
           const diagRetry = await sendPushAndCheckReceipts({
             tokens: [tokenDoc.token],
             title, body, data,
-            channelId: process.env.PUSH_CHANNEL_ID || 'offers',
-            categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
+            channelId: PUSH_CHANNEL_ID,
+            categoryId: PUSH_CATEGORY_ID,
             priority: process.env.PUSH_PRIORITY || 'high',
             sound: process.env.PUSH_SOUND || 'default',
             delayMs: 1500,
@@ -522,8 +527,8 @@ router.post('/heartbeat', async (req, res) => {
             title,
             body,
             data,
-            channelId: process.env.PUSH_CHANNEL_ID || 'offers',
-            categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
+            channelId: PUSH_CHANNEL_ID,
+            categoryId: PUSH_CATEGORY_ID,
             priority: process.env.PUSH_PRIORITY || 'high',
             sound: process.env.PUSH_SOUND || 'default'
           });
