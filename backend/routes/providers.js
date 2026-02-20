@@ -1,20 +1,41 @@
-// C:\Users\Lenovo\stepsmatch\backend\routes\providers.js
 import express from 'express';
 import mongoose from 'mongoose';
 import Provider from '../models/Provider.js';
+import Category from '../models/Category.js';
 
 const { Types } = mongoose;
 const router = express.Router();
 
-/** Helper: Teil-Update aus Request-Body bauen */
+async function resolveProviderCategory(update = {}) {
+  const out = { ...update };
+  if (out.categoryId) {
+    const cat = await Category.findById(out.categoryId).select('_id name').lean();
+    if (cat) {
+      out.categoryId = cat._id;
+      out.category = cat.name;
+    }
+    return out;
+  }
+  if (typeof out.category === 'string' && out.category.trim()) {
+    const cat = await Category.findOne({ name: out.category.trim() }).select('_id name').lean();
+    if (cat) {
+      out.categoryId = cat._id;
+      out.category = cat.name;
+    }
+  }
+  return out;
+}
+
 function buildUpdate(body = {}) {
   const update = {};
 
   if (typeof body.name === 'string') update.name = body.name;
   if (typeof body.category === 'string') update.category = body.category;
+  if (body.categoryId) update.categoryId = body.categoryId;
   if (typeof body.description === 'string') update.description = body.description;
-  if (typeof body.contact === 'string') update.contact = body.contact;
   if (typeof body.address === 'string') update.address = body.address;
+  if (body.contact && typeof body.contact === 'object') update.contact = body.contact;
+  if (body.openingHours && typeof body.openingHours === 'object') update.openingHours = body.openingHours;
 
   if (body.location?.coordinates?.length === 2) {
     const [lng, lat] = body.location.coordinates;
@@ -23,7 +44,7 @@ function buildUpdate(body = {}) {
     if (Number.isFinite(lngNum) && Number.isFinite(latNum)) {
       update.location = {
         type: 'Point',
-        coordinates: [lngNum, latNum], // GeoJSON: [lng, lat]
+        coordinates: [lngNum, latNum],
       };
     }
   }
@@ -36,140 +57,126 @@ function buildUpdate(body = {}) {
   return update;
 }
 
-/** GET /api/providers – alle Anbieter abrufen (z. B. für Expo Go Test) */
 router.get('/', async (_req, res) => {
   try {
-    const providers = await Provider.find();
-    res.json(providers);
+    const providers = await Provider.find().populate('categoryId', 'name slug');
+    const rows = providers.map((p) => ({
+      ...p.toObject(),
+      categoryRef: p?.categoryId && typeof p.categoryId === 'object' ? p.categoryId : null,
+      category: p?.category || p?.categoryId?.name || null,
+    }));
+    res.json(rows);
   } catch (err) {
-    console.error('❌ Fehler beim Laden der Anbieter:', err);
+    console.error('Fehler beim Laden der Anbieter:', err);
     res.status(500).json({ error: 'Serverfehler beim Abrufen der Anbieter' });
   }
 });
 
-/** POST /api/providers – Anbieter anlegen */
 router.post('/', async (req, res) => {
-  console.log('📥 POST /providers payload:', req.body);
-
   try {
-    const { name, category, location, address, description, contact, user, radiusMeters } = req.body;
-
-    // Pflichtfelder prüfen
-    if (!name || !category || !location || !address || !user) {
-      console.warn('❌ Fehlende Pflichtfelder beim Anbieter anlegen');
+    const { name, category, categoryId, location, address, description, contact, user, openingHours, radiusMeters } = req.body;
+    if (!name || (!category && !categoryId) || !location || !address || !user) {
       return res.status(400).json({ error: 'Fehlende Pflichtfelder' });
     }
 
-    // Koordinaten validieren
     const coords = location?.coordinates;
     if (!Array.isArray(coords) || coords.length !== 2) {
-      return res.status(400).json({ error: 'Ungültige Location-Koordinaten' });
+      return res.status(400).json({ error: 'Ung�ltige Location-Koordinaten' });
     }
     const [lng, lat] = coords.map(Number);
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-      return res.status(400).json({ error: 'Ungültige Location-Koordinaten (NaN)' });
+      return res.status(400).json({ error: 'Ung�ltige Location-Koordinaten (NaN)' });
     }
 
-    const doc = new Provider({
+    const payload = await resolveProviderCategory({
       name,
       category,
+      categoryId,
       location: { type: 'Point', coordinates: [lng, lat] },
       address,
       description,
       contact,
+      openingHours,
       user,
       ...(radiusMeters !== undefined ? { radiusMeters: Number(radiusMeters) } : {}),
     });
 
+    const doc = new Provider(payload);
     await doc.save();
-    console.log('✅ Anbieter erfolgreich gespeichert:', doc._id);
     res.status(201).json(doc);
   } catch (error) {
-    console.error('❌ Fehler beim Anlegen des Anbieters:', error);
+    console.error('Fehler beim Anlegen des Anbieters:', error);
     res.status(400).json({ error: 'Fehler beim Anlegen des Anbieters.' });
   }
 });
 
-/**
- * Wichtig: Reihenfolge beachten!
- * /user/:userId MUSS VOR /:id stehen, sonst fängt /:id "user" ab.
- */
-
-/** GET /api/providers/user/:userId – Anbieter per Benutzer ermitteln */
 router.get('/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const provider = await Provider.findOne({ user: userId });
-    if (!provider) {
-      return res.status(404).json({ error: 'Anbieter nicht gefunden' });
-    }
-    res.json(provider);
+    const provider = await Provider.findOne({ user: userId }).populate('categoryId', 'name slug');
+    if (!provider) return res.status(404).json({ error: 'Anbieter nicht gefunden' });
+    res.json({
+      ...provider.toObject(),
+      categoryRef: provider?.categoryId && typeof provider.categoryId === 'object' ? provider.categoryId : null,
+      category: provider?.category || provider?.categoryId?.name || null,
+    });
   } catch (err) {
-    console.error('❌ Fehler beim Laden per userId:', err);
+    console.error('Fehler beim Laden per userId:', err);
     res.status(500).json({ error: 'Serverfehler' });
   }
 });
 
-/** GET /api/providers/:id – Anbieter nach ID abrufen */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ungültige ID' });
+    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ung�ltige ID' });
 
-    const provider = await Provider.findById(id);
+    const provider = await Provider.findById(id).populate('categoryId', 'name slug');
     if (!provider) return res.status(404).json({ error: 'Anbieter nicht gefunden' });
-    res.json(provider);
+    res.json({
+      ...provider.toObject(),
+      categoryRef: provider?.categoryId && typeof provider.categoryId === 'object' ? provider.categoryId : null,
+      category: provider?.category || provider?.categoryId?.name || null,
+    });
   } catch (err) {
-    console.error('❌ Fehler beim Laden des Anbieters:', err);
+    console.error('Fehler beim Laden des Anbieters:', err);
     res.status(500).json({ error: 'Fehler beim Abrufen des Anbieters' });
   }
 });
 
-/** PATCH /api/providers/:id – Teil-Update */
 router.patch('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ungültige ID' });
+    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ung�ltige ID' });
 
-    const update = buildUpdate(req.body);
-    if (Object.keys(update).length === 0) {
-      return res.status(400).json({ error: 'Keine gültigen Felder zum Aktualisieren' });
-    }
+    let update = buildUpdate(req.body);
+    update = await resolveProviderCategory(update);
 
-    const doc = await Provider.findByIdAndUpdate(id, update, {
-      new: true,
-      runValidators: true,
-    });
+    if (Object.keys(update).length === 0) return res.status(400).json({ error: 'Keine g�ltigen Felder zum Aktualisieren' });
 
+    const doc = await Provider.findByIdAndUpdate(id, update, { new: true, runValidators: true });
     if (!doc) return res.status(404).json({ error: 'Anbieter nicht gefunden' });
     res.json(doc);
   } catch (e) {
-    console.error('❌ [PATCH /providers/:id] Fehler:', e);
+    console.error('[PATCH /providers/:id] Fehler:', e);
     res.status(500).json({ error: 'Fehler beim Aktualisieren des Anbieters' });
   }
 });
 
-/** PUT /api/providers/:id – Ersatz-/Upsert-freies Update (nur vorhandene) */
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ungültige ID' });
+    if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Ung�ltige ID' });
 
-    const update = buildUpdate(req.body);
-    if (Object.keys(update).length === 0) {
-      return res.status(400).json({ error: 'Keine gültigen Felder zum Aktualisieren' });
-    }
+    let update = buildUpdate(req.body);
+    update = await resolveProviderCategory(update);
+    if (Object.keys(update).length === 0) return res.status(400).json({ error: 'Keine g�ltigen Felder zum Aktualisieren' });
 
-    const doc = await Provider.findByIdAndUpdate(id, update, {
-      new: true,
-      upsert: false,
-      runValidators: true,
-    });
-
+    const doc = await Provider.findByIdAndUpdate(id, update, { new: true, upsert: false, runValidators: true });
     if (!doc) return res.status(404).json({ error: 'Anbieter nicht gefunden' });
     res.json(doc);
   } catch (e) {
-    console.error('❌ [PUT /providers/:id] Fehler:', e);
+    console.error('[PUT /providers/:id] Fehler:', e);
     res.status(500).json({ error: 'Fehler beim Aktualisieren des Anbieters' });
   }
 });

@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import { performance } from 'perf_hooks';
 import Offer from '../models/Offer.js';
 import Provider from '../models/Provider.js';
+import Category from '../models/Category.js';
+import Subcategory from '../models/Subcategory.js';
 import haversine from 'haversine-distance';
 import cloudinary from '../utils/cloudinary.js';
 
@@ -38,6 +40,58 @@ function parseProjection(fields) {
   proj._id = 1;
   return proj;
 }
+
+async function resolveCategoryFields(input = {}) {
+  const out = { ...input };
+
+  const hasCategoryId = !!out.categoryId;
+  const hasSubcategoryId = !!out.subcategoryId;
+
+  if (hasCategoryId || hasSubcategoryId) {
+    let categoryDoc = null;
+    let subcategoryDoc = null;
+
+    if (out.categoryId) categoryDoc = await Category.findById(out.categoryId).select('_id name').lean();
+    if (out.subcategoryId) subcategoryDoc = await Subcategory.findById(out.subcategoryId).select('_id name category').lean();
+
+    if (subcategoryDoc && !categoryDoc) {
+      categoryDoc = await Category.findById(subcategoryDoc.category).select('_id name').lean();
+      out.categoryId = categoryDoc?._id || null;
+    }
+
+    if (categoryDoc && subcategoryDoc && String(subcategoryDoc.category) !== String(categoryDoc._id)) {
+      throw new Error('subcategory does not belong to category');
+    }
+
+    if (categoryDoc) out.category = categoryDoc.name;
+    if (subcategoryDoc) out.subcategory = subcategoryDoc.name;
+
+    return out;
+  }
+
+  const categoryName = String(out.category || '').trim();
+  const subcategoryName = String(out.subcategory || '').trim();
+  if (!categoryName) return out;
+
+  const categoryDoc = await Category.findOne({ name: categoryName }).select('_id name').lean();
+  if (!categoryDoc) return out;
+
+  out.categoryId = categoryDoc._id;
+  out.category = categoryDoc.name;
+
+  if (subcategoryName) {
+    const subcategoryDoc = await Subcategory.findOne({ category: categoryDoc._id, name: subcategoryName, isActive: { $ne: false } })
+      .select('_id name category')
+      .lean();
+    if (subcategoryDoc) {
+      out.subcategoryId = subcategoryDoc._id;
+      out.subcategory = subcategoryDoc.name;
+    }
+  }
+
+  return out;
+}
+
 function isHHMM(s) {
   return typeof s === 'string' && /^(\d{1,2}):(\d{2})$/.test(s);
 }
@@ -176,6 +230,8 @@ router.get('/', async (req, res) => {
       name: 1,
       category: 1,
       subcategory: 1,
+      categoryId: 1,
+      subcategoryId: 1,
       radius: 1,
       location: 1,
       validTimes: 1,
@@ -262,12 +318,21 @@ router.get('/', async (req, res) => {
       const ids = docs.map((d) => d._id);
       const populated = await Offer.find({ _id: { $in: ids } }, projection || {})
         .populate({ path: 'provider', select: providerSelect })
+        .populate({ path: 'categoryId', select: 'name slug' })
+        .populate({ path: 'subcategoryId', select: 'name slug category' })
         .lean();
 
       const byId = new Map(populated.map((d) => [String(d._id), d]));
       docs = docs.map((d) => {
         const full = byId.get(String(d._id));
-        return full ? { ...full, ...(d.distance != null ? { distance: d.distance } : {}) } : d;
+        const row = full ? { ...full, ...(d.distance != null ? { distance: d.distance } : {}) } : d;
+        return {
+          ...row,
+          categoryRef: row?.categoryId && typeof row.categoryId === 'object' ? row.categoryId : null,
+          subcategoryRef: row?.subcategoryId && typeof row.subcategoryId === 'object' ? row.subcategoryId : null,
+          category: row?.category || row?.categoryId?.name || null,
+          subcategory: row?.subcategory || row?.subcategoryId?.name || null,
+        };
       });
     }
 
@@ -327,6 +392,8 @@ router.post('/nearby', async (req, res) => {
           description: 1,
           category: 1,
           subcategory: 1,
+      categoryId: 1,
+      subcategoryId: 1,
           location: 1,
           radius: 1,
           images: { $slice: ['$images', 3] },
@@ -371,6 +438,8 @@ router.post('/nearby-noauth', async (req, res) => {
           description: 1,
           category: 1,
           subcategory: 1,
+      categoryId: 1,
+      subcategoryId: 1,
           location: 1,
           radius: 1,
           images: { $slice: ['$images', 3] },
@@ -479,11 +548,11 @@ router.get('/nearby-geofence', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     normalizeOfferPayload(req.body);
+    const payload = await resolveCategoryFields(req.body);
 
-    const offer = new Offer(req.body);
+    const offer = new Offer(payload);
     const saved = await offer.save();
 
-    // Sofort-Push wenn aktuell aktiv
     try {
       if (
         isOfferActiveNow(saved, 'Europe/Vienna') &&
@@ -505,7 +574,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Manueller Trigger
 router.post('/:id/notify-now', async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id).lean();
@@ -522,9 +590,20 @@ router.get('/provider/:providerId', async (req, res) => {
   try {
     const offers = await Offer.find(
       { provider: req.params.providerId },
-      'name description category subcategory location radius validDays validTimes validDates images'
-    );
-    res.json(offers);
+      'name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates images'
+    )
+      .populate('categoryId', 'name slug')
+      .populate('subcategoryId', 'name slug category');
+
+    const rows = (offers || []).map((o) => ({
+      ...o.toObject(),
+      categoryRef: o?.categoryId && typeof o.categoryId === 'object' ? o.categoryId : null,
+      subcategoryRef: o?.subcategoryId && typeof o.subcategoryId === 'object' ? o.subcategoryId : null,
+      category: o?.category || o?.categoryId?.name || null,
+      subcategory: o?.subcategory || o?.subcategoryId?.name || null,
+    }));
+
+    res.json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Fehler beim Laden der Angebote.' });
@@ -533,14 +612,29 @@ router.get('/provider/:providerId', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const offer = await Offer.findById(
+    const withProvider = req.query.withProvider === '1' || req.query.withProvider === 'true';
+
+    let q = Offer.findById(
       req.params.id,
-      'name description category subcategory location radius validDays validTimes validDates provider images'
-    );
-    if (!offer) {
-      return res.status(404).json({ error: 'Angebot nicht gefunden' });
+      'name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates provider images'
+    )
+      .populate('categoryId', 'name slug')
+      .populate('subcategoryId', 'name slug category');
+
+    if (withProvider) {
+      q = q.populate('provider', 'name address category description contact location user');
     }
-    res.json(offer);
+
+    const offer = await q.lean();
+    if (!offer) return res.status(404).json({ error: 'Angebot nicht gefunden' });
+
+    res.json({
+      ...offer,
+      categoryRef: offer?.categoryId && typeof offer.categoryId === 'object' ? offer.categoryId : null,
+      subcategoryRef: offer?.subcategoryId && typeof offer.subcategoryId === 'object' ? offer.subcategoryId : null,
+      category: offer?.category || offer?.categoryId?.name || null,
+      subcategory: offer?.subcategory || offer?.subcategoryId?.name || null,
+    });
   } catch (error) {
     console.error('Fehler beim Abrufen eines Angebots:', error);
     res.status(500).json({ error: 'Serverfehler' });
@@ -550,8 +644,9 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     normalizeOfferPayload(req.body);
+    const payload = await resolveCategoryFields(req.body);
 
-    const updatedOffer = await Offer.findByIdAndUpdate(req.params.id, req.body, {
+    const updatedOffer = await Offer.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true,
     });
@@ -560,7 +655,6 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Angebot nicht gefunden' });
     }
 
-    // Bei Updates: Push triggern, wenn aktuell aktiv
     try {
       if (
         isOfferActiveNow(updatedOffer, 'Europe/Vienna') &&
@@ -611,3 +705,4 @@ router.post('/found/:id', async (req, res) => {
 });
 
 export default router;
+

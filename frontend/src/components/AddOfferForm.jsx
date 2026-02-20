@@ -107,7 +107,19 @@ export default function AddOfferForm() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name.includes('.')) {
+    if (name === 'categoryId') {
+      const selected = categories.find((c) => String(c._id) === String(value));
+      setFormData((prev) => ({
+        ...prev,
+        categoryId: value,
+        category: selected?.name || '',
+        subcategoryId: '',
+        subcategory: '',
+      }));
+    } else if (name === 'subcategoryId') {
+      const selected = subcategories.find((sc) => String(sc._id) === String(value));
+      setFormData((prev) => ({ ...prev, subcategoryId: value, subcategory: selected?.name || '' }));
+    } else if (name.includes('.')) {
       const [parent, child] = name.split('.');
       setFormData((prev) => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
     } else if (name === 'radius') {
@@ -201,7 +213,7 @@ export default function AddOfferForm() {
 
     if (!resolvedProviderId) { setError('Kein Anbieter ausgewählt.'); toast.error('Kein Anbieter ausgewählt.'); return; }
     if (!providerLocation)   { setError('Standort des Anbieters fehlt.'); toast.error('Standort des Anbieters fehlt.'); return; }
-    if (!formData.category || !formData.subcategory) { setError('Kategorie und Subkategorie müssen gewählt werden.'); toast.error('Kategorie und Subkategorie müssen gewählt werden.'); return; }
+    if ((!formData.categoryId && !formData.category) || (!formData.subcategoryId && !formData.subcategory)) { setError('Kategorie und Subkategorie müssen gewählt werden.'); toast.error('Kategorie und Subkategorie müssen gewählt werden.'); return; }
     if ((formData.description || '').length > 250) { setError('Beschreibung darf maximal 250 Zeichen haben.'); toast.error('Beschreibung darf maximal 250 Zeichen haben.'); return; }
 
     const payload = {

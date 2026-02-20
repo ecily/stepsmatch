@@ -495,3 +495,45 @@ Arbeitsauftrag:
   2) exakte Codeaenderungen,
   3) validierte Test-Checkliste fuer "App nicht offen + Screen aus".
 ```
+
+## 17. Session-Update (2026-02-20, Git-Baseline + Restore)
+Ziel dieser Session
+- Vor geplanter Schema-Migration (Provider/Category/Subcategory als Referenzen) wurde ein stabiler Ist-Stand als Rueckfallpunkt verbindlich gesichert.
+
+Gesicherter Git-Stand (Code-Baseline)
+- Branch zum Zeitpunkt der Sicherung: `main`
+- Commit (gesicherter Stand): `811f9ce` (`finalize backend`, 2026-02-19 15:55:05 +0100)
+- Unveraenderlicher Tag: `v1.0.0-stable-baseline-2026-02-20`
+- Zusaetzlicher Release-Branch: `release/v1-stable-baseline-2026-02-20`
+- Remote: `origin` (GitHub `ecily/stepsmatch`) mit erfolgreich gepushtem Tag + Branch
+
+Wiederherstellung (Code) - exakt auf Baseline
+1) Beliebigen Arbeitsstand verlassen/sichern (falls noetig)
+2) Baseline auschecken:
+- `git checkout v1.0.0-stable-baseline-2026-02-20`
+
+Alternative (beweglicher Fix-Branch auf Baseline):
+- `git checkout release/v1-stable-baseline-2026-02-20`
+
+Verifikation nach Restore
+- `git rev-parse HEAD` muss auf Commit `811f9ce...` zeigen
+- `git status` sollte sauber sein (oder nur erwartete lokale Dateien)
+
+Wichtiger Hinweis fuer echte 1:1 Wiederherstellung
+- Nur Git-Code reicht nicht fuer 100% Laufzeitidentitaet.
+- Fuer wirklich identisches Verhalten zusaetzlich sichern/wiederherstellen:
+  - MongoDB-Datenstand (Dump/Snapshot)
+  - Deployment-ENV (DO App Platform + lokale `.env`)
+  - ggf. verwendetes APK-Artefakt
+
+Zuletzt bestaetigter Betriebskontext
+- Android Package: `com.ecily.mobile`
+- Release-Build (manuell): `cd /c/coding/stepsmatch/mobile/android && ./gradlew assembleRelease`
+- APK: `/c/coding/stepsmatch/mobile/android/app/build/outputs/apk/release/app-release.apk`
+- User-Praferenz bleibt verbindlich: Build/ADB-Schritte nur manuell durch User; Agent liefert Befehle in Bash-Form.
+
+Naechster geplanter Themenblock (ohne Code gestartet)
+- Planung einer sicheren Schema-Evolution fuer realistische Testdaten (Graz):
+  - Trennung Anbieter-Stammdaten vs. Angebotsdaten bleibt
+  - Umstellung Richtung Referenzen fuer Kategorie/Subkategorie als naechster Architektur-Schritt
+  - Umsetzung nur ueber inkrementellen, rueckwaertskompatiblen Cutover (kein Big-Bang)

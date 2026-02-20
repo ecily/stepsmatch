@@ -19,7 +19,7 @@ const EditOfferForm = () => {
   const [uploading, setUploading] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: '', category: '', subcategory: '', description: '',
+    name: '', category: '', subcategory: '', categoryId: '', subcategoryId: '', description: '',
     radius: 100, validDays: [], validTimes: { start: '', end: '' },
     validDates: { from: '', to: '' }, contact: '', images: [], provider: '',
   });
@@ -53,7 +53,7 @@ const EditOfferForm = () => {
         const res = await axiosInstance.get(`offers/${offerId}`);
         const d = res.data || {};
         setFormData({
-          name: d.name || '', category: d.category || '', subcategory: d.subcategory || '',
+          name: d.name || '', category: d.category || '', subcategory: d.subcategory || '', categoryId: d.categoryId?._id || d.categoryId || '', subcategoryId: d.subcategoryId?._id || d.subcategoryId || '',
           description: d.description || '', radius: d.radius ?? 100,
           validDays: Array.isArray(d.validDays) ? d.validDays : [],
           validTimes: { start: d.validTimes?.start || '', end: d.validTimes?.end || '' },
@@ -78,7 +78,13 @@ const EditOfferForm = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name.includes('.')) {
+    if (name === 'categoryId') {
+      const selected = categories.find((c) => String(c._id) === String(value));
+      setFormData((prev) => ({ ...prev, categoryId: value, category: selected?.name || '', subcategoryId: '', subcategory: '' }));
+    } else if (name === 'subcategoryId') {
+      const selected = subcategories.find((sc) => String(sc._id) === String(value));
+      setFormData((prev) => ({ ...prev, subcategoryId: value, subcategory: selected?.name || '' }));
+    } else if (name.includes('.')) {
       const [parent, child] = name.split('.');
       setFormData((prev) => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
     } else if (name === 'radius') {
@@ -147,7 +153,7 @@ const EditOfferForm = () => {
     e.preventDefault();
     setError('');
 
-    if (!formData.category || !formData.subcategory) return setError('Kategorie und Subkategorie müssen gewählt werden.');
+    if ((!formData.categoryId && !formData.category) || (!formData.subcategoryId && !formData.subcategory)) return setError('Kategorie und Subkategorie müssen gewählt werden.');
     if ((formData.description || '').length > 250) return setError('Beschreibung darf maximal 250 Zeichen haben.');
     if (!formData.provider) return setError('Provider-ID fehlt!');
     if (!Array.isArray(providerLocation) || providerLocation.length !== 2) return setError('Ungültige Geo-Koordinaten (GeoJSON [lng, lat])');

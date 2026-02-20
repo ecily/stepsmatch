@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build-indexes": "node ./scripts/create-indexes.js"
+    "build-indexes": "node ./scripts/create-indexes.js",
+    "seed:graz": "node ./scripts/seed-graz.js",
+    "seed:reset": "node ./scripts/seed-reset.js"
   },
   "dependencies": {
     "axios": "^1.9.0",

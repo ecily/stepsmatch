@@ -1,19 +1,16 @@
-// backend/models/Provider.js
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-/* Helpers für Geo-Validierung */
 const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
 const inLat = (lat) => isFiniteNum(lat) && lat >= -90 && lat <= 90;
 const inLng = (lng) => isFiniteNum(lng) && lng >= -180 && lng <= 180;
 
-/** GeoJSON Point schema: [lng, lat] */
 const locationSchema = new Schema(
   {
     type: { type: String, enum: ['Point'], required: true, default: 'Point' },
     coordinates: {
-      type: [Number], // [lng, lat]
+      type: [Number],
       required: true,
       validate: {
         validator: (arr) => {
@@ -28,17 +25,41 @@ const locationSchema = new Schema(
   { _id: false }
 );
 
+const daySlotsSchema = new Schema(
+  {
+    from: { type: String, required: true },
+    to: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const providerSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     address: { type: String, trim: true },
+
+    // Optional reference-based category profile field
+    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+
+    // Legacy compatibility
     category: { type: String, trim: true },
     subcategory: { type: String, trim: true },
+
     description: { type: String, trim: true },
     contact: {
       phone: { type: String, trim: true },
       email: { type: String, trim: true },
       website: { type: String, trim: true },
+    },
+    openingHours: {
+      timezone: { type: String, default: 'Europe/Vienna' },
+      mon: { type: [daySlotsSchema], default: undefined },
+      tue: { type: [daySlotsSchema], default: undefined },
+      wed: { type: [daySlotsSchema], default: undefined },
+      thu: { type: [daySlotsSchema], default: undefined },
+      fri: { type: [daySlotsSchema], default: undefined },
+      sat: { type: [daySlotsSchema], default: undefined },
+      sun: { type: [daySlotsSchema], default: undefined },
     },
     location: { type: locationSchema, required: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -46,10 +67,8 @@ const providerSchema = new Schema(
   { timestamps: true }
 );
 
-// 2dsphere-Index für Geo-Queries
 providerSchema.index({ location: '2dsphere' });
 
-/* Casting/Normalisierung vor Validate – verhindert String-Koordinaten */
 providerSchema.pre('validate', function (next) {
   if (this.location && Array.isArray(this.location.coordinates)) {
     this.location.coordinates = this.location.coordinates.map((n) => Number(n));
@@ -60,7 +79,6 @@ providerSchema.pre('validate', function (next) {
   next();
 });
 
-const Provider =
-  mongoose.models.Provider || mongoose.model('Provider', providerSchema);
+const Provider = mongoose.models.Provider || mongoose.model('Provider', providerSchema);
 
 export default Provider;
