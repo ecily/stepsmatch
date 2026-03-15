@@ -3,9 +3,12 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
+import Provider from '../models/Provider.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
 
 const router = express.Router();
+const DEFAULT_PROVIDER_CATEGORY = 'Dienstleistungen';
+const DEFAULT_PROVIDER_LOCATION = [15.4395, 47.0707]; // Graz fallback [lng, lat]
 
 // ⏺️ Registrierung
 router.post('/register', async (req, res) => {
@@ -23,8 +26,26 @@ router.post('/register', async (req, res) => {
     await newUser.save();
     console.log('✅ Neuer User gespeichert:', newUser._id);
 
+    let provider = null;
+    try {
+      provider = await Provider.create({
+        name: String(name || email || 'Neuer Anbieter').trim(),
+        address: 'Adresse noch nicht gesetzt',
+        category: DEFAULT_PROVIDER_CATEGORY,
+        description: 'Automatisch bei Registrierung erstellt. Bitte Profil vervollstaendigen.',
+        contact: { email },
+        location: { type: 'Point', coordinates: DEFAULT_PROVIDER_LOCATION },
+        user: newUser._id,
+      });
+      console.log('✅ Provider automatisch erstellt:', provider._id);
+    } catch (providerErr) {
+      console.error('❌ Provider konnte nicht erstellt werden, rolle User zurueck:', providerErr);
+      await User.findByIdAndDelete(newUser._id);
+      return res.status(500).json({ error: 'Registrierung fehlgeschlagen (Provider-Profil konnte nicht erstellt werden)' });
+    }
+
     const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ token, user: newUser });
+    res.status(201).json({ token, user: newUser, provider });
   } catch (err) {
     console.error('❌ Fehler bei Registrierung:', err);
     res.status(500).json({ error: 'Registrierung fehlgeschlagen' });

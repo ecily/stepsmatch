@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "vite",
         "live": "vite --mode live",
-        "build": "vite build",
+        "build": "vite build --mode production",
         "lint": "eslint .",
         "preview": "vite preview"
     },

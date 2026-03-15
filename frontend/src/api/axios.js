@@ -5,16 +5,19 @@ import axios from "axios";
  * Base-URL Priorität:
  * 1) VITE_API_BASE_URL (aus .env.*)
  * 2) window.__SM_API__ (optional per <script> setzbar)
- * 3) Fallback: http://localhost:8080/api
+ * 3) Fallback je nach Host:
+ *    - lokal: http://localhost:8080/api
+ *    - gehostet: PROD_API_FALLBACK
  *
  * Policy:
- * - Nur in "production" wird hart gefailt, wenn VITE_API_BASE_URL fehlt.
- * - In allen anderen Modes (development/live/etc.) fällt es auf localhost zurück,
- *   um Setup-/Mode-Probleme beim lokalen Arbeiten zu vermeiden.
+ * - Gehostetes Frontend verwendet niemals localhost als API.
+ * - Lokales Frontend fällt ohne ENV auf localhost zurück.
  */
 const envBase = import.meta?.env?.VITE_API_BASE_URL;
 const winBase = typeof window !== "undefined" ? window.__SM_API__ : undefined;
-const mode = import.meta?.env?.MODE || "development";
+const buildMode = import.meta?.env?.MODE || "unknown";
+const isBuildDev = !!import.meta?.env?.DEV;
+const isBuildProd = !!import.meta?.env?.PROD;
 
 const PROD_API_FALLBACK = "https://lobster-app-ie9a5.ondigitalocean.app/api";
 
@@ -116,7 +119,10 @@ axiosInstance.interceptors.request.use((config) => {
 if (typeof window !== "undefined") {
   console.log("🔗 Axios Base URL:", baseURL);
   console.log("🌍 VITE_API_BASE_URL:", envBase);
-  console.log("🧭 MODE:", mode);
+  console.log("🏗️ Build Mode:", buildMode, "| DEV:", isBuildDev, "| PROD:", isBuildProd);
+  if (!isLocalHost && isBuildDev) {
+    console.warn("[StepsMatch] Hosted frontend runs in DEV build mode. Check deploy build command (expected: `npm run build`).");
+  }
 }
 
 export default axiosInstance;
