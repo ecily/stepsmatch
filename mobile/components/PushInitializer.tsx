@@ -160,6 +160,9 @@ let LAST_BG_MODE_CHANGE_AT = 0;
 const LAST_TOKEN_REFRESH_AT_KEY = 'push.lastTokenRefreshAt';
 const TOKEN_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let SELF_HEAL_IN_FLIGHT = false;
+let LAST_BG_REARM_AT = 0;
+let BG_REARM_IN_FLIGHT = false;
+const BG_REARM_MIN_GAP_MS = 15000;
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -342,16 +345,49 @@ async function setGlobalState(patch: any) {
 }
 
 // Interest helpers
-async function getInterestSet(): Promise<Set<string>> {
+async function readInterestsForBackend(): Promise<string[]> {
   try {
     const now = Date.now();
-    if (INTEREST_SET_CACHE && now - INTERESTS_LAST_LOAD_AT < INTERESTS_TTL_MS) return INTEREST_SET_CACHE;
-    const raw = await AsyncStorage.getItem('userInterests.csv');
-    const set = csvToSet(raw || '');
+    if (INTEREST_SET_CACHE && now - INTERESTS_LAST_LOAD_AT < INTERESTS_TTL_MS) {
+      return Array.from(INTEREST_SET_CACHE);
+    }
+
+    const [rawCsv, rawJson] = await Promise.all([
+      AsyncStorage.getItem('userInterests.csv'),
+      AsyncStorage.getItem('userInterests'),
+    ]);
+
+    const set = new Set<string>(csvToSet(rawCsv || ''));
+    if (rawJson) {
+      try {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            const normalized = csvToSet(String(item || ''));
+            for (const token of normalized) set.add(token);
+          }
+        } else if (typeof parsed === 'string') {
+          for (const token of csvToSet(parsed)) set.add(token);
+        }
+      } catch {
+        for (const token of csvToSet(rawJson)) set.add(token);
+      }
+    }
+
     INTEREST_SET_CACHE = set;
     INTERESTS_LAST_LOAD_AT = now;
-    return set;
-  } catch { return new Set(); }
+    return Array.from(set);
+  } catch {
+    return [];
+  }
+}
+
+async function getInterestSet(): Promise<Set<string>> {
+  try {
+    return new Set(await readInterestsForBackend());
+  } catch {
+    return new Set();
+  }
 }
 
 // IDs & Regions
@@ -615,10 +651,19 @@ async function registerTokenAtBackend(reason: string) {
     }
     await syncNativeHeartbeatConfig(`register:${reason}`, token);
     const deviceId = await getPersistentDeviceId();
+    const interests = await readInterestsForBackend();
     const res = await fetch(`${API_BASE}/push/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, deviceId, projectId: RESOLVED_PROJECT_ID, platform: Platform.OS, reason }),
+      body: JSON.stringify({
+        token,
+        deviceId,
+        projectId: RESOLVED_PROJECT_ID,
+        platform: Platform.OS,
+        reason,
+        interests,
+        serviceEnabled: true,
+      }),
     });
     let json: any = {};
     try { json = await res.json(); } catch { json = {}; }
@@ -638,7 +683,7 @@ async function registerTokenAtBackend(reason: string) {
       try {
         const permsOk = await hasLocationPermissions();
         if (permsOk) {
-          await startAggressiveBgLocation();
+          await guardedBgRearm('token-register');
           await refreshGeofencesAroundUser(true);
         } else {
           console.log('[init] BG not started (missing background location).');
@@ -857,7 +902,7 @@ async function pushOfferOnce(
 // ────────────────────────────────────────────────────────────
 // Geofence refresh
 // ────────────────────────────────────────────────────────────
-async function refreshGeofencesAroundUser(force = false) {
+export async function refreshGeofencesAroundUser(force = false) {
   if (GEOFENCE_REFRESH_IN_FLIGHT) return;
   GEOFENCE_REFRESH_IN_FLIGHT = true;
   try {
@@ -1081,6 +1126,7 @@ async function _sendHeartbeatWithCoords({
       lastHeartbeatAt = now;
       try {
         const deviceId = await getPersistentDeviceId();
+        const interests = await readInterestsForBackend();
         diagLog('hb.send', { reason, lat: latitude, lng: longitude, acc: accVal, appState: appStateRef.current }, 'info', 1000);
         const res = await fetch(`${API_BASE}/location/heartbeat`, {
           method: 'POST',
@@ -1088,6 +1134,7 @@ async function _sendHeartbeatWithCoords({
           body: JSON.stringify({
             token: token || undefined, deviceId, lat: latitude, lng: longitude, accuracy: accVal,
             platform: Platform.OS, projectId: RESOLVED_PROJECT_ID, reason, appState: appStateRef.current,
+            interests,
           }),
         });
         let json: any = {};
@@ -1585,6 +1632,25 @@ function useLocationWatchdog() {
   }, []);
 }
 
+async function guardedBgRearm(reason: string) {
+  const now = nowMs();
+  if (BG_REARM_IN_FLIGHT) {
+    console.log('[BGLOC] rearm skipped (in-flight)', reason);
+    return;
+  }
+  if (now - LAST_BG_REARM_AT < BG_REARM_MIN_GAP_MS) {
+    console.log('[BGLOC] rearm skipped (cooldown)', reason, 'age=', now - LAST_BG_REARM_AT);
+    return;
+  }
+  BG_REARM_IN_FLIGHT = true;
+  LAST_BG_REARM_AT = now;
+  try {
+    await startAggressiveBgLocation();
+  } finally {
+    BG_REARM_IN_FLIGHT = false;
+  }
+}
+
 function useAppStateWatchdog() {
   const appState = useRef<string>(AppState.currentState || 'active');
   useEffect(() => {
@@ -1601,7 +1667,7 @@ function useAppStateWatchdog() {
           const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
           if (permsOk && !started) {
             console.log('[BGLOC] watchdog appstate → (re)start]');
-            await startAggressiveBgLocation();
+            await guardedBgRearm('appstate-active');
           }
           await maybePeriodicTokenRefresh('app-foreground');
         }
@@ -1936,12 +2002,41 @@ export async function stopBackgroundServices(reason = 'manual') {
   console.log('[service] background stopped', reason);
 }
 
+export async function syncRemoteServiceState(enabled: boolean, reason = 'manual') {
+  try {
+    const deviceId = await getPersistentDeviceId();
+    const token = await getCurrentExpoToken();
+    const interests = await readInterestsForBackend();
+    const res = await fetch(`${API_BASE}/push/service-state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: !!enabled,
+        reason,
+        token: token || undefined,
+        deviceId,
+        projectId: RESOLVED_PROJECT_ID,
+        interests,
+      }),
+    });
+    if (!res.ok) {
+      console.log('[service] remote state sync non-ok', res.status, reason);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    logErr('service:remote-sync', e, { enabled, reason });
+    return false;
+  }
+}
+
 async function initPush() {
   await ensureChannels().catch(() => {}); // FIX: Channel vor jeglichem Start
 
   const svc = await getServiceState();
   if (!isServiceActive(svc)) {
     console.log('[init] service disabled or paused -> skip');
+    await syncRemoteServiceState(false, 'init-inactive').catch(() => {});
     await stopBackgroundServices('init-inactive');
     return;
   }
@@ -2074,5 +2169,7 @@ export async function getBgStatus() {
 export async function kickstartBackgroundLocation() { await startAggressiveBgLocation(); }
 export const sendHeartbeat = sendHeartbeatOnce;
 export const sendRoundtripTest = roundtripTest;
+
+
 
 

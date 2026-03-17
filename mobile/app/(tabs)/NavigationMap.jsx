@@ -159,16 +159,22 @@ export default function NavigationMap() {
       mapRef.current?.animateToRegion(regionForRadius(userPos, VISIBLE_RADIUS_M), 450);
     } catch {}
   }, [userPos]);
-  const rows = useMemo(() => {
-    return (rawOffers || [])
+  const { rows, activeCount } = useMemo(() => {
+    const prepared = (rawOffers || [])
       .map((offer) => {
         const loc = pickOfferLocation(offer);
         const distanceM = userPos && loc ? haversineM(userPos, loc) : Number.POSITIVE_INFINITY;
-        const include = !!loc && isOfferActiveNow(offer, 'Europe/Vienna');
-        return { offer, loc, distanceM, include };
+        const isActive = !!loc && isOfferActiveNow(offer, 'Europe/Vienna');
+        return { offer, loc, distanceM, isActive };
       })
-      .filter((r) => r.include && r.distanceM <= VISIBLE_RADIUS_M)
+      .filter((r) => !!r.loc && r.distanceM <= VISIBLE_RADIUS_M)
       .sort((a, b) => a.distanceM - b.distanceM);
+
+    const activeRows = prepared.filter((r) => r.isActive);
+    return {
+      rows: activeRows.length > 0 ? activeRows : prepared,
+      activeCount: activeRows.length,
+    };
   }, [rawOffers, userPos]);
 
   const recenter = () => {
@@ -214,7 +220,7 @@ export default function NavigationMap() {
             <Marker
               key={row.offer?._id || `${row.loc.latitude}-${row.loc.longitude}`}
               coordinate={row.loc}
-              pinColor={t.colors.primary}
+              pinColor={row.isActive ? t.colors.primary : '#9ca3af'}
               onPress={() => setSelectedRow(row)}
               title={row.offer?.name || 'Angebot'}
               description={`${row.offer?.category || '-'} · ${fmtDistance(row.distanceM)}`}
@@ -225,7 +231,7 @@ export default function NavigationMap() {
         <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
           <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Map Preview</Text>
           <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
-            {rows.length} gueltige Angebote im Radius von 2 km
+            {activeCount > 0 ? `${activeCount} gueltige Angebote im Radius von 2 km` : `${rows.length} Angebote im Radius von 2 km (aktuell nicht aktiv)`}
           </Text>
         </View>
 
@@ -248,7 +254,7 @@ export default function NavigationMap() {
               {selectedRow.offer?.name || 'Angebot'}
             </Text>
             <Text style={[styles.sheetMeta, { color: t.colors.inkLow }]}> 
-              {selectedRow.offer?.category || 'Kategorie'} · {fmtDistance(selectedRow.distanceM)} · ca. {etaMin(selectedRow.distanceM)} min
+              {selectedRow.offer?.category || 'Kategorie'} · {fmtDistance(selectedRow.distanceM)} · ca. {etaMin(selectedRow.distanceM)} min · {selectedRow.isActive ? 'aktiv' : 'inaktiv'}
             </Text>
             <Text style={[styles.sheetDesc, { color: t.colors.ink }]} numberOfLines={3}>
               {selectedRow.offer?.description || 'Keine Beschreibung verfuegbar.'}
@@ -359,3 +365,4 @@ const styles = StyleSheet.create({
   },
   fabText: { fontSize: 22, fontWeight: '800' },
 });
+

@@ -70,6 +70,11 @@ function normalizeInterests(input) {
     .filter(Boolean);
 }
 
+function interestsFromPayload(input) {
+  if (input === undefined) return null;
+  return Array.from(new Set(normalizeInterests(input)));
+}
+
 /** Leitet die benötigten Tags aus dem Offer ab (interestsRequired bevorzugt). */
 function deriveRequiredFromOffer(offer) {
   try {
@@ -294,6 +299,7 @@ router.post('/heartbeat', async (req, res) => {
     const projectId = b.projectId ? String(b.projectId) : undefined;
     const deviceId = b.deviceId ? String(b.deviceId) : undefined;
     const platform = b.platform ? String(b.platform).toLowerCase() : undefined;
+    const normalizedInterests = interestsFromPayload(b.interests);
 
     const now = new Date();
     const point = pointOrNull(lat, lng); // ✅ strikter Guard
@@ -309,6 +315,7 @@ router.post('/heartbeat', async (req, res) => {
       ...(point ? { lastLocationAt } : {}), // nur wenn Position gesetzt wurde
       ...(projectId ? { projectId } : {}),
       ...(deviceId ? { deviceId } : {}),
+      ...(normalizedInterests !== null ? { interests: normalizedInterests } : {}),
       updatedAt: now,
     };
     const $setOnInsert = {
@@ -607,6 +614,7 @@ router.post('/geofence-enter', async (req, res) => {
     const deviceId = b.deviceId ? String(b.deviceId) : null;
     const projectIdReq = b.projectId ? String(b.projectId) : null;
     const projectFilter = projectIdReq || PROJECT_ID || null;
+    const normalizedInterests = interestsFromPayload(b.interests);
 
     const offerId = String(b.offerId || '').trim();
     if (!isValidObjectId(offerId)) {
@@ -630,6 +638,7 @@ router.post('/geofence-enter', async (req, res) => {
         disabled: false,
         ...(projectFilter ? { projectId: projectFilter } : {}),
         ...(deviceId ? { deviceId } : {}),
+        ...(normalizedInterests !== null ? { interests: normalizedInterests } : {}),
         ...(haveCoords ? { lastLocation: { type: 'Point', coordinates: [lng, lat] }, lastLocationAt: now } : {}),
         updatedAt: now,
       };

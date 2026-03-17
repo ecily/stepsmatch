@@ -33,7 +33,7 @@ const GLOBAL_STATE_KEY = 'offerPushState.__global';
 
 // ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.config.js entsprechen:
 const OFFERS_CHANNEL_ID = 'offers-v2';
-const BG_CHANNEL_ID = 'com.ecily.mobile:stepsmatch-bg-location-task';
+const BG_CHANNEL_IDS = ['stepsmatch-bg-location-task', 'com.ecily.mobile:stepsmatch-bg-location-task'];
 const HEARTBEAT_FETCH_TASK = 'stepsmatch-heartbeat-fetch';
 
 // Backend (wie im PushInitializer)
@@ -427,12 +427,13 @@ export default function Diagnostics() {
   }, [channels]);
 
   const chOffers = chById[OFFERS_CHANNEL_ID];
-  const chBg     = chById[BG_CHANNEL_ID];
+  const chBg     = BG_CHANNEL_IDS.map((id) => chById[id]).find(Boolean);
 
   // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo)
   const offersIsMax = !!chOffers && Number(chOffers.importance) >= 6;
   const offersHasSound = !!chOffers && !!chOffers.sound; // "arrival" erwartet
   const bgIsPresent = !!chBg;
+  const channelTuningOk = offersIsMax && offersHasSound && bgIsPresent;
 
   const notifOk = notifPerm === 'granted';
   const locOk = (locPerm.fg === 'granted') && (locPerm.bg === 'granted');
@@ -444,13 +445,14 @@ export default function Diagnostics() {
   const hbRecent = !!lastHeartbeatLogAt && (now - lastHeartbeatLogAt <= HB_FRESH_MS);
   const bgEffective = bgApiStarted || bgRecentFix || hbRecent;
 
-  const tasksOk = bgEffective && gfStarted;
+  const hasNearbyCandidates = Array.isArray(candidates) && candidates.length > 0;
+  const geofenceOk = hasNearbyCandidates ? gfStarted : true;
+  const tasksOk = bgEffective && geofenceOk;
 
-  const verdictOK =
-    notifOk && locOk && tasksOk && offersIsMax && offersHasSound && bgIsPresent;
+  const verdictOK = notifOk && locOk && tasksOk;
 
   const verdictWarn =
-    (notifOk && locOk && tasksOk) && (!verdictOK);
+    verdictOK && !channelTuningOk;
 
   // ===== Render =====
   return (
@@ -527,7 +529,7 @@ export default function Diagnostics() {
             {/* Zwei Ebenen: API vs. Effektiv */}
             <Row verdict={bgApiStarted} label="BG Location started (API)" value={String(bgApiStarted)} />
             <Row verdict={bgEffective} label="BG Location healthy (effektiv)" value={String(bgEffective)} />
-            <Row verdict={gfStarted} label="Geofencing started" value={String(gfStarted)} />
+            <Row verdict={geofenceOk} label="Geofencing started" value={hasNearbyCandidates ? String(gfStarted) : 'idle (no nearby offers)'} />
             <Row verdict={fetchStatus === 'available'} label="BackgroundFetch" value={fetchStatus} />
             <Row verdict={!!fetchTaskReg} label="Fetch Task registered" value={String(fetchTaskReg)} />
             <KV k="lastFixAt" v={fmtMsAge(lastFixAt)} />
@@ -569,7 +571,7 @@ export default function Diagnostics() {
                 ))
               )}
               <Text style={s.hintSmall}>
-                Erwartet: {BG_CHANNEL_ID} present; {OFFERS_CHANNEL_ID} importance=MAX &amp; sound≠none
+                Erwartet: [{BG_CHANNEL_IDS.join(' | ')}] present; {OFFERS_CHANNEL_ID} importance=MAX &amp; sound≠none
               </Text>
             </Card>
           )}
@@ -747,3 +749,4 @@ const v = StyleSheet.create({
   warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
   fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
 });
+

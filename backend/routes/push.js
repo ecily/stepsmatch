@@ -16,6 +16,29 @@ const normPlatform = (p) => {
   const s = String(p || '').toLowerCase().trim();
   return PLATFORMS.has(s) ? s : 'android';
 };
+const parseBool = (v) => {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'boolean') return v;
+  const s = String(v).trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes', 'enabled', 'active'].includes(s)) return true;
+  if (['0', 'false', 'off', 'no', 'disabled', 'inactive'].includes(s)) return false;
+  return undefined;
+};
+const normalizeInterestsInput = (input) => {
+  if (input === undefined) return null; // no update requested
+  const src = Array.isArray(input) ? input : String(input || '').split(/[,\n;|]/);
+  const out = src
+    .map((s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter(Boolean);
+  return Array.from(new Set(out));
+};
 const isValidObjectId = (v) => {
   try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
 };
@@ -205,10 +228,12 @@ router.post('/register', async (req, res) => {
       userId,
       deviceId,
       projectId,
-      lastLocation,   // optional: { type:'Point', coordinates:[lng,lat] } ODER { lat, lng }
-      lat,            // optional: number
-      lng,            // optional: number
-      reason,         // optional: rein fürs Logging
+      interests,
+      serviceEnabled,
+      lastLocation,
+      lat,
+      lng,
+      reason,
     } = req.body || {};
 
     if (!token || typeof token !== 'string') {
@@ -217,6 +242,8 @@ router.post('/register', async (req, res) => {
 
     // Strikte Geo-Validierung (setzt nur bei valider Koordinate)
     const point = normalizePoint(lastLocation, Number(lat), Number(lng));
+    const normalizedInterests = normalizeInterestsInput(interests);
+    const enabledFlag = parseBool(serviceEnabled);
 
     const now = new Date();
 
@@ -227,7 +254,7 @@ router.post('/register', async (req, res) => {
       userId: isValidObjectId(userId) ? userId : null,
       deviceId: deviceId || null,
       valid: true,
-      disabled: false,
+      disabled: enabledFlag === false ? true : false,
       lastError: null,
       lastTriedAt: null,
       lastSeenAt: now,
@@ -239,6 +266,9 @@ router.post('/register', async (req, res) => {
     if (point) {
       $set.lastLocation = point;
       $set.lastHeartbeatAt = now;
+    }
+    if (normalizedInterests !== null) {
+      $set.interests = normalizedInterests;
     }
     // WICHTIG: Wenn keine Koordinate → NICHTS zu lastLocation setzen (auch kein leeres Objekt)!
 
@@ -276,6 +306,8 @@ router.post('/register', async (req, res) => {
       'platform=', $set.platform,
       'deviceId=', $set.deviceId || '(none)',
       'point=', point ? 'ok' : 'n/a',
+      normalizedInterests !== null ? `interests=${normalizedInterests.length}` : 'interests=keep',
+      enabledFlag !== undefined ? `serviceEnabled=${enabledFlag}` : 'serviceEnabled=default-on',
       reason ? `reason=${reason}` : ''
     );
 
@@ -290,6 +322,70 @@ router.post('/register', async (req, res) => {
   } catch (e) {
     console.error('[push] register error', e);
     res.status(500).json({ success: false, error: 'server-error' });
+  }
+});
+
+/**
+ * Expliziter Remote-Service-State:
+ * enabled=false -> Token(s) serverseitig deaktivieren (kein Remote-Push).
+ * enabled=true  -> Token(s) wieder aktivieren.
+ */
+router.post('/service-state', async (req, res) => {
+  try {
+    const { token, deviceId, projectId, enabled, interests, reason } = req.body || {};
+    const enabledFlag = parseBool(enabled);
+    if (enabledFlag === undefined) {
+      return res.status(400).json({ success: false, error: 'enabled-required' });
+    }
+
+    const trimmedToken = typeof token === 'string' ? token.trim() : '';
+    const projectScope = projectId || PROJECT_ID || null;
+    const normalizedInterests = normalizeInterestsInput(interests);
+
+    const or = [];
+    if (trimmedToken && Expo.isExpoPushToken(trimmedToken)) or.push({ token: trimmedToken });
+    if (deviceId) {
+      const q = { deviceId: String(deviceId) };
+      if (projectScope) q.projectId = projectScope;
+      or.push(q);
+    }
+    if (!or.length) {
+      return res.status(400).json({ success: false, error: 'token-or-deviceId-required' });
+    }
+
+    const filter = or.length === 1 ? or[0] : { $or: or };
+    const now = new Date();
+    const $set = {
+      disabled: !enabledFlag,
+      valid: true,
+      updatedAt: now,
+      lastSeenAt: now,
+      ...(projectScope ? { projectId: projectScope } : {}),
+    };
+    if (normalizedInterests !== null) $set.interests = normalizedInterests;
+
+    const upd = await PushToken.updateMany(filter, { $set });
+
+    console.log(
+      '[push] service-state',
+      `enabled=${enabledFlag}`,
+      trimmedToken ? `token=${trimmedToken.slice(0, 22)}…` : 'token=(none)',
+      deviceId ? `deviceId=${deviceId}` : 'deviceId=(none)',
+      `matched=${upd.matchedCount || 0}`,
+      `modified=${upd.modifiedCount || 0}`,
+      normalizedInterests !== null ? `interests=${normalizedInterests.length}` : 'interests=keep',
+      reason ? `reason=${reason}` : ''
+    );
+
+    return res.json({
+      success: true,
+      enabled: enabledFlag,
+      matched: upd.matchedCount || 0,
+      modified: upd.modifiedCount || 0,
+    });
+  } catch (e) {
+    console.error('[push] service-state error', e);
+    return res.status(500).json({ success: false, error: 'server-error' });
   }
 });
 

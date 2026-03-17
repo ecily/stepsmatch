@@ -12,7 +12,8 @@
     "dev": "nodemon server.js",
     "build-indexes": "node ./scripts/create-indexes.js",
     "seed:graz": "node ./scripts/seed-graz.js",
-    "seed:reset": "node ./scripts/seed-reset.js"
+    "seed:reset": "node ./scripts/seed-reset.js",
+    "seed:gratwein": "node ./scripts/seed-gratwein.js"
   },
   "dependencies": {
     "axios": "^1.9.0",

@@ -2,7 +2,7 @@
 // Robustheit: Standort-Fallback (LastKnown + Persist), Offers trotz fehlender Position, Axios-Timeout + Retry
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { sendHeartbeat, ensureBgAfterOnboarding, stopBackgroundServices } from '../../components/PushInitializer';
+import { sendHeartbeat, ensureBgAfterOnboarding, stopBackgroundServices, syncRemoteServiceState, refreshGeofencesAroundUser } from '../../components/PushInitializer';
 import {
   View,
   Text,
@@ -35,7 +35,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { DistanceBadge } from '../../components/DistanceBadge';
 
 import { csvToSet, matchesInterests } from '../../utils/interests';
-import { refreshGeofencesAroundUser } from '../../components/push/push-geofence';
 import { getServiceState, setServiceEnabled, pauseForMs, pauseUntil, resumeService, isPaused } from '../../components/push/service-control';
 
 
@@ -556,7 +555,7 @@ export default function HomeTab() {
         await sendHeartbeat();
       } catch {}
       try {
-        await refreshGeofencesAroundUser({ force: true, silent: false });
+        await refreshGeofencesAroundUser(true);
       } catch {}
       fetchFnRef.current?.({ pageToLoad: 1, mode: 'auto' });
       lastFgSyncAtRef.current = Date.now();
@@ -582,7 +581,7 @@ export default function HomeTab() {
     try {
       console.log(`[FOREGROUND_SYNC] start reason=${reason}`);
       try { await sendHeartbeat(); } catch {}
-      try { await refreshGeofencesAroundUser({ force: true, silent: false }); } catch {}
+      try { await refreshGeofencesAroundUser(true); } catch {}
       await fetchFnRef.current?.({ pageToLoad: 1, mode: reason });
       lastFgSyncAtRef.current = Date.now();
       console.log('[FOREGROUND_SYNC] done');
@@ -707,6 +706,7 @@ export default function HomeTab() {
     setSvcBusy(true);
     try {
       await resumeService('user-on');
+      await syncRemoteServiceState(true, 'user-on');
       await ensureBgAfterOnboarding();
       await refreshGeofencesAroundUser(true).catch(() => {});
       await loadServiceState();
@@ -720,6 +720,7 @@ export default function HomeTab() {
     setSvcBusy(true);
     try {
       await setServiceEnabled(false, 'user-off');
+      await syncRemoteServiceState(false, 'user-off');
       await stopBackgroundServices('user-off');
       await loadServiceState();
     } finally {
@@ -732,6 +733,7 @@ export default function HomeTab() {
     setSvcBusy(true);
     try {
       await pauseForMs(ms, reason || 'user-pause');
+      await syncRemoteServiceState(false, reason || 'user-pause');
       await stopBackgroundServices('user-pause');
       await loadServiceState();
     } finally {
@@ -746,6 +748,7 @@ export default function HomeTab() {
       const now = new Date();
       const until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
       await pauseUntil(until, 'user-pause-tomorrow');
+      await syncRemoteServiceState(false, 'user-pause-tomorrow');
       await stopBackgroundServices('user-pause');
       await loadServiceState();
     } finally {

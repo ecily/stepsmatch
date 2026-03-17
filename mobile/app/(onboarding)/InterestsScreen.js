@@ -51,8 +51,10 @@ export default function InterestsScreen() {
   };
 
   const handleSave = async () => {
+    const csv = (selected || []).map((s) => String(s || '').trim()).filter(Boolean).join(',');
     await AsyncStorage.multiSet([
       ['userInterests', JSON.stringify(selected)],
+      ['userInterests.csv', csv],
       ['hasOnboarded', '1'],
     ]);
     router.replace('/(onboarding)/DoneScreen');

@@ -59,9 +59,15 @@ export function isOfferActiveNow(offer: any, timeZone: string = 'Europe/Vienna',
   };
 
   const normalizeWeekday = (x: any): number | null => {
-    if (typeof x === 'number' && x >= 0 && x <= 6) return x;
+    if (typeof x === 'number' && Number.isInteger(x)) {
+      if (x >= 0 && x <= 6) return x;
+      if (x >= 1 && x <= 7) return x - 1; // legacy mapping Mo=1..So=7
+    }
     const n = Number(x);
-    if (Number.isFinite(n) && n >= 0 && n <= 6) return n;
+    if (Number.isFinite(n) && Number.isInteger(n)) {
+      if (n >= 0 && n <= 6) return n;
+      if (n >= 1 && n <= 7) return n - 1;
+    }
     const s = String(x || '').trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(WEEKDAY_MAP, s) ? WEEKDAY_MAP[s] : null;
   };

@@ -22,9 +22,11 @@ export default function LoginScreen() {
     setError('');
     try {
       const res = await axios.post(`${API_URL}/users/login`, { email, password });
+      const interests = Array.isArray(res?.data?.user?.interests) ? res.data.user.interests : [];
       await AsyncStorage.setItem('token', res.data.token);
       await AsyncStorage.setItem('userId', res.data.user._id);
-      await AsyncStorage.setItem('userInterests', JSON.stringify(res?.data?.user?.interests || []));
+      await AsyncStorage.setItem('userInterests', JSON.stringify(interests));
+      await AsyncStorage.setItem('userInterests.csv', interests.map((s) => String(s || '').trim()).filter(Boolean).join(','));
       router.replace('/(tabs)');
     } catch (err) {
       setError(err?.response?.data?.message || 'Login fehlgeschlagen. Bitte pruefe deine Daten.');
