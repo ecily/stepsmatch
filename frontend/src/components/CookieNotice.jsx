@@ -27,26 +27,22 @@ export default function CookieNotice() {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[10000] p-3 md:p-4">
-      <div className="mx-auto max-w-5xl rounded-2xl border border-sky-200 bg-white/98 p-4 shadow-2xl backdrop-blur">
-        <p className="text-sm text-slate-800">
-          Wir verwenden derzeit nur technisch notwendige Cookies/ähnliche Speichertechnologien
-          (z. B. für Login-/Tester-Zustand und Sicherheit). Es werden aktuell keine Analyse-
-          oder Marketing-Cookies gesetzt.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            onClick={acceptNotice}
-            className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700"
-          >
-            Verstanden
-          </button>
-          <Link
-            to="/privacy"
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Datenschutzhinweise
-          </Link>
+    <div className="fixed inset-x-0 bottom-0 z-[110] p-3 sm:p-4">
+      <div className="sm-shell">
+        <div className="sm-card-soft px-5 py-4 sm:px-6 sm:py-5">
+          <p className="text-sm text-slate-700 sm:text-[15px]">
+            StepsMatch verwendet aktuell nur technisch notwendige Speichertechnologien
+            für Zugang, Sicherheit und stabile Nutzung. Analyse- oder Marketing-Cookies
+            sind derzeit nicht aktiv.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={acceptNotice} className="sm-btn-primary !px-4 !py-2">
+              Verstanden
+            </button>
+            <Link to="/privacy" className="sm-btn-secondary !px-4 !py-2">
+              Datenschutz
+            </Link>
+          </div>
         </div>
       </div>
     </div>

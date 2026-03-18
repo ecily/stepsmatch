@@ -1,57 +1,82 @@
 ﻿import React from "react";
 import { Link } from "react-router-dom";
+import { ArrowRight, BadgeCheck, Clock3, Radar } from "lucide-react";
+
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg";
 
 const pillars = [
   {
-    title: "1. Anbieter definiert Kontext",
-    text: "Radius bis 2 km, Kategorie und Zeitfenster - damit das Angebot nur dann erscheint, wenn es wirklich Sinn macht.",
+    icon: <Radar className="h-5 w-5 text-blue-700" />,
+    title: "Kontext statt Zufall",
+    text: "Anbieter definieren Radius, Kategorie und Zeitfenster. Dadurch wird Relevanz steuerbar.",
   },
   {
-    title: "2. User definiert Interesse",
-    text: "User entscheidet, was relevant ist. Keine permanente Suche, keine endlosen Feeds.",
+    icon: <BadgeCheck className="h-5 w-5 text-blue-700" />,
+    title: "Interessen statt Overload",
+    text: "User wählen bewusst ihre Themen und bekommen nur passende Hinweise.",
   },
   {
-    title: "3. Match passiert im Moment",
-    text: "Wenn Ort, Zeit und Interesse zusammenkommen, sendet StepsMatch den Hinweis. Sonst bleibt es ruhig.",
+    icon: <Clock3 className="h-5 w-5 text-blue-700" />,
+    title: "Timing statt Suchstress",
+    text: "Push wird nur ausgelöst, wenn Ort, Zeit und Interesse gleichzeitig passen.",
   },
 ];
 
 export default function WhyStepsMatch() {
   return (
-    <div className="min-h-screen text-slate-900 bg-[#f8fcff]">
-      <Navbar />
+    <div className="sm-page">
+      <div className="sm-stack">
+        <Navbar />
 
-      <section className="sm-shell py-12 md:py-16">
-        <div className="rounded-3xl border border-sky-100 bg-white p-8 md:p-10 shadow-sm">
-          <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
-            <img src={logoIcon} alt="StepsMatch" className="h-4 w-4" /> Warum StepsMatch neuartig ist
-          </span>
-          <h1 className="mt-4 text-4xl md:text-6xl font-black tracking-tight">finden. nicht suchen.</h1>
-          <p className="mt-4 text-lg text-slate-700 max-w-3xl">Die Neuheit liegt nicht im Anzeigen von Angeboten, sondern im Timing. StepsMatch bringt Angebot und Nachfrage erst dann zusammen, wenn die Situation wirklich passt.</p>
-        </div>
-      </section>
-
-      <section className="sm-shell pb-12 grid md:grid-cols-3 gap-4">
-        {pillars.map((p) => (
-          <article key={p.title} className="rounded-3xl border border-sky-100 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-bold">{p.title}</h2>
-            <p className="mt-2 text-slate-700">{p.text}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="sm-shell pb-16">
-        <div className="rounded-3xl border border-sky-200 bg-sky-700 p-8 md:p-10 text-white">
-          <h3 className="text-3xl font-extrabold">Das Ergebnis für beide Seiten</h3>
-          <p className="mt-3 text-sky-100 max-w-3xl">User bekommen relevante Hinweise ohne Suchstress. Anbieter erreichen Menschen in echter Nähe und im passenden Moment.</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link to="/register" className="rounded-full bg-white px-5 py-3 font-semibold text-sky-800">Als Anbieter starten</Link>
-            <Link to="/home" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Zur Landing</Link>
+        <section className="sm-shell py-10 sm:py-14 lg:py-16">
+          <div className="sm-card-soft p-7 sm:p-10 sm-rise">
+            <p className="sm-badge">
+              <img src={logoIcon} alt="StepsMatch" className="h-4 w-4" />
+              Warum StepsMatch neu ist
+            </p>
+            <h1 className="sm-hero-title mt-5 max-w-4xl text-[clamp(2.2rem,6vw,4.5rem)]">
+              Relevanz im richtigen Moment.
+              <br />
+              Nicht im falschen Feed.
+            </h1>
+            <p className="sm-section-copy max-w-4xl">
+              StepsMatch verschiebt den Fokus von permanenter Suche auf situative Relevanz.
+              Das Produkt arbeitet mit Kontextsignalen statt mit Aufmerksamkeitsschleifen.
+            </p>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section className="sm-shell pb-12">
+          <div className="grid gap-4 md:grid-cols-3">
+            {pillars.map((pillar, idx) => (
+              <article key={pillar.title} className={`sm-card p-6 sm-rise sm-delay-${Math.min(idx + 1, 3)}`}>
+                <div className="mb-3 inline-flex rounded-xl border border-blue-200 bg-blue-50 p-2">{pillar.icon}</div>
+                <h2 className="text-xl font-bold">{pillar.title}</h2>
+                <p className="mt-2 text-slate-700">{pillar.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="sm-shell pb-16 sm:pb-20">
+          <div className="sm-card-strong p-8 sm:p-10 sm-rise sm-delay-2">
+            <h3 className="text-3xl font-extrabold sm:text-4xl">Der Nutzen ist auf beiden Seiten sofort spürbar</h3>
+            <p className="mt-3 max-w-3xl text-blue-50 sm:text-lg">
+              User erhalten präzise Hinweise ohne Noise. Anbieter erreichen Menschen genau
+              im relevanten Radius und Zeitfenster.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link to="/register" className="sm-btn-secondary gap-2">
+                Als Anbieter starten <ArrowRight size={16} />
+              </Link>
+              <Link to="/home" className="sm-btn-ghost">
+                Zur Landing
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

@@ -103,7 +103,19 @@ const AppRoutes = () => {
         <Route path="/edit-provider/:providerId" element={<EditProviderForm />} />
         <Route path="/edit-provider" element={<EditProviderForm />} />
 
-        <Route path="*" element={<p className="p-8 text-center text-red-500">404 - Seite nicht gefunden</p>} />
+        <Route
+          path="*"
+          element={
+            <div className="sm-page">
+              <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
+                <div className="sm-card p-8 text-center">
+                  <h1 className="text-3xl font-extrabold">404</h1>
+                  <p className="mt-2 text-slate-600">Seite nicht gefunden.</p>
+                </div>
+              </div>
+            </div>
+          }
+        />
       </Routes>
     </>
   );

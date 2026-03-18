@@ -1,12 +1,46 @@
-# React + Vite
+﻿# StepsMatch Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Produktions-Frontend für StepsMatch (React + Vite).
 
-Currently, two official plugins are available:
+## Kernidee
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+StepsMatch zeigt nicht einfach lokale Angebote an, sondern matched **Ort + Zeit + Interesse** und informiert genau im richtigen Moment.
 
-## Expanding the ESLint configuration
+## Start
 
-If you are developing a production application, we recommend using TypeScript and enable type-aware lint rules. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+npm run dev
+```
+
+## Build (Production)
+
+```bash
+npm run build
+npm run preview
+```
+
+## Wichtige ENV-Variablen
+
+- `VITE_API_BASE_URL` – Backend-API-Basis (`.../api`)
+- `VITE_GOOGLE_MAPS_API_KEY` – Google Maps API Key
+- `VITE_GOOGLE_MAPS_MAP_ID` – optional für erweiterte Map-Styles/Marker
+
+## Seiten
+
+- `src/pages/LandingPage.jsx` – Haupt-Landingpage
+- `src/pages/WhyStepsMatch.jsx` – Positionierung/USP
+- `src/pages/Pitch.jsx` – Investor-Zusammenfassung
+- `src/pages/TesterGate.jsx` + `src/pages/NDA.jsx` – Tester-Zugang
+- `src/pages/Login.jsx` / `src/pages/Register.jsx` – Anbieter Auth
+- `src/pages/PrivacyPage.jsx` – Datenschutzhinweise
+- `src/pages/AdminCategoryPage.jsx` / `src/pages/AdminOffersMap.jsx` – Admin-Flows
+
+## Designsystem
+
+Gemeinsame UI-Tokens und Komponentenklassen sind zentral in `src/index.css` definiert.
+
+## Hinweise
+
+- Keine Auto-Commits in Git aus diesem Repo-Stand.
+- Für Deploy nur nach lokal erfolgreichem `npm run lint` und `npm run build`.

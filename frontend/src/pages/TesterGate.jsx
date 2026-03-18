@@ -1,6 +1,9 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { KeyRound, ShieldCheck } from "lucide-react";
+
 import axiosInstance from "../api/axios";
+import logoIcon from "../assets/stepsmatch-icon.svg";
 
 export default function TesterGate() {
   const navigate = useNavigate();
@@ -52,25 +55,54 @@ export default function TesterGate() {
   };
 
   return (
-    <div className="min-h-screen px-6 py-12">
-      <div className="max-w-xl mx-auto sm-card p-7 md:p-8">
-        <h1 className="text-3xl font-extrabold tracking-tight">Tester-Zugang</h1>
-        <p className="mt-2 text-slate-600">Diese Vorabversion ist nur für eingeladene Tester. Bitte gib deinen Key ein.</p>
+    <div className="sm-page">
+      <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
+        <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.08fr_0.92fr]">
+          <section className="sm-card-strong p-7 sm:p-9 sm-rise">
+            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Private Testphase</p>
+            <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Willkommen im StepsMatch MVP-Access</h1>
+            <p className="mt-3 max-w-xl text-blue-50 sm:text-lg">
+              Zugang zur Testumgebung erfolgt über persönlichen Tester-Key und NDA-Akzeptanz.
+              Danach steht dir die komplette Frontend-Strecke offen.
+            </p>
+            <div className="mt-6 grid gap-3 text-sm text-blue-50">
+              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Zugang nur für eingeladene Tester</div>
+              <div className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Key-Prüfung gegen Backend-Validierung</div>
+            </div>
+          </section>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="testerKey" className="block text-sm font-semibold text-slate-800">Tester-Key</label>
-            <input id="testerKey" type="text" value={key} onChange={(e) => setKey(e.target.value)} disabled={loading} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" placeholder="z. B. SM-2025-ALPHA" />
-          </div>
+          <section className="sm-card p-7 sm:p-8 sm-rise sm-delay-1">
+            <div className="flex items-center gap-2">
+              <img src={logoIcon} alt="StepsMatch" className="h-6 w-6" />
+              <p className="text-sm font-semibold text-slate-600">Tester-Zugang</p>
+            </div>
 
-          {errorMsg ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMsg}</div> : null}
+            <h2 className="mt-4 text-2xl font-extrabold">Zugang freischalten</h2>
+            <p className="mt-2 text-slate-600">Bitte Key eingeben, um zur NDA und anschließend in die App-Preview zu gelangen.</p>
 
-          <button type="submit" disabled={loading} className={`w-full rounded-xl px-4 py-2 font-semibold text-white ${loading ? "bg-sky-300" : "bg-sky-600 hover:bg-sky-700"}`}>
-            {loading ? "Prüfe Key..." : "Weiter"}
-          </button>
-        </form>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="testerKey" className="sm-label">Tester-Key</label>
+                <input
+                  id="testerKey"
+                  type="text"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  disabled={loading}
+                  className="sm-input uppercase tracking-wide"
+                  placeholder="z. B. SM-2026-ALPHA"
+                />
+              </div>
+
+              {errorMsg ? <div className="sm-error">{errorMsg}</div> : null}
+
+              <button type="submit" disabled={loading} className="sm-btn-primary !w-full">
+                {loading ? "Prüfe Key..." : "Weiter zur NDA"}
+              </button>
+            </form>
+          </section>
+        </div>
       </div>
     </div>
   );
 }
-

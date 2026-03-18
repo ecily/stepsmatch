@@ -1,29 +1,57 @@
-import React from "react";
+﻿import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
 import { QRCodeCanvas } from "qrcode.react";
+import { ArrowRight, CheckCircle2, Download, Sparkles } from "lucide-react";
+
 import Navbar from "../components/Navbar";
 import logoIcon from "../assets/stepsmatch-icon.svg";
-import heroFriendlyCity from "../assets/navigation-preview.png";
+import heroCity from "../assets/hero-city-daylight.jpg";
+import previewImage from "../assets/navigation-preview.png";
 
 function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   if (!open) return null;
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} />
-      <div className="relative z-[101] mx-4 w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-6 shadow-2xl">
-        <h3 className="text-xl font-extrabold text-slate-900">In 30 Sekunden starten</h3>
-        <p className="mt-2 text-slate-600">QR-Code scannen, APK laden, fertig. Danach findet StepsMatch passende Angebote fÃ¼r dich, auch im Hintergrund.</p>
-        <div className="mt-5 flex justify-center">
-          <div className="rounded-3xl border border-sky-100 p-4">
-            <QRCodeCanvas value={qrValue} size={220} includeMargin level="M" />
+    <div className="fixed inset-0 z-[120] grid place-items-end bg-slate-900/60 p-3 sm:place-items-center sm:p-6" role="dialog" aria-modal="true">
+      <div className="sm-card w-full max-w-xl p-6 sm:p-8 sm-rise">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="sm-badge">
+              <Sparkles size={14} /> App-Test starten
+            </p>
+            <h3 className="mt-3 text-2xl font-extrabold">In unter 1 Minute live</h3>
+            <p className="mt-2 text-sm text-slate-600 sm:text-base">
+              QR-Code scannen oder APK direkt laden. Danach kannst du die komplette
+              StepsMatch-MVP-Strecke sofort testen.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Schließen
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[auto_1fr] sm:items-center">
+          <div className="mx-auto rounded-2xl border border-slate-200 bg-white p-3 sm:mx-0">
+            <QRCodeCanvas value={qrValue} size={180} includeMargin level="M" />
+          </div>
+          <div>
+            <p className="text-sm text-slate-600">Option A: Kamera öffnen und QR scannen</p>
+            <a href={apkUrl} className="sm-btn-primary mt-3 !w-full gap-2 sm:!w-auto" target="_blank" rel="noreferrer">
+              <Download size={16} /> APK direkt laden
+            </a>
+            <p className="mt-3 text-xs text-slate-500">Android: Installation aus dieser Quelle einmal erlauben.</p>
           </div>
         </div>
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <button onClick={onDontShowAgain} className="text-sm text-slate-500 underline">Nicht mehr anzeigen</button>
-          <button onClick={onClose} className="sm-btn-secondary">SchlieÃŸen</button>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <button type="button" onClick={onDontShowAgain} className="text-sm font-semibold text-slate-600 underline-offset-4 hover:underline">
+            Nicht mehr anzeigen
+          </button>
+          <button type="button" onClick={onClose} className="sm-btn-secondary">
+            Weiter zur Landing
+          </button>
         </div>
       </div>
     </div>
@@ -32,38 +60,47 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
 
 const steps = [
   {
-    title: "1. Anbieter stellt ein Angebot ein",
-    text: "Mit Radius bis 2 km, Zeitfenster und Kategorie.",
+    title: "Anbieter veröffentlicht ein Angebot",
+    text: "Mit Radius, Kategorie und Zeitfenster für einen klaren Nutzungskontext.",
   },
   {
-    title: "2. Du wÃ¤hlst Interessen",
-    text: "Zum Beispiel Essen, Jobs, Rabatte, Nightlife oder Services.",
+    title: "User setzt Interessen",
+    text: "Nur relevante Themen aktivieren. Kein permanentes Suchen und kein Feed-Lärm.",
   },
   {
-    title: "3. StepsMatch meldet sich nur wenn es passt",
-    text: "Bist du in der NÃ¤he, kommt ein Push. Sonst bleibt es ruhig.",
+    title: "Match im richtigen Moment",
+    text: "Wenn Ort, Zeit und Interesse passen, kommt der Push sofort auf das Gerät.",
   },
 ];
 
 const useCases = [
-  "Feierabend und Restegerichte: Du gehst heim, in 100 m gibt es noch Tagesgerichte.",
-  "Trafik oder Apotheke: Du wirst erinnert, wenn du ohnehin vorbeikommst.",
-  "Rabatte: Du aktivierst Sales und bekommst nur passende Hinweise.",
-  "Happy Hour: Beim Ausgehen siehst du Specials genau im richtigen Moment.",
-  "Neu in der Gegend: Du entdeckst lokale Angebote ohne Suchstress.",
-  "Abseits der HauptstraÃŸe: Spannende Anbieter werden sichtbar, wenn du nahe bist.",
-  "Jobs in Gehweite: Wenn dein Profil gebraucht wird, bekommst du sofort Bescheid.",
-  "Singles: Keine ReizÃ¼berflutung, nur passende Kontexte.",
-  "Pilgern: Nur relevante Hinweise entlang deiner Route.",
+  "Feierabend: Restegerichte in direkter Nähe ohne aktives Suchen.",
+  "Apotheke/Trafik: Erinnerung exakt beim Vorbeigehen.",
+  "Sales: Nur echte Angebote in deinem Interessenprofil.",
+  "Happy Hour: Hinweise dann, wenn du ohnehin unterwegs bist.",
+  "Neu in der Gegend: lokale Angebote ohne Rechercheaufwand.",
+  "Nebenstraßen-Läden: Sichtbarkeit im richtigen Radius.",
+  "Jobs in Gehweite: sofortige Hinweise bei passendem Profil.",
+  "Singles/Events: kontextbezogene Treffer statt Spam.",
+  "Pilger-/Routenfälle: relevante Stops entlang des Weges.",
+];
+
+const mvpPoints = [
+  "Hintergrundsuche läuft zuverlässig auch bei geschlossener App",
+  "Push-Auslösung exakt beim Eintritt in ein gültiges Angebot",
+  "Interessenfilter reduziert Rauschen auf wirklich passende Treffer",
+  "Anbieter-Dashboard mit Angebotsverwaltung und Radiussteuerung",
 ];
 
 export default function LandingPage() {
   const location = useLocation();
   const [heroOk, setHeroOk] = React.useState(true);
+  const [previewOk, setPreviewOk] = React.useState(true);
   const [apkOpen, setApkOpen] = React.useState(false);
 
-  const title = "StepsMatch - finden. nicht suchen.";
-  const description = "Die neuartige App fÃ¼r lokale Angebote: Ort x Zeit x Interesse. StepsMatch findet fÃ¼r dich auch im Hintergrund.";
+  const title = "StepsMatch | finden. nicht suchen.";
+  const description =
+    "Die StepsMatch MVP-Plattform verbindet lokale Angebote mit Ort, Zeit und Interesse. Push im richtigen Moment statt endloser Suche.";
   const url = "https://www.stepsmatch.com/";
 
   const APK_REDIRECT_URL = "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
@@ -91,116 +128,181 @@ export default function LandingPage() {
   }, [location.pathname, location.search, location.hash]);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden text-slate-900 bg-[#f8fcff]">
-      <div className="pointer-events-none absolute inset-0 [background:radial-gradient(900px_420px_at_0%_0%,rgba(14,165,233,.12),transparent_60%),radial-gradient(720px_420px_at_100%_10%,rgba(37,99,235,.10),transparent_60%),linear-gradient(180deg,#ffffff_0%,#f4f9ff_55%,#f8fcff_100%)]" />
-
+    <div className="sm-page">
       <Helmet>
         <title>{title}</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={url} />
       </Helmet>
 
-      <div className="relative z-10">
+      <div className="sm-stack">
         <Navbar />
 
-        <header className="sm-shell py-10 md:py-16">
-          <div className="grid lg:grid-cols-2 gap-8 items-center">
-            <div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-800">
-                <img src={logoIcon} alt="StepsMatch" className="h-4 w-4" /> Neuartig: Die App sucht im Hintergrund
-              </span>
+        <header className="sm-shell py-10 sm:py-14 lg:py-20">
+          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <section className="sm-rise">
+              <p className="sm-badge">
+                <img src={logoIcon} alt="StepsMatch Icon" className="h-4 w-4" />
+                MVP-Plattform für lokale Relevanz
+              </p>
 
-              <h1 className="mt-5 text-5xl md:text-7xl font-black tracking-tight leading-[0.98]">
+              <h1 className="sm-hero-title mt-5">
                 finden.
                 <br />
                 nicht suchen.
               </h1>
 
-              <p className="mt-5 text-lg md:text-xl text-slate-700 max-w-xl">
-                Du gehst deinen Weg. StepsMatch meldet sich nur dann, wenn ein Angebot in deiner NÃ¤he wirklich zu dir passt.
+              <p className="mt-5 max-w-2xl text-base text-slate-700 sm:text-xl">
+                StepsMatch meldet sich nur dann, wenn ein Angebot in deiner echten
+                Laufnähe für dich gerade relevant ist. Genau das ist der Kern der
+                MVP-Lösung.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
-                <button onClick={() => setApkOpen(true)} className="sm-btn-primary">App installieren</button>
-                <Link to="/register" className="sm-btn-secondary">Als Anbieter starten</Link>
+                <button onClick={() => setApkOpen(true)} className="sm-btn-primary gap-2">
+                  App testen <ArrowRight size={16} />
+                </button>
+                <Link to="/register" className="sm-btn-secondary">
+                  Als Anbieter starten
+                </Link>
               </div>
 
-              <div className="mt-6 grid grid-cols-3 gap-3 text-sm">
-                <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
-                  <p className="font-bold">Ort</p>
-                </div>
-                <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
-                  <p className="font-bold">Zeit</p>
-                </div>
-                <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
-                  <p className="font-bold">Interesse</p>
-                </div>
+              <div className="mt-7 grid gap-3 sm:grid-cols-3">
+                {[
+                  ["Ort", "Geofence & Radius"],
+                  ["Zeit", "Datum + Tagesfenster"],
+                  ["Interesse", "klares Matching"],
+                ].map(([label, sub]) => (
+                  <div key={label} className="sm-card-soft p-4">
+                    <p className="text-lg font-bold">{label}</p>
+                    <p className="mt-1 text-sm text-slate-600">{sub}</p>
+                  </div>
+                ))}
               </div>
-            </div>
+            </section>
 
-            <div className="rounded-3xl overflow-hidden border border-sky-100 bg-white shadow-sm">
+            <section className="sm-card overflow-hidden sm-rise sm-delay-1">
               {heroOk ? (
-                <img src={heroFriendlyCity} alt="Lebendige Stadt am Tag" className="h-[460px] w-full object-cover" onError={() => setHeroOk(false)} />
+                <img
+                  src={heroCity}
+                  alt="Städtische Umgebung als StepsMatch-Nutzungsszenario"
+                  className="h-[420px] w-full object-cover sm:h-[500px]"
+                  onError={() => setHeroOk(false)}
+                />
               ) : (
-                <div className="h-[460px] w-full bg-gradient-to-br from-sky-100 via-cyan-50 to-blue-100" />
+                <div className="h-[420px] w-full bg-gradient-to-br from-blue-100 via-cyan-50 to-emerald-100 sm:h-[500px]" />
               )}
-            </div>
+            </section>
           </div>
         </header>
 
-        <section className="sm-shell pb-8">
-          <div className="rounded-3xl border border-sky-100 bg-white p-7 md:p-9">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">Was ist der MVP von StepsMatch?</h2>
-            <p className="mt-4 text-lg text-slate-700 max-w-4xl">Anbieter stellen lokale Angebote mit Radius und Zeit ein. Du wÃ¤hlst Interessen. Sobald du in Schrittweite bist, bekommst du einen Push. Die App muss dafÃ¼r nicht offen sein.</p>
-          </div>
-        </section>
-
-        <section className="sm-shell py-8">
-          <h2 className="text-3xl md:text-4xl font-black tracking-tight">So funktioniert es</h2>
-          <div className="mt-5 grid md:grid-cols-3 gap-4">
-            {steps.map((s) => (
-              <article key={s.title} className="rounded-3xl border border-sky-100 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold">{s.title}</h3>
-                <p className="mt-2 text-slate-700">{s.text}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="sm-shell py-8">
-          <div className="rounded-3xl border border-sky-100 bg-white p-7">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">So fÃ¼hlt sich StepsMatch im Alltag an</h2>
-            <p className="mt-3 text-slate-700 text-lg">Neun einfache Beispiele, bei denen die App fÃ¼r dich sucht.</p>
-            <div className="mt-6 grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {useCases.map((item, idx) => (
-                <article key={idx} className="rounded-2xl border border-sky-100 bg-sky-50/40 p-5">
-                  <p className="text-slate-800">{item}</p>
-                </article>
+        <section className="sm-shell py-5 sm:py-8">
+          <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-1">
+            <h2 className="sm-section-title">Was der aktuelle MVP leistet</h2>
+            <p className="sm-section-copy">
+              Anbieter pflegen Angebote mit Radius, Datum, Wochentagen und Zeitfenster.
+              User wählen Interessen. Beim Eintritt in ein gültiges Angebot löst das
+              System zuverlässig Push-Benachrichtigungen aus.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {mvpPoints.map((item) => (
+                <div key={item} className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
+                  <span className="text-sm text-slate-700">{item}</span>
+                </div>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="sm-shell pt-6 pb-16">
-          <div className="rounded-3xl border border-sky-200 bg-sky-700 p-8 md:p-10 text-white">
-            <h3 className="text-3xl font-extrabold">Bereit fÃ¼r Relevanz statt Suche?</h3>
-            <p className="mt-3 text-sky-100 max-w-3xl">FÃ¼r User: mehr passende Treffer, weniger Aufwand. FÃ¼r Anbieter: Sichtbarkeit genau im richtigen Moment.</p>
+        <section className="sm-shell py-5 sm:py-8">
+          <h2 className="sm-section-title sm-rise">So funktioniert der Flow</h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {steps.map((step, i) => (
+              <article key={step.title} className={`sm-card-soft p-6 sm-rise sm-delay-${Math.min(i + 1, 3)}`}>
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-700">Schritt {i + 1}</p>
+                <h3 className="mt-2 text-xl font-bold">{step.title}</h3>
+                <p className="mt-2 text-slate-700">{step.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="sm-shell py-5 sm:py-8">
+          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <article className="sm-card p-6 sm:p-8 sm-rise">
+              <h2 className="sm-section-title">Alltagsszenarien mit echtem Nutzen</h2>
+              <p className="sm-section-copy">
+                Die Relevanz entsteht aus deinem Weg, nicht aus manuellem Suchen.
+              </p>
+
+              <div className="mt-6 grid gap-3 md:grid-cols-2">
+                {useCases.map((item) => (
+                  <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="sm-card-soft p-5 sm:p-6 sm-rise sm-delay-1">
+              <p className="sm-badge">Produktvorschau</p>
+              <h3 className="mt-3 text-2xl font-extrabold">Navigation & Angebote in einem Flow</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Die App führt Nutzer durch Onboarding, Interessen-Setup und Hintergrundsuche,
+                ohne dass die Kernfunktionen fragmentiert wirken.
+              </p>
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                {previewOk ? (
+                  <img
+                    src={previewImage}
+                    alt="StepsMatch App Vorschau"
+                    className="h-[280px] w-full object-cover"
+                    onError={() => setPreviewOk(false)}
+                  />
+                ) : (
+                  <div className="h-[280px] w-full bg-gradient-to-br from-blue-100 to-emerald-100" />
+                )}
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className="sm-shell pt-6 pb-16 sm:pt-8 sm:pb-20">
+          <div className="sm-card-strong p-7 sm:p-10 sm-rise sm-delay-2">
+            <p className="sm-chip !border-white/35 !bg-white/10 !text-white">Release-ready Frontend</p>
+            <h3 className="mt-4 text-3xl font-extrabold sm:text-4xl">
+              Bereit für den Live-Rollout der MVP-Experience
+            </h3>
+            <p className="mt-3 max-w-3xl text-sm text-blue-50 sm:text-lg">
+              Für User: relevante Hinweise ohne Suchstress. Für Anbieter: Sichtbarkeit
+              exakt im passenden Moment. Genau dafür ist StepsMatch gebaut.
+            </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <button onClick={() => setApkOpen(true)} className="rounded-full bg-white px-5 py-3 font-semibold text-sky-800">App jetzt testen</button>
-              <Link to="/register" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Anbieter Onboarding</Link>
-              <Link to="/why" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Warum neu</Link>
+              <button onClick={() => setApkOpen(true)} className="sm-btn-secondary">
+                App jetzt testen
+              </button>
+              <Link to="/register" className="sm-btn-ghost">
+                Anbieter-Onboarding
+              </Link>
+              <Link to="/why" className="sm-btn-ghost">
+                Warum StepsMatch
+              </Link>
             </div>
           </div>
         </section>
 
-        <footer className="border-t border-sky-100 bg-white/80">
-          <div className="sm-shell py-8 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-slate-600">
-            <div className="flex items-center gap-2"><img src={logoIcon} alt="StepsMatch" className="h-6 w-6" /> Â© {new Date().getFullYear()} StepsMatch</div>
-            <div className="flex items-center gap-4">
+        <footer className="sm-divider bg-white/70">
+          <div className="sm-shell flex flex-col items-start justify-between gap-3 py-7 text-sm text-slate-600 md:flex-row md:items-center">
+            <div className="flex items-center gap-2 font-semibold text-slate-700">
+              <img src={logoIcon} alt="StepsMatch" className="h-5 w-5" />
+              © {new Date().getFullYear()} StepsMatch
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
               <Link to="/home">Home</Link>
               <Link to="/why">Warum neu</Link>
               <Link to="/register">Registrieren</Link>
-              <Link to="/admin/offers">Admin Demo</Link>
+              <Link to="/privacy">Datenschutz</Link>
             </div>
           </div>
         </footer>
@@ -222,4 +324,3 @@ export default function LandingPage() {
     </div>
   );
 }
-

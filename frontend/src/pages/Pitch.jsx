@@ -1,54 +1,78 @@
 ﻿import React from "react";
 import { Link } from "react-router-dom";
+import { ArrowUpRight, Building2, Gauge, Target } from "lucide-react";
+
 import Navbar from "../components/Navbar";
 
 const blocks = [
   {
+    icon: <Target className="h-5 w-5 text-blue-700" />,
     title: "Problem",
-    text: "Lokale Werbung hat hohen Streuverlust, weil sie selten den richtigen Moment trifft.",
+    text: "Lokale Werbung trifft den Kontext oft nicht und erzeugt hohen Streuverlust.",
   },
   {
+    icon: <Gauge className="h-5 w-5 text-blue-700" />,
     title: "Lösung",
-    text: "Realtime Matching über Ort, Zeit und Interesse mit Push in Hintergrund-Szenarien.",
+    text: "Realtime-Matching über Ort, Zeit und Interesse mit zuverlässigem Push-Trigger.",
   },
   {
-    title: "Nutzen",
-    text: "Mehr relevante Nutzerkontakte für Anbieter, weniger Suchaufwand für Endnutzer.",
+    icon: <Building2 className="h-5 w-5 text-blue-700" />,
+    title: "Business-Impact",
+    text: "Mehr relevante Kontakte für Anbieter, bessere Conversion und weniger Suchaufwand für Nutzer.",
   },
 ];
 
 export default function Pitch() {
   return (
-    <div className="min-h-screen text-slate-900 bg-[#f8fcff]">
-      <Navbar />
+    <div className="sm-page">
+      <div className="sm-stack">
+        <Navbar />
 
-      <section className="sm-shell py-12 md:py-16">
-        <div className="rounded-3xl border border-sky-100 bg-white p-8 md:p-10 shadow-sm">
-          <p className="text-sm font-semibold text-sky-700">Investor Summary</p>
-          <h1 className="mt-2 text-4xl md:text-6xl font-black tracking-tight">StepsMatch baut die Infrastruktur für Zero-Search im Alltag.</h1>
-          <p className="mt-4 text-lg text-slate-700 max-w-3xl">Nicht Suche als Ausgangspunkt, sondern Relevanz im richtigen Moment. Genau dort entsteht monetarisierbarer Mehrwert.</p>
-        </div>
-      </section>
-
-      <section className="sm-shell pb-12 grid md:grid-cols-3 gap-4">
-        {blocks.map((b) => (
-          <article key={b.title} className="rounded-3xl border border-sky-100 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-bold">{b.title}</h2>
-            <p className="mt-2 text-slate-700">{b.text}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="sm-shell pb-16">
-        <div className="rounded-3xl border border-sky-200 bg-sky-700 p-8 md:p-10 text-white">
-          <h3 className="text-3xl font-extrabold">Klarer Fit: lokale Nachfrage in Echtzeit</h3>
-          <p className="mt-3 text-sky-100 max-w-3xl">StepsMatch verbindet Angebotsdichte, Laufwege und Interessen zu einem Live-Marketplace für die reale Welt.</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <a href="mailto:hello@stepsmatch.com" className="rounded-full bg-white px-5 py-3 font-semibold text-sky-800">Investor Kontakt</a>
-            <Link to="/home" className="rounded-full border border-white/40 px-5 py-3 font-semibold">Zur Landing</Link>
+        <section className="sm-shell py-10 sm:py-14">
+          <div className="sm-card-soft p-7 sm:p-10 sm-rise">
+            <p className="sm-badge">Investor Summary</p>
+            <h1 className="mt-4 text-4xl font-extrabold leading-tight sm:text-5xl lg:text-6xl">
+              StepsMatch baut die Infrastruktur
+              <br />
+              für Zero-Search im Alltag.
+            </h1>
+            <p className="sm-section-copy max-w-4xl">
+              Die Plattform monetarisiert Relevanz im Moment: statt Reichweite um jeden
+              Preis entsteht ein präziser Match zwischen lokalen Angeboten und realem Bedarf.
+            </p>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section className="sm-shell pb-12">
+          <div className="grid gap-4 md:grid-cols-3">
+            {blocks.map((block, idx) => (
+              <article key={block.title} className={`sm-card p-6 sm-rise sm-delay-${Math.min(idx + 1, 3)}`}>
+                <div className="mb-3 inline-flex rounded-xl border border-blue-200 bg-blue-50 p-2">{block.icon}</div>
+                <h2 className="text-xl font-bold">{block.title}</h2>
+                <p className="mt-2 text-slate-700">{block.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="sm-shell pb-16 sm:pb-20">
+          <div className="sm-card-strong p-8 sm:p-10 sm-rise sm-delay-2">
+            <h3 className="text-3xl font-extrabold sm:text-4xl">Lokale Nachfrage in Echtzeit ist ein klarer Category-Fit</h3>
+            <p className="mt-3 max-w-3xl text-blue-50 sm:text-lg">
+              StepsMatch verbindet Angebotsdichte, Laufwege und persönliche Präferenzen
+              zu einem Live-Marketplace mit hoher operativer Präzision.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href="mailto:hello@stepsmatch.com" className="sm-btn-secondary gap-2">
+                Investor Kontakt <ArrowUpRight size={16} />
+              </a>
+              <Link to="/home" className="sm-btn-ghost">
+                Zur Landing
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

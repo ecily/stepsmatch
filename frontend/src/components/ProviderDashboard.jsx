@@ -1,9 +1,9 @@
-// C:\Users\Lenovo\stepsmatch\frontend\src\components\ProviderDashboard.jsx
-import React, { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import axiosInstance from "../api/axios";
-import { CheckCircle, Clock, XCircle, Ruler } from "lucide-react";
+﻿import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { CheckCircle, Clock, LogOut, Ruler, Settings2, Trash2, XCircle } from "lucide-react";
 import { GoogleMap, Circle, useJsApiLoader } from "@react-google-maps/api";
+
+import axiosInstance from "../api/axios";
 
 const ProviderDashboard = () => {
   const navigate = useNavigate();
@@ -71,14 +71,14 @@ const ProviderDashboard = () => {
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
       return {
-        icon: <Clock className="text-orange-500 w-5 h-5 mr-1" />,
+        icon: <Clock className="mr-1 h-4 w-4 text-orange-500" />,
         text: `Gültig in ${hours}h ${minutes}min`,
       };
     }
 
     if (now > endDate) {
       return {
-        icon: <XCircle className="text-red-500 w-5 h-5 mr-1" />,
+        icon: <XCircle className="mr-1 h-4 w-4 text-red-500" />,
         text: "Angebot abgelaufen",
       };
     }
@@ -87,158 +87,146 @@ const ProviderDashboard = () => {
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     return {
-      icon: <CheckCircle className="text-green-600 w-5 h-5 mr-1" />,
-      text: `Gerade gültig. Noch ${hours}h ${minutes}min`,
+      icon: <CheckCircle className="mr-1 h-4 w-4 text-emerald-600" />,
+      text: `Gerade gültig · noch ${hours}h ${minutes}min`,
     };
   };
 
   return (
-    <div className="max-w-4xl mx-auto mt-8 p-6 bg-white rounded shadow-lg">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold text-gray-800">Deine Angebote</h2>
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              if (!providerId) return;
-              // ✅ Fix: korrektes Template-Literal statt String-Literal
-              navigate(`/edit-provider/${providerId}`);
-            }}
-            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-          >
-            Stammdaten
-          </button>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-          >
-            Logout
-          </button>
+    <div className="sm-page">
+      <div className="sm-stack sm-shell py-8 sm:py-10">
+        <div className="mx-auto w-full max-w-5xl space-y-5">
+          <section className="sm-card-soft p-6 sm:p-8">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-3xl font-extrabold">Deine Angebote</h1>
+                <p className="mt-2 text-slate-600">Verwalte Laufzeiten, Radius und Inhalte für deine aktive Ausspielung.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    if (!providerId) return;
+                    navigate(`/edit-provider/${providerId}`);
+                  }}
+                  className="sm-btn-secondary !px-4 !py-2"
+                >
+                  <Settings2 size={15} /> Stammdaten
+                </button>
+                <button onClick={handleLogout} className="sm-btn-danger !px-4 !py-2">
+                  <LogOut size={15} /> Logout
+                </button>
+              </div>
+            </div>
+
+            {providerId && (
+              <Link to={`/add-offer/${providerId}`} className="sm-btn-primary mt-5 !px-4 !py-2">
+                Neues Angebot anlegen
+              </Link>
+            )}
+          </section>
+
+          {error && <p className="sm-error">{error}</p>}
+
+          {offers.length === 0 ? (
+            <div className="sm-card p-6 text-slate-600">Noch keine Angebote vorhanden.</div>
+          ) : (
+            <div className="grid gap-4">
+              {offers.map((offer) => {
+                const status = getStatusInfo(offer);
+                const [lng, lat] = offer.location.coordinates;
+                const center = { lat, lng };
+                const radiusWithBuffer = offer.radius + 10;
+
+                return (
+                  <article key={offer._id} className="sm-card p-5 sm:p-6">
+                    <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-start gap-3">
+                          {offer.images?.[0] ? (
+                            <img src={offer.images[0]} alt="Preview" className="h-20 w-20 rounded-xl object-cover" />
+                          ) : null}
+                          <div>
+                            <h2 className="text-xl font-bold">{offer.name}</h2>
+                            <p className="mt-1 text-sm text-slate-600">{offer.description}</p>
+                            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                              {offer.category} {offer.subcategory ? `· ${offer.subcategory}` : ""}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
+                            <span
+                              key={day}
+                              className={`rounded-full border px-2 py-1 text-xs font-semibold ${
+                                offer.validDays.includes(day)
+                                  ? "border-emerald-300 bg-emerald-100 text-emerald-800"
+                                  : "border-slate-200 bg-slate-50 text-slate-400"
+                              }`}
+                            >
+                              {day.slice(0, 2)}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1 text-sm text-slate-600">
+                          <Ruler className="h-4 w-4" />
+                          Angebot gilt im Umkreis von {offer.radius} m
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Link to={`/edit-offer/${offer._id}`} className="sm-btn-secondary !px-4 !py-2">
+                            Bearbeiten
+                          </Link>
+                          <button onClick={() => handleDelete(offer._id)} className="sm-btn-danger !px-4 !py-2">
+                            <Trash2 size={14} /> Löschen
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {status.icon}
+                          {status.text}
+                        </div>
+
+                        {isLoaded ? (
+                          <GoogleMap
+                            mapContainerStyle={{ width: "100%", height: "150px", borderRadius: "12px" }}
+                            center={center}
+                            zoom={15}
+                            options={{ disableDefaultUI: true }}
+                            onLoad={(map) => {
+                              const bounds = new window.google.maps.LatLngBounds();
+                              const circle = new window.google.maps.Circle({ center, radius: radiusWithBuffer });
+                              bounds.union(circle.getBounds());
+                              map.fitBounds(bounds);
+                            }}
+                          >
+                            <Circle
+                              center={center}
+                              radius={offer.radius}
+                              options={{
+                                fillColor: "#3b82f6",
+                                fillOpacity: 0.2,
+                                strokeColor: "#2563eb",
+                                strokeOpacity: 0.8,
+                                strokeWeight: 2,
+                              }}
+                            />
+                          </GoogleMap>
+                        ) : (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">Karte lädt...</div>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
-
-      {providerId && (
-        <Link
-          to={`/add-offer/${providerId}`}
-          className="inline-block mb-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-        >
-          ➕ Neues Angebot anlegen
-        </Link>
-      )}
-
-      {error && <p className="text-red-500">{error}</p>}
-
-      {offers.length === 0 ? (
-        <p className="text-gray-600">Noch keine Angebote vorhanden.</p>
-      ) : (
-        <div className="space-y-4">
-          {offers.map((offer) => {
-            const status = getStatusInfo(offer);
-            const [lng, lat] = offer.location.coordinates;
-            const center = { lat, lng };
-            const radiusWithBuffer = offer.radius + 10;
-
-            return (
-              <div
-                key={offer._id}
-                className="border p-4 rounded shadow-sm bg-gray-50 flex justify-between items-start gap-4"
-              >
-                <div className="flex gap-4">
-                  {offer.images?.[0] && (
-                    <img
-                      src={offer.images[0]}
-                      alt="Preview"
-                      className="w-20 h-20 object-cover rounded"
-                    />
-                  )}
-
-                  <div>
-                    <h3 className="text-lg font-bold">{offer.name}</h3>
-                    <p className="text-sm text-gray-600">{offer.description}</p>
-                    <p className="text-sm italic text-gray-500">{offer.category}</p>
-                    {offer.subcategory && (
-                      <p className="text-sm italic text-gray-400">{offer.subcategory}</p>
-                    )}
-
-                    <div className="flex gap-2 mt-2 text-sm">
-                      {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(
-                        (day) => (
-                          <span
-                            key={day}
-                            className={`px-2 py-1 text-xs rounded ${
-                              offer.validDays.includes(day)
-                                ? "bg-green-100 text-green-700"
-                                : "bg-gray-100 text-gray-400"
-                            }`}
-                          >
-                            {day.slice(0, 2)}
-                          </span>
-                        )
-                      )}
-                    </div>
-
-                    <div className="mt-2 flex items-center text-sm text-gray-600">
-                      <Ruler className="w-4 h-4 mr-1" />
-                      Dein Angebot gilt im Umkreis von {offer.radius} m
-                    </div>
-
-                    <div className="mt-4 flex gap-2">
-                      <Link
-                        to={`/edit-offer/${offer._id}`}
-                        className="px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                      >
-                        ✏️ Bearbeiten
-                      </Link>
-                      <button
-                        onClick={() => handleDelete(offer._id)}
-                        className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
-                      >
-                        🗑️ Löschen
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 items-end">
-                  <div className="flex items-center text-sm text-right">
-                    {status.icon}
-                    <span className="text-gray-700 ml-1">{status.text}</span>
-                  </div>
-
-                  {isLoaded && (
-                    <GoogleMap
-                      mapContainerStyle={{ width: "220px", height: "140px", borderRadius: "8px" }}
-                      center={center}
-                      zoom={15}
-                      options={{ disableDefaultUI: true }}
-                      onLoad={(map) => {
-                        const bounds = new window.google.maps.LatLngBounds();
-                        const circle = new window.google.maps.Circle({
-                          center,
-                          radius: radiusWithBuffer,
-                        });
-                        bounds.union(circle.getBounds());
-                        map.fitBounds(bounds);
-                      }}
-                    >
-                      <Circle
-                        center={center}
-                        radius={offer.radius}
-                        options={{
-                          fillColor: "#3b82f6",
-                          fillOpacity: 0.2,
-                          strokeColor: "#2563eb",
-                          strokeOpacity: 0.8,
-                          strokeWeight: 2,
-                        }}
-                      />
-                    </GoogleMap>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 };

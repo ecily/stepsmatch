@@ -1,19 +1,12 @@
-// frontend/src/pages/NDA.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import axiosInstance from "../api/axios";
+import { FileText, ShieldCheck } from "lucide-react";
 
-/**
- * NDA Page (AT)
- * - Zeigt Click-Wrap NDA.
- * - Erfordert Checkbox + bis zum Ende scrollen.
- * - Speichert lokales Flag und versucht einen Server-Log (/testers/accept).
- * - Wenn kein tester_key im localStorage -> zurück zum Gate (/).
- * - APK-Download-Möglichkeit wurde entfernt (keine Links/Parameter/Modals).
- */
+import axiosInstance from "../api/axios";
+import logoIcon from "../assets/stepsmatch-icon.svg";
 
 const NDA_VERSION = "v1.0";
-const NDA_DATE = "20.08.2025"; // bei Änderungen anpassen
+const NDA_DATE = "20.08.2025";
 
 export default function NDA() {
   const navigate = useNavigate();
@@ -36,19 +29,13 @@ export default function NDA() {
     }
   }, []);
 
-  // Falls schon akzeptiert -> direkt weiter (ohne APK-Parameter)
   useEffect(() => {
     const accepted = localStorage.getItem("stepsmatch_ndaa_accepted") === "1";
-    if (accepted) {
-      navigate(next, { replace: true });
-    }
+    if (accepted) navigate(next, { replace: true });
   }, [navigate, next]);
 
-  // Wenn kein Key vorhanden -> zurück zum Gate
   useEffect(() => {
-    if (!testerKey) {
-      navigate("/", { replace: true });
-    }
+    if (!testerKey) navigate("/", { replace: true });
   }, [testerKey, navigate]);
 
   const onScroll = () => {
@@ -62,17 +49,16 @@ export default function NDA() {
     setErrorMsg("");
     setSubmitting(true);
     try {
-      // Lokalen Zustand direkt setzen (UX: sofortiger Zugang)
       localStorage.setItem("stepsmatch_ndaa_accepted", "1");
       localStorage.setItem("stepsmatch_ndaa_version", NDA_VERSION);
       localStorage.setItem("stepsmatch_ndaa_date", NDA_DATE);
 
-      // Generischer Flag (ohne APK-Modal-Trigger)
       try {
         localStorage.setItem("ndaAcceptedAt", new Date().toISOString());
-      } catch {}
+      } catch {
+        // ignore
+      }
 
-      // Server-Log (best effort)
       try {
         await axiosInstance.post("/testers/accept", {
           key: testerKey,
@@ -82,112 +68,99 @@ export default function NDA() {
         console.warn("[NDA] accept log failed", err?.response?.data || err?.message);
       }
 
-      // Direkt weiter – kein APK-Param mehr
       navigate(next, { replace: true });
     } catch (err) {
-      setErrorMsg(
-        err?.response?.data?.message || "Akzeptieren derzeit nicht möglich. Bitte später erneut versuchen."
-      );
+      setErrorMsg(err?.response?.data?.message || "Akzeptieren derzeit nicht möglich. Bitte später erneut versuchen.");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.shell}>
-        <header style={styles.header}>
-          <div style={styles.logoCircle} aria-hidden>S</div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={styles.brandTitle}>StepsMatch</div>
-            <div style={styles.brandTagline}>NDA – Vertraulichkeit</div>
-          </div>
-          <div style={{ marginLeft: "auto", color: "#6b7280", fontSize: 12 }}>
-            Version {NDA_VERSION} · Stand {NDA_DATE}
-          </div>
-        </header>
-
-        <section style={styles.meta}>
-          <div style={styles.metaCard}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Tester</div>
-            <div style={styles.metaRow}><span style={styles.metaKey}>Name:</span><span>{testerInfo?.name || "—"}</span></div>
-            <div style={styles.metaRow}><span style={styles.metaKey}>E-Mail:</span><span>{testerInfo?.email || "—"}</span></div>
-            <div style={styles.metaRow}><span style={styles.metaKey}>Key:</span><code style={styles.key}>{testerKey}</code></div>
-          </div>
-
-          <div style={styles.metaNote}>
-            Diese „Click-Wrap“-Vereinbarung gilt für die Pre-Seed-Testphase. Es werden nur technisch notwendige Daten verarbeitet (siehe Abschnitt Datenschutz).
-          </div>
-        </section>
-
-        {/* ===== Hinweise: APK-Download entfernt ===== */}
-        <section style={styles.installCard} aria-label="Hinweise zur Nutzung">
-          <div style={styles.installHead}>
-            <span style={styles.installIcon} aria-hidden>ℹ️</span>
-            <div>
-              <div style={styles.installTitle}>Hinweise</div>
-              <div style={styles.installSubtitle}>APK-Download ist deaktiviert. Zugang erfolgt nur nach NDA-Akzeptanz.</div>
+    <div className="sm-page">
+      <div className="sm-stack sm-shell py-8 sm:py-10">
+        <div className="mx-auto w-full max-w-5xl sm-card p-5 sm:p-7">
+          <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4">
+            <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50">
+              <img src={logoIcon} alt="StepsMatch" className="h-6 w-6" />
             </div>
-          </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-700">Vertraulichkeitsvereinbarung</p>
+              <h1 className="text-xl font-extrabold sm:text-2xl">NDA für die Pre-Seed-Testphase</h1>
+            </div>
+            <div className="ml-auto rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+              Version {NDA_VERSION} · Stand {NDA_DATE}
+            </div>
+          </header>
 
-          <ul style={styles.installList}>
-            <li><strong>Zugang in der Testphase:</strong> Nach „Akzeptieren &amp; fortfahren“ gelangst du direkt in die App-Preview.</li>
-            <li><strong>Benachrichtigungen &amp; Standort:</strong> Für Push &amp; Geofencing bitte Benachrichtigungen erlauben und Standort „immer zulassen“ auswählen.</li>
-          </ul>
-        </section>
-        {/* ===== Ende Hinweise ===== */}
+          <section className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+            <article className="sm-card-soft p-4 sm:p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Tester-Daten</p>
+              <div className="mt-2 grid gap-1 text-sm text-slate-700">
+                <p><span className="font-semibold text-slate-500">Name:</span> {testerInfo?.name || "—"}</p>
+                <p><span className="font-semibold text-slate-500">E-Mail:</span> {testerInfo?.email || "—"}</p>
+                <p className="break-all"><span className="font-semibold text-slate-500">Key:</span> <code className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">{testerKey || "—"}</code></p>
+              </div>
+            </article>
 
-        <section style={styles.scrollWrap} ref={containerRef} onScroll={onScroll} aria-label="NDA Text">
-          <NDAContent />
-        </section>
+            <article className="sm-card-soft p-4 sm:p-5 lg:max-w-sm">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-4 w-4 text-blue-700" />
+                <p className="text-sm text-slate-700">
+                  Zugang zur Testphase wird erst nach bestätigter NDA freigeschaltet.
+                  APK-Download ist bewusst nicht Teil dieses Schritts.
+                </p>
+              </div>
+            </article>
+          </section>
 
-        <section style={styles.consent}>
-          <label style={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(e) => setChecked(e.target.checked)}
-              disabled={submitting}
-              aria-checked={checked}
-              aria-describedby="nda-ack"
-            />
-            <span id="nda-ack">
-              Ich habe die Vertraulichkeitsvereinbarung gelesen und <strong>stimme zu</strong>.
-            </span>
-          </label>
+          <section
+            ref={containerRef}
+            onScroll={onScroll}
+            aria-label="NDA Text"
+            className="mt-4 h-[420px] overflow-auto rounded-2xl border border-slate-200 bg-white px-4 py-5 sm:h-[500px] sm:px-6"
+          >
+            <NDAContent />
+          </section>
 
-          <div style={styles.actions}>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              style={styles.secondaryBtn}
-              disabled={submitting}
-            >
-              Drucken / PDF speichern
-            </button>
+          <section className="mt-5 border-t border-slate-200 pt-4">
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => setChecked(e.target.checked)}
+                disabled={submitting}
+                aria-checked={checked}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-700"
+              />
+              <span>
+                Ich habe die Vertraulichkeitsvereinbarung gelesen und stimme den Bedingungen zu.
+              </span>
+            </label>
 
-            <button
-              type="button"
-              onClick={handleAccept}
-              style={{
-                ...styles.primaryBtn,
-                opacity: checked && scrolledEnd ? 1 : 0.6,
-                cursor: checked && scrolledEnd ? "pointer" : "not-allowed",
-              }}
-              disabled={!checked || !scrolledEnd || submitting}
-              aria-busy={submitting}
-            >
-              {submitting ? "Speichere Zustimmung …" : "Akzeptieren & fortfahren"}
-            </button>
-          </div>
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              <button type="button" onClick={() => window.print()} disabled={submitting} className="sm-btn-secondary !px-4 !py-2">
+                Drucken / PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleAccept}
+                disabled={!checked || !scrolledEnd || submitting}
+                aria-busy={submitting}
+                className="sm-btn-primary !px-4 !py-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? "Speichere Zustimmung..." : "Akzeptieren & fortfahren"}
+              </button>
+            </div>
 
-          <div aria-live="polite" style={{ minHeight: 22, marginTop: 8 }}>
-            {errorMsg ? <div style={styles.error}>{errorMsg}</div> : null}
-            {!scrolledEnd ? (
-              <div style={styles.hint}>Bitte bis zum Ende des Textes scrollen.</div>
-            ) : null}
-          </div>
-        </section>
+            <div aria-live="polite" className="mt-3 min-h-6">
+              {errorMsg ? <div className="sm-error">{errorMsg}</div> : null}
+              {!errorMsg && !scrolledEnd ? (
+                <p className="text-xs text-slate-500">Bitte bis zum Ende des Dokuments scrollen.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
@@ -195,263 +168,117 @@ export default function NDA() {
 
 function NDAContent() {
   return (
-    <div style={styles.doc}>
-      <h1>Vertraulichkeitsvereinbarung (NDA) – Pre-Seed-Testphase</h1>
+    <article className="space-y-4 text-sm leading-7 text-slate-700">
+      <header className="flex items-center gap-2 text-slate-900">
+        <FileText className="h-4 w-4" />
+        <h2 className="text-lg font-extrabold">Vertraulichkeitsvereinbarung (NDA) – Pre-Seed-Testphase</h2>
+      </header>
 
-      <h2>1. Parteien und Zweck</h2>
-      <p>
-        Diese Vertraulichkeitsvereinbarung („<strong>Vereinbarung</strong>“) wird geschlossen zwischen der
-        <strong> StepsMatch ECILY e.U.</strong>, Sitz in Österreich (nachfolgend „<strong>StepsMatch</strong>“),
-        und der in der Testerdatenbank hinterlegten natürlichen Person (nachfolgend „<strong>Tester</strong>“).
-        Zweck dieser Vereinbarung ist es, dem Tester vertrauliche Informationen von StepsMatch ausschließlich
-        zur Evaluierung und Erprobung der StepsMatch-Lösung in einer frühen Entwicklungsphase
-        („<strong>Pre-Seed-Testphase</strong>“) zugänglich zu machen.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">1. Parteien und Zweck</h3>
+        <p>
+          Diese Vertraulichkeitsvereinbarung ("Vereinbarung") wird geschlossen zwischen der
+          <strong> StepsMatch ECILY e.U.</strong>, Sitz in Österreich ("StepsMatch"), und der in der
+          Testerdatenbank hinterlegten natürlichen Person ("Tester"). Zweck dieser Vereinbarung ist es,
+          dem Tester vertrauliche Informationen ausschließlich zur Evaluierung und Erprobung der
+          StepsMatch-Lösung in einer frühen Entwicklungsphase zugänglich zu machen.
+        </p>
+      </section>
 
-      <h2>2. Vertrauliche Informationen</h2>
-      <p>
-        „<strong>Vertrauliche Informationen</strong>“ sind sämtliche nicht öffentliche Informationen, gleich welcher
-        Form (schriftlich, mündlich, elektronisch oder sonstiger Art), die StepsMatch dem Tester direkt oder indirekt
-        offenlegt oder zugänglich macht, einschließlich, aber nicht beschränkt auf: Konzepte, Geschäftsmodelle,
-        Produkt- und Roadmap-Informationen, Designdaten, Quell- und Objektcode, APIs, Datenmodelle, technische
-        Dokumentation, Algorithmen, Prototypen, Nutzerfeedback, Usability-Erkenntnisse, Preise, Markt- und Finanzdaten,
-        Geschäftsbeziehungen sowie alle Kopien, Notizen, Analysen oder Ableitungen hieraus. Die Tatsache der
-        Zusammenarbeit und das Bestehen dieser Vereinbarung gelten ebenfalls als vertraulich.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">2. Vertrauliche Informationen</h3>
+        <p>
+          Vertrauliche Informationen sind sämtliche nicht öffentlichen Informationen, unabhängig von
+          Form oder Medium, einschließlich Konzepte, Geschäftsmodelle, Produktdaten, Quellcode,
+          APIs, Datenmodelle, Dokumentationen, Algorithmen, Prototypen, Markt- und Finanzdaten
+          sowie davon abgeleitete Notizen und Analysen.
+        </p>
+      </section>
 
-      <h2>3. Pflichten des Testers</h2>
-      <ol>
-        <li>Vertrauliche Informationen streng vertraulich behandeln und ausschließlich zum in Abschnitt&nbsp;1 genannten Zweck verwenden.</li>
-        <li>Vertrauliche Informationen ohne vorherige schriftliche Zustimmung von StepsMatch weder ganz noch teilweise Dritten offenlegen.</li>
-        <li>Angemessene technische und organisatorische Maßnahmen ergreifen, um Vertrauliche Informationen vor unbefugtem Zugriff zu schützen.</li>
-        <li>Kein Reverse-Engineering, keine Dekompilierung, keine Ableitung von Quellcode oder Konkurrenzprodukte aus Vertraulichen Informationen.</li>
-        <li>Unverzügliche schriftliche Mitteilung an StepsMatch bei tatsächlicher oder drohender unbefugter Offenlegung oder Nutzung.</li>
-      </ol>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">3. Pflichten des Testers</h3>
+        <ol className="list-decimal space-y-1 pl-5">
+          <li>Vertrauliche Informationen ausschließlich für den vereinbarten Testzweck nutzen.</li>
+          <li>Keine Offenlegung an Dritte ohne vorherige schriftliche Zustimmung von StepsMatch.</li>
+          <li>Angemessene technische und organisatorische Schutzmaßnahmen einhalten.</li>
+          <li>Kein Reverse Engineering, keine Dekompilierung, keine Konkurrenzableitung.</li>
+          <li>Unverzügliche Meldung bei drohender oder tatsächlicher unbefugter Offenlegung.</li>
+        </ol>
+      </section>
 
-      <h2>4. Ausnahmen</h2>
-      <p>
-        Die Verpflichtungen dieser Vereinbarung gelten nicht für Informationen, die der Tester nachweislich (a) ohne
-        Verstoß allgemein bekannt sind oder werden, (b) rechtmäßig und ohne Geheimhaltungspflicht von Dritten erhalten
-        hat, (c) unabhängig und ohne Rückgriff auf Vertrauliche Informationen entwickelt hat oder (d) aufgrund zwingender
-        gesetzlicher Vorschriften oder behördlicher/gerichtlicher Anordnung offenlegen muss; soweit rechtlich zulässig,
-        informiert der Tester StepsMatch hierüber vorab und beschränkt die Offenlegung auf das zwingend Erforderliche.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">4. Ausnahmen</h3>
+        <p>
+          Die Pflichten gelten nicht für Informationen, die nachweislich allgemein bekannt sind,
+          rechtmäßig ohne Geheimhaltungspflicht von Dritten stammen, unabhängig entwickelt wurden
+          oder aufgrund zwingender gesetzlicher Vorgaben offengelegt werden müssen.
+        </p>
+      </section>
 
-      <h2>5. Eigentum, Rückgabe und Löschung</h2>
-      <p>
-        Sämtliche Vertraulichen Informationen bleiben im Eigentum von StepsMatch. Auf Anforderung von StepsMatch hat der
-        Tester alle Vertraulichen Informationen (einschließlich Kopien und Ableitungen) unverzüglich zurückzugeben oder
-        zu löschen und schriftlich zu bestätigen, dass keine Vertraulichen Informationen zurückbehalten wurden.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">5. Eigentum, Rückgabe und Löschung</h3>
+        <p>
+          Alle vertraulichen Informationen bleiben Eigentum von StepsMatch. Auf Anforderung sind
+          diese unverzüglich zurückzugeben oder zu löschen und die Löschung schriftlich zu bestätigen.
+        </p>
+      </section>
 
-      <h2>6. Laufzeit</h2>
-      <p>
-        Diese Vereinbarung tritt mit der Akzeptanz durch den Tester in Kraft und gilt während der Pre-Seed-Testphase
-        sowie für <strong>drei (3) Jahre</strong> nach deren Beendigung fort. Für als „Betriebs- und Geschäftsgeheimnisse“
-        im Sinne der §§ 26 ff UWG qualifizierte Informationen gelten die Geheimhaltungspflichten zeitlich unbeschränkt,
-        solange sie als solche fortbestehen.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">6. Laufzeit</h3>
+        <p>
+          Diese Vereinbarung gilt während der gesamten Pre-Seed-Testphase sowie drei Jahre danach.
+          Für geschützte Betriebs- und Geschäftsgeheimnisse gelten die Geheimhaltungspflichten,
+          solange deren Schutzwürdigkeit besteht.
+        </p>
+      </section>
 
-      <h2>7. Rechte, Lizenzen und Feedback</h2>
-      <p>
-        Durch diese Vereinbarung werden dem Tester keinerlei Rechte oder Lizenzen an geistigem Eigentum von StepsMatch
-        eingeräumt. Der Tester räumt StepsMatch an übermitteltem Feedback ein einfaches, zeitlich und räumlich
-        unbeschränktes, unentgeltliches Nutzungsrecht zur Integration in Produkte, Dienste und Geschäftsprozesse ein.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">7. Rechte, Lizenzen und Feedback</h3>
+        <p>
+          Durch diese Vereinbarung werden keine Eigentums- oder Lizenzrechte an geistigem Eigentum
+          übertragen. Für bereitgestelltes Feedback erhält StepsMatch ein unentgeltliches,
+          zeitlich und räumlich unbeschränktes Nutzungsrecht.
+        </p>
+      </section>
 
-      <h2>8. Datenschutz (DSGVO)</h2>
-      <p>
-        StepsMatch verarbeitet personenbezogene Daten des Testers (insb. Name, E-Mail, Tester-Key, Zeitpunkte von
-        Eingabe/Akzeptanz) ausschließlich zur Zugangskontrolle, Vertragsdurchführung und Dokumentation dieser
-        Vereinbarung (<em>Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;b und f DSGVO</em>). Eine Weitergabe an Dritte erfolgt nicht,
-        außer wenn gesetzlich erforderlich. Speicherfrist: grundsätzlich bis 90 Tage nach Ende der Testphase, danach
-        Löschung oder Anonymisierung. Die Betroffenenrechte nach Art.&nbsp;12 ff DSGVO (Auskunft, Berichtigung, Löschung,
-        Einschränkung, Widerspruch) bleiben unberührt. Weitere Informationen finden sich im Datenschutzhinweis auf der Website.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">8. Datenschutz (DSGVO)</h3>
+        <p>
+          StepsMatch verarbeitet personenbezogene Daten des Testers ausschließlich zur Zugangskontrolle,
+          Vertragsdurchführung und Dokumentation der Zustimmung nach den einschlägigen Rechtsgrundlagen
+          der DSGVO.
+        </p>
+      </section>
 
-      <h2>9. Rechtsbehelfe, Unterlassung, Schadenersatz</h2>
-      <p>
-        Bei Verstößen gegen diese Vereinbarung ist StepsMatch berechtigt, neben Schadenersatz auch Unterlassungsansprüche
-        (einschließlich einstweiliger Verfügungen) nach österreichischem Recht geltend zu machen. Die Geltendmachung
-        weiterer Rechte bleibt unberührt.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">9. Rechtsbehelfe</h3>
+        <p>
+          Bei Verstößen kann StepsMatch Unterlassungs- und Schadenersatzansprüche geltend machen,
+          einschließlich einstweiliger Verfügungen nach österreichischem Recht.
+        </p>
+      </section>
 
-      <h2>10. Rechtswahl und Gerichtsstand</h2>
-      <p>
-        Es gilt das materielle Recht der <strong>Republik Österreich</strong> unter Ausschluss seiner Kollisionsnormen und
-        des UN-Kaufrechts. Für alle Streitigkeiten aus oder im Zusammenhang mit dieser Vereinbarung ist, soweit
-        zulässig, der <strong>zuständige Gerichtsstand Wien</strong> vereinbart.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">10. Rechtswahl und Gerichtsstand</h3>
+        <p>
+          Es gilt österreichisches Recht unter Ausschluss seiner Kollisionsnormen. Gerichtsstand ist,
+          soweit zulässig, Wien.
+        </p>
+      </section>
 
-      <h2>11. Schlussbestimmungen</h2>
-      <p>
-        Änderungen und Ergänzungen dieser Vereinbarung bedürfen der Schriftform; E-Mail genügt. Sollten einzelne
-        Bestimmungen unwirksam sein oder werden, berührt dies die Wirksamkeit der übrigen Bestimmungen nicht; an die
-        Stelle der unwirksamen Bestimmung tritt eine wirksame Regelung, die dem wirtschaftlichen Zweck am nächsten
-        kommt. Die elektronische Akzeptanz („Click-Wrap“) gilt als rechtsverbindliche Zustimmung.
-      </p>
+      <section>
+        <h3 className="text-base font-bold text-slate-900">11. Schlussbestimmungen</h3>
+        <p>
+          Änderungen und Ergänzungen bedürfen der Schriftform; E-Mail genügt. Sollten einzelne
+          Bestimmungen unwirksam sein, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt.
+          Die elektronische Zustimmung per Click-Wrap ist rechtsverbindlich.
+        </p>
+      </section>
 
-      <p style={{ marginTop: 16 }}>
-        <strong>Akzeptanz:</strong> Durch Anklicken von „Akzeptieren &amp; fortfahren“ bestätigt der Tester die
+      <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+        <strong>Akzeptanz:</strong> Mit Klick auf "Akzeptieren & fortfahren" bestätigst du die
         Kenntnisnahme und Zustimmung zu dieser Vereinbarung.
       </p>
-    </div>
+    </article>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f7f9fc",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 860,
-    background: "#fff",
-    border: "1px solid rgba(0,0,0,0.06)",
-    borderRadius: 20,
-    boxShadow: "0 12px 40px rgba(0,0,0,0.08)",
-    padding: 24,
-    display: "grid",
-    gridTemplateRows: "auto auto auto 1fr auto",
-    gap: 16,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    borderBottom: "1px solid #eef2f7",
-    paddingBottom: 12,
-  },
-  logoCircle: {
-    height: 40,
-    width: 40,
-    borderRadius: 12,
-    background:
-      "conic-gradient(from 210deg at 50% 50%, #1e90ff, #7aa6ff, #7ed6ff, #1e90ff)",
-    color: "#fff",
-    fontWeight: 700,
-    fontSize: 18,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 6px 18px rgba(30,144,255,0.35)",
-  },
-  brandTitle: { fontWeight: 800, fontSize: 18, lineHeight: "20px" },
-  brandTagline: { color: "#6b7280", fontSize: 13 },
-  meta: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 16,
-    alignItems: "start",
-  },
-  metaCard: {
-    border: "1px solid #eef2f7",
-    borderRadius: 14,
-    padding: 14,
-    background: "#fbfdff",
-  },
-  metaRow: { display: "flex", gap: 8, marginTop: 2, fontSize: 14 },
-  metaKey: { color: "#6b7280", minWidth: 70, display: "inline-block" },
-  key: {
-    background: "#eef2ff",
-    color: "#1e3a8a",
-    padding: "0 6px",
-    borderRadius: 6,
-    fontSize: 13,
-  },
-  metaNote: { fontSize: 12, color: "#6b7280" },
-
-  // Hinweise-Card (früher Installationskarte mit Download-Link)
-  installCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 14,
-    padding: 16,
-    background: "#f9fafb",
-  },
-  installHead: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  installIcon: {
-    fontSize: 20,
-    lineHeight: "20px",
-  },
-  installTitle: {
-    fontWeight: 800,
-    fontSize: 16,
-  },
-  installSubtitle: {
-    fontSize: 13,
-    color: "#6b7280",
-  },
-  installList: {
-    margin: "8px 0 12px",
-    paddingLeft: 18,
-    lineHeight: 1.6,
-    fontSize: 14,
-    color: "#1f2937",
-  },
-
-  scrollWrap: {
-    height: 380,
-    overflow: "auto",
-    border: "1px solid #eef2f7",
-    borderRadius: 14,
-    padding: "16px 18px",
-    background: "#fff",
-  },
-  doc: { lineHeight: 1.6, color: "#1f2937", fontSize: 15 },
-  consent: {
-    borderTop: "1px solid #eef2f7",
-    paddingTop: 12,
-  },
-  checkboxRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "flex-start",
-    marginBottom: 10,
-    fontSize: 14,
-  },
-  actions: {
-    display: "flex",
-    gap: 10,
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-  },
-  primaryBtn: {
-    height: 46,
-    borderRadius: 12,
-    background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
-    color: "#fff",
-    fontWeight: 700,
-    fontSize: 15,
-    border: "none",
-    padding: "0 16px",
-  },
-  secondaryBtn: {
-    height: 46,
-    borderRadius: 12,
-    background: "#f3f4f6",
-    color: "#111827",
-    fontWeight: 600,
-    fontSize: 14,
-    border: "1px solid #e5e7eb",
-    padding: "0 14px",
-  },
-  error: {
-    background: "#fef2f2",
-    color: "#991b1b",
-    border: "1px solid #fecaca",
-    padding: "10px 12px",
-    borderRadius: 10,
-    fontSize: 13,
-  },
-  hint: { fontSize: 12, color: "#6b7280" },
-};

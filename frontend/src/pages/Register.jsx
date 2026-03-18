@@ -1,5 +1,7 @@
 ﻿import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Eye, EyeOff, UserPlus } from "lucide-react";
+
 import axiosInstance from "../api/axios";
 
 const Register = ({ onRegisterSuccess }) => {
@@ -31,44 +33,96 @@ const Register = ({ onRegisterSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen px-6 py-12">
-      <div className="max-w-xl mx-auto">
-        <div className="sm-card p-7 md:p-8">
-          <h1 className="text-3xl font-extrabold tracking-tight">Anbieter Registrierung</h1>
-          <p className="mt-2 text-slate-600">In wenigen Minuten live gehen und lokale Sichtbarkeit im richtigen Moment bekommen.</p>
+    <div className="sm-page">
+      <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
+        <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.02fr_0.98fr]">
+          <section className="sm-card p-7 sm:p-8 sm-rise">
+            <h1 className="text-3xl font-extrabold">Anbieter Registrierung</h1>
+            <p className="mt-2 text-slate-600">
+              In wenigen Minuten live gehen und lokale Sichtbarkeit genau im richtigen
+              Moment erhalten.
+            </p>
 
-          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+            {error && <div className="sm-error mt-4">{error}</div>}
 
-          <form onSubmit={handleRegister} className="mt-6 space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-semibold text-slate-800">Name</label>
-              <input id="name" name="name" value={formData.name} onChange={handleChange} required className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-slate-800">E-Mail</label>
-              <input id="email" type="email" name="email" value={formData.email} onChange={handleChange} required className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-slate-800">Passwort</label>
-              <div className="mt-1 relative">
-                <input id="password" type={showPw ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} required className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-10" />
-                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute inset-y-0 right-2 my-auto h-8 w-8 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={showPw ? "Passwort verbergen" : "Passwort anzeigen"}>
-                  {showPw ? "•" : "?"}
-                </button>
+            <form onSubmit={handleRegister} className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="name" className="sm-label">Name</label>
+                <input
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                  className="sm-input"
+                />
               </div>
+
+              <div>
+                <label htmlFor="email" className="sm-label">E-Mail</label>
+                <input
+                  id="email"
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  className="sm-input"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="sm-label">Passwort</label>
+                <div className="relative mt-1">
+                  <input
+                    id="password"
+                    type={showPw ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                    className="sm-input pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw((s) => !s)}
+                    className="absolute inset-y-0 right-1 my-auto grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"
+                    aria-label={showPw ? "Passwort verbergen" : "Passwort anzeigen"}
+                  >
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" disabled={isLoading} className="sm-btn-primary !w-full gap-2">
+                <UserPlus size={16} />
+                {isLoading ? "Konto wird erstellt..." : "Konto erstellen"}
+              </button>
+            </form>
+
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <Link to="/login" className="font-semibold text-blue-700 hover:text-blue-800">
+                Schon registriert?
+              </Link>
+              <Link to="/home" className="text-slate-600 hover:text-slate-800">
+                Zur Landing
+              </Link>
             </div>
+          </section>
 
-            <button type="submit" disabled={isLoading} className={`w-full rounded-xl px-4 py-2 font-semibold text-white ${isLoading ? "bg-sky-300" : "bg-sky-600 hover:bg-sky-700"}`}>
-              {isLoading ? "Wird erstellt..." : "Konto erstellen"}
-            </button>
-          </form>
-
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <Link to="/login" className="text-sky-700 font-semibold">Schon registriert?</Link>
-            <Link to="/home" className="text-slate-600">Zur Landing</Link>
-          </div>
+          <section className="sm-card-strong p-7 sm:p-9 sm-rise sm-delay-1">
+            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Go Live Setup</p>
+            <h2 className="mt-4 text-3xl font-extrabold">Von 0 auf lokales Matching</h2>
+            <p className="mt-3 text-blue-50 sm:text-lg">
+              Nach der Registrierung kannst du direkt Angebote anlegen, Radius setzen
+              und Gültigkeitsfenster definieren.
+            </p>
+            <ul className="mt-6 grid gap-3 text-sm text-blue-50">
+              <li>• Anbieter-Stammdaten mit Kartenposition</li>
+              <li>• Angebotslogik mit Tagen, Uhrzeiten und Laufzeit</li>
+              <li>• Dashboard für Pflege und Optimierung</li>
+            </ul>
+          </section>
         </div>
       </div>
     </div>
@@ -76,4 +130,3 @@ const Register = ({ onRegisterSuccess }) => {
 };
 
 export default Register;
-

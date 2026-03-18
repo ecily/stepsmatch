@@ -1,27 +1,23 @@
-// frontend/src/pages/AdminCategoryPage.jsx
-// vollständige AdminCategoryPage.jsx mit Bearbeiten + Drag & Drop
-import React, { useEffect, useState } from 'react';
-import axiosInstance from '../api/axios';
-import {
-  DragDropContext,
-  Droppable,
-  Draggable,
-} from '@hello-pangea/dnd';
-import AdminNav from '../components/AdminNav';
+﻿import React, { useEffect, useState } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+
+import axiosInstance from "../api/axios";
+import AdminNav from "../components/AdminNav";
 
 const AdminCategoryPage = () => {
   const [categories, setCategories] = useState([]);
-  const [newCatName, setNewCatName] = useState('');
+  const [newCatName, setNewCatName] = useState("");
   const [subcatInput, setSubcatInput] = useState({});
   const [editingSubcat, setEditingSubcat] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const fetchCategories = async () => {
     try {
-      const res = await axiosInstance.get('/categories');
+      const res = await axiosInstance.get("/categories");
       setCategories(res.data);
-    } catch (err) {
-      setError('Fehler beim Laden der Kategorien');
+    } catch {
+      setError("Fehler beim Laden der Kategorien");
     }
   };
 
@@ -32,33 +28,33 @@ const AdminCategoryPage = () => {
   const createCategory = async () => {
     if (!newCatName.trim()) return;
     try {
-      await axiosInstance.post('/categories', { name: newCatName.trim() });
-      setNewCatName('');
+      await axiosInstance.post("/categories", { name: newCatName.trim() });
+      setNewCatName("");
       fetchCategories();
-    } catch (err) {
-      setError('Fehler beim Erstellen');
+    } catch {
+      setError("Fehler beim Erstellen");
     }
   };
 
   const deleteCategory = async (id) => {
-    if (!window.confirm('Kategorie wirklich löschen?')) return;
+    if (!window.confirm("Kategorie wirklich löschen?")) return;
     await axiosInstance.delete(`/categories/${id}`);
     fetchCategories();
   };
 
   const addSubcategory = async (id) => {
-    const cat = categories.find(c => c._id === id);
+    const cat = categories.find((c) => c._id === id);
     const sub = subcatInput[id]?.trim();
     if (!sub) return;
     const updated = [...cat.subcategories, sub];
     await axiosInstance.put(`/categories/${id}`, { name: cat.name, subcategories: updated });
-    setSubcatInput(prev => ({ ...prev, [id]: '' }));
+    setSubcatInput((prev) => ({ ...prev, [id]: "" }));
     fetchCategories();
   };
 
   const deleteSubcategory = async (catId, sub) => {
-    const cat = categories.find(c => c._id === catId);
-    const updated = cat.subcategories.filter(s => s !== sub);
+    const cat = categories.find((c) => c._id === catId);
+    const updated = cat.subcategories.filter((s) => s !== sub);
     await axiosInstance.put(`/categories/${catId}`, { name: cat.name, subcategories: updated });
     fetchCategories();
   };
@@ -74,8 +70,8 @@ const AdminCategoryPage = () => {
   const saveEditingSub = async () => {
     const { catId, oldName, value } = editingSubcat;
     if (!value.trim()) return;
-    const cat = categories.find(c => c._id === catId);
-    const updated = cat.subcategories.map(s => (s === oldName ? value.trim() : s));
+    const cat = categories.find((c) => c._id === catId);
+    const updated = cat.subcategories.map((s) => (s === oldName ? value.trim() : s));
     await axiosInstance.put(`/categories/${catId}`, { name: cat.name, subcategories: updated });
     setEditingSubcat(null);
     fetchCategories();
@@ -85,7 +81,7 @@ const AdminCategoryPage = () => {
     if (!result.destination) return;
     const sourceIndex = result.source.index;
     const destIndex = result.destination.index;
-    const cat = categories.find(c => c._id === catId);
+    const cat = categories.find((c) => c._id === catId);
     const reordered = Array.from(cat.subcategories);
     const [moved] = reordered.splice(sourceIndex, 1);
     reordered.splice(destIndex, 0, moved);
@@ -94,94 +90,106 @@ const AdminCategoryPage = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-2">🛠️ Kategorien verwalten</h1>
-
-      {/* Admin-Menüleiste */}
-      <div className="mb-6 -mx-6">
+    <div className="sm-page">
+      <div className="sm-stack">
         <AdminNav />
-      </div>
 
-      {error && <p className="text-red-600 mb-2">{error}</p>}
+        <div className="sm-shell py-8 sm:py-10">
+          <div className="mx-auto w-full max-w-4xl space-y-5">
+            <section className="sm-card-soft p-6 sm:p-8">
+              <h1 className="text-3xl font-extrabold">Kategorien verwalten</h1>
+              <p className="mt-2 text-slate-600">Lege Hauptkategorien und Subkategorien an, ordne sie per Drag & Drop und halte die Taxonomie konsistent.</p>
 
-      <div className="flex gap-2 mb-6">
-        <input
-          type="text"
-          placeholder="Neue Kategorie"
-          value={newCatName}
-          onChange={(e) => setNewCatName(e.target.value)}
-          className="border p-2 w-full"
-        />
-        <button onClick={createCategory} className="bg-blue-600 text-white px-4 rounded">Hinzufügen</button>
-      </div>
+              {error && <p className="sm-error mt-4">{error}</p>}
 
-      {categories.map(cat => (
-        <div key={cat._id} className="mb-6 border p-4 rounded shadow">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-bold text-lg">{cat.name}</h2>
-            <button onClick={() => deleteCategory(cat._id)} className="text-red-600">Löschen</button>
-          </div>
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  placeholder="Neue Kategorie"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  className="sm-input"
+                />
+                <button onClick={createCategory} className="sm-btn-primary !px-4 !py-2">
+                  <Plus size={15} /> Hinzufügen
+                </button>
+              </div>
+            </section>
 
-          <DragDropContext onDragEnd={(result) => onDragEnd(result, cat._id)}>
-            <Droppable droppableId={cat._id}>
-              {(provided) => (
-                <ul
-                  {...provided.droppableProps}
-                  ref={provided.innerRef}
-                  className="mb-2 pl-4 list-disc space-y-1"
-                >
-                  {cat.subcategories.map((sub, index) => {
-                    const isEditing = editingSubcat?.catId === cat._id && editingSubcat?.oldName === sub;
-                    return (
-                      <Draggable key={sub} draggableId={sub} index={index}>
-                        {(provided) => (
-                          <li
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                            className="flex justify-between items-center gap-2 bg-white border p-1 rounded"
-                          >
-                            {isEditing ? (
-                              <>
-                                <input
-                                  type="text"
-                                  value={editingSubcat.value}
-                                  onChange={(e) => setEditingSubcat(prev => ({ ...prev, value: e.target.value }))}
-                                  className="border p-1 flex-grow"
-                                />
-                                <button onClick={saveEditingSub} className="text-green-600 text-sm">Speichern</button>
-                                <button onClick={cancelEditingSub} className="text-gray-600 text-sm">Abbrechen</button>
-                              </>
-                            ) : (
-                              <>
-                                <span className="flex-grow">{sub}</span>
-                                <button onClick={() => startEditingSub(cat._id, sub)} className="text-blue-600 text-sm">Bearbeiten</button>
-                                <button onClick={() => deleteSubcategory(cat._id, sub)} className="text-red-500 text-sm">Entfernen</button>
-                              </>
-                            )}
-                          </li>
-                        )}
-                      </Draggable>
-                    );
-                  })}
-                  {provided.placeholder}
-                </ul>
-              )}
-            </Droppable>
-          </DragDropContext>
+            {categories.map((cat) => (
+              <section key={cat._id} className="sm-card p-5 sm:p-6">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-xl font-bold">{cat.name}</h2>
+                  <button onClick={() => deleteCategory(cat._id)} className="sm-btn-danger !px-3 !py-2">
+                    <Trash2 size={14} /> Löschen
+                  </button>
+                </div>
 
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Subkategorie"
-              value={subcatInput[cat._id] || ''}
-              onChange={(e) => setSubcatInput(prev => ({ ...prev, [cat._id]: e.target.value }))}
-              className="border p-2 w-full"
-            />
-            <button onClick={() => addSubcategory(cat._id)} className="bg-green-600 text-white px-4 rounded">+</button>
+                <DragDropContext onDragEnd={(result) => onDragEnd(result, cat._id)}>
+                  <Droppable droppableId={cat._id}>
+                    {(provided) => (
+                      <ul {...provided.droppableProps} ref={provided.innerRef} className="grid gap-2">
+                        {cat.subcategories.map((sub, index) => {
+                          const isEditing = editingSubcat?.catId === cat._id && editingSubcat?.oldName === sub;
+                          return (
+                            <Draggable key={sub} draggableId={sub} index={index}>
+                              {(dragProvided) => (
+                                <li
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  {...dragProvided.dragHandleProps}
+                                  className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                >
+                                  {isEditing ? (
+                                    <>
+                                      <input
+                                        type="text"
+                                        value={editingSubcat.value}
+                                        onChange={(e) => setEditingSubcat((prev) => ({ ...prev, value: e.target.value }))}
+                                        className="sm-input !h-9"
+                                      />
+                                      <button onClick={saveEditingSub} className="sm-btn-primary !px-3 !py-2">Speichern</button>
+                                      <button onClick={cancelEditingSub} className="sm-btn-secondary !px-3 !py-2">Abbrechen</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="flex-1 text-sm text-slate-700">{sub}</span>
+                                      <button onClick={() => startEditingSub(cat._id, sub)} className="sm-btn-secondary !px-3 !py-2">
+                                        <Pencil size={14} /> Bearbeiten
+                                      </button>
+                                      <button onClick={() => deleteSubcategory(cat._id, sub)} className="sm-btn-danger !px-3 !py-2">
+                                        <Trash2 size={14} /> Entfernen
+                                      </button>
+                                    </>
+                                  )}
+                                </li>
+                              )}
+                            </Draggable>
+                          );
+                        })}
+                        {provided.placeholder}
+                      </ul>
+                    )}
+                  </Droppable>
+                </DragDropContext>
+
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    placeholder="Neue Subkategorie"
+                    value={subcatInput[cat._id] || ""}
+                    onChange={(e) => setSubcatInput((prev) => ({ ...prev, [cat._id]: e.target.value }))}
+                    className="sm-input"
+                  />
+                  <button onClick={() => addSubcategory(cat._id)} className="sm-btn-primary !px-4 !py-2">
+                    <Plus size={15} /> Hinzufügen
+                  </button>
+                </div>
+              </section>
+            ))}
           </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 };

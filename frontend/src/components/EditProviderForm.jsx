@@ -1,15 +1,16 @@
-// C:\Users\Lenovo\stepsmatch\frontend\src\components\EditProviderForm.jsx
-import React, { useEffect, useRef, useState, useCallback } from "react";
+﻿import React, { useEffect, useRef, useState, useCallback } from "react";
 import { GoogleMap, useLoadScript, Autocomplete, Circle } from "@react-google-maps/api";
 import { useNavigate, useParams } from "react-router-dom";
+import { LocateFixed, MapPinned, Save, Satellite } from "lucide-react";
+
 import axiosInstance from "../api/axios";
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const GOOGLE_LIBRARIES = ["places", "marker"]; // ← fix: statisch, vermeidet Reload-Warnung
+const GOOGLE_LIBRARIES = ["places", "marker"];
 
 const mapContainerStyle = { width: "100%", height: "340px" };
-const fallbackCenter = { lat: 47.0707, lng: 15.4395 }; // Graz fallback
+const fallbackCenter = { lat: 47.0707, lng: 15.4395 };
 
 export default function EditProviderForm() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ export default function EditProviderForm() {
 
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
-  const [dirty, setDirty] = useState(false); // Änderungen vorhanden?
+  const [dirty, setDirty] = useState(false);
 
   const autocompleteRef = useRef(null);
   const mapRef = useRef(null);
@@ -48,7 +49,6 @@ export default function EditProviderForm() {
     libraries: GOOGLE_LIBRARIES,
   });
 
-  // Provider laden (URL-Param bevorzugt, sonst via userId)
   useEffect(() => {
     let isActive = true;
 
@@ -60,11 +60,7 @@ export default function EditProviderForm() {
 
         let pid = routeProviderId;
 
-        // Sanity: falls versehentlich ein Literal wie "${providerId}" durchgereicht wird
-        if (pid && /\$\{/.test(pid)) {
-          console.warn("[EditProviderForm] Ungültige providerId im Pfad:", pid);
-          pid = "";
-        }
+        if (pid && /\$\{/.test(pid)) pid = "";
 
         if (!pid) {
           const userId = localStorage.getItem("userId");
@@ -74,12 +70,10 @@ export default function EditProviderForm() {
             return;
           }
 
-          // 1) Hole Provider via userId
           try {
             const res = await axiosInstance.get(`/providers/user/${encodeURIComponent(userId)}`);
             pid = res?.data?._id;
           } catch (err) {
-            console.error("[EditProviderForm] GET /providers/user/:userId failed:", err);
             if (err?.response?.status === 404) {
               setLoadErrorText("Für diesen Benutzer ist noch kein Anbieter angelegt.");
               setLoading(false);
@@ -96,11 +90,7 @@ export default function EditProviderForm() {
         }
         setProviderId(pid);
 
-        // 2) Lade Stammdaten des Providers
-        const getUrl = `/providers/${encodeURIComponent(pid)}`;
-        console.log("🔎 Lade Provider via:", axiosInstance.defaults.baseURL + getUrl);
-
-        const provRes = await axiosInstance.get(getUrl);
+        const provRes = await axiosInstance.get(`/providers/${encodeURIComponent(pid)}`);
         const p = provRes?.data;
         if (!p) {
           setLoadErrorText("Anbieterdaten leer oder ungültig.");
@@ -110,7 +100,6 @@ export default function EditProviderForm() {
 
         if (!isActive) return;
 
-        // Prefill form
         setFormData({
           name: p.name || "",
           category: p.category || "",
@@ -132,11 +121,7 @@ export default function EditProviderForm() {
           mapRef.current.setZoom(15);
         }
       } catch (e) {
-        console.error("[EditProviderForm] Laden der Provider-Stammdaten fehlgeschlagen:", e);
-        const msg =
-          e?.response?.data?.error ||
-          e?.message ||
-          "Fehler beim Laden der Anbieterdaten (500).";
+        const msg = e?.response?.data?.error || e?.message || "Fehler beim Laden der Anbieterdaten.";
         setLoadErrorText(msg);
       } finally {
         if (isActive) setLoading(false);
@@ -146,10 +131,8 @@ export default function EditProviderForm() {
     return () => {
       isActive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeProviderId]);
+  }, [routeProviderId, navigate]);
 
-  // Marker einmalig erzeugen
   useEffect(() => {
     if (!isLoaded || !mapRef.current || !window.google?.maps) return;
     if (markerRef.current) return;
@@ -182,12 +165,13 @@ export default function EditProviderForm() {
     }
   }, [isLoaded, markerPosition]);
 
-  // Marker synchron halten
   useEffect(() => {
     if (!markerRef.current || !window.google?.maps) return;
     const m = markerRef.current;
-    if (window.google?.maps?.marker?.AdvancedMarkerElement &&
-        m instanceof window.google.maps.marker.AdvancedMarkerElement) {
+    if (
+      window.google?.maps?.marker?.AdvancedMarkerElement &&
+      m instanceof window.google.maps.marker.AdvancedMarkerElement
+    ) {
       m.position = markerPosition;
     } else if (m.setPosition) {
       m.setPosition(markerPosition);
@@ -203,10 +187,7 @@ export default function EditProviderForm() {
     const { lat, lng } = place.geometry.location;
     const next = { lat: lat(), lng: lng() };
     setMarkerPosition(next);
-    setFormData((prev) => ({
-      ...prev,
-      address: place.formatted_address || prev.address,
-    }));
+    setFormData((prev) => ({ ...prev, address: place.formatted_address || prev.address }));
     setDirty(true);
     if (mapRef.current) {
       mapRef.current.panTo(next);
@@ -214,7 +195,6 @@ export default function EditProviderForm() {
     }
   };
 
-  // Geocode address string → set marker
   const geocodeAddress = async (address) =>
     new Promise((resolve, reject) => {
       const geocoder = new window.google.maps.Geocoder();
@@ -276,18 +256,14 @@ export default function EditProviderForm() {
     );
   };
 
-  const toggleMapType = () => setMapType((t) => (t === "roadmap" ? "satellite" : "roadmap"));
-
   const handleInputChange = (e) => {
     const { name, value } = e.target || {};
     setFormData((prev) => ({ ...prev, [name]: value }));
     setDirty(true);
   };
 
-  // Zentrale Save-Funktion → versucht PATCH, fällt bei 404/405/400 auf PUT zurück
   const doSave = useCallback(async () => {
-    if (!providerId) return;
-    if (isSubmitting) return;
+    if (!providerId || isSubmitting) return;
 
     try {
       setIsSubmitting(true);
@@ -298,24 +274,19 @@ export default function EditProviderForm() {
         ...formData,
         location: {
           type: "Point",
-          coordinates: [markerPosition.lng, markerPosition.lat], // GeoJSON [lng, lat]
+          coordinates: [markerPosition.lng, markerPosition.lat],
         },
         radiusMeters: radius,
       };
 
       const url = `/providers/${encodeURIComponent(providerId)}`;
-      console.log("💾 Speichere Provider via:", axiosInstance.defaults.baseURL + url, payload);
 
-      let resp;
       try {
-        resp = await axiosInstance.patch(url, payload);
-        console.log("✅ PATCH ok", resp?.status);
+        await axiosInstance.patch(url, payload);
       } catch (err) {
         const st = err?.response?.status;
-        console.warn("ℹ️ PATCH fehlgeschlagen (Status:", st, ") → versuche PUT …");
         if (st === 404 || st === 405 || st === 400) {
-          resp = await axiosInstance.put(url, payload);
-          console.log("✅ PUT ok", resp?.status);
+          await axiosInstance.put(url, payload);
         } else {
           throw err;
         }
@@ -323,10 +294,8 @@ export default function EditProviderForm() {
 
       setSuccess(true);
       setDirty(false);
-      // Optional: auf Dashboard zurück
       setTimeout(() => navigate(`/dashboard/${providerId}`), 450);
     } catch (err) {
-      console.error("[EditProviderForm] Update fehlgeschlagen:", err);
       setError(err?.response?.data?.error || "Fehler beim Speichern der Stammdaten");
     } finally {
       setIsSubmitting(false);
@@ -338,200 +307,140 @@ export default function EditProviderForm() {
     await doSave();
   };
 
-  if (loadError) return <p className="text-red-600 p-4">Fehler beim Laden der Karte.</p>;
-  if (!isLoaded) return <p className="p-4">Karte wird geladen…</p>;
-  if (loading) return <p className="p-4">Anbieterdaten werden geladen…</p>;
-  if (loadErrorText) return <p className="text-red-600 p-4">{loadErrorText}</p>;
+  if (loadError) return <p className="sm-shell py-6 text-red-600">Fehler beim Laden der Karte.</p>;
+  if (!isLoaded) return <p className="sm-shell py-6 text-slate-600">Karte wird geladen...</p>;
+  if (loading) return <p className="sm-shell py-6 text-slate-600">Anbieterdaten werden geladen...</p>;
+  if (loadErrorText) return <p className="sm-shell py-6 text-red-600">{loadErrorText}</p>;
 
-  const disableSave =
-    isSubmitting || isGeocoding || isLocating || !providerId || !dirty;
+  const disableSave = isSubmitting || isGeocoding || isLocating || !providerId || !dirty;
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white shadow-md rounded-lg mt-8">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-semibold text-gray-800">Anbieter-Stammdaten bearbeiten</h2>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(`/dashboard/${providerId || ""}`)}
-            className="px-3 py-2 rounded text-white bg-slate-700 hover:bg-slate-800"
-          >
-            Zurück
-          </button>
-          {/* ⬇️ Prominenter Speichern-Button in der Kopfzeile */}
-          <button
-            type="button"
-            onClick={doSave}
-            disabled={disableSave}
-            className={`px-4 py-2 rounded text-white ${
-              disableSave ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"
-            }`}
-            title={dirty ? "Änderungen speichern" : "Keine Änderungen"}
-          >
-            {isSubmitting ? "Speichere…" : dirty ? "Speichern" : "Gespeichert"}
-          </button>
+    <div className="sm-page">
+      <div className="sm-stack sm-shell py-8 sm:py-10">
+        <div className="mx-auto w-full max-w-4xl sm-card p-6 sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-extrabold">Anbieter-Stammdaten bearbeiten</h1>
+              <p className="mt-2 text-slate-600">Ändere Profil, Standort und Radius ohne die Angebotslogik zu verlieren.</p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => navigate(`/dashboard/${providerId || ""}`)} className="sm-btn-secondary !px-4 !py-2">
+                Zurück
+              </button>
+              <button type="button" onClick={doSave} disabled={disableSave} className="sm-btn-primary !px-4 !py-2 disabled:cursor-not-allowed disabled:opacity-60">
+                <Save size={15} /> {isSubmitting ? "Speichere..." : dirty ? "Speichern" : "Gespeichert"}
+              </button>
+            </div>
+          </div>
+
+          {error && <p className="sm-error mt-4">{error}</p>}
+          {success && <p className="sm-success mt-4">Änderungen gespeichert.</p>}
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="sm-label" htmlFor="edit-provider-name">Name</label>
+                <input id="edit-provider-name" name="name" value={formData.name} onChange={handleInputChange} required className="sm-input" />
+              </div>
+              <div>
+                <label className="sm-label" htmlFor="edit-provider-category">Kategorie</label>
+                <input id="edit-provider-category" name="category" value={formData.category} onChange={handleInputChange} required className="sm-input" />
+              </div>
+            </div>
+
+            <div>
+              <label className="sm-label" htmlFor="edit-provider-description">Beschreibung</label>
+              <textarea id="edit-provider-description" name="description" value={formData.description} onChange={handleInputChange} rows={3} className="sm-textarea" />
+            </div>
+
+            <div>
+              <label className="sm-label" htmlFor="edit-provider-contact">Kontakt</label>
+              <input id="edit-provider-contact" name="contact" value={formData.contact} onChange={handleInputChange} className="sm-input" />
+            </div>
+
+            <div className="sm-card-soft p-4 sm:p-5">
+              <label className="sm-label" htmlFor="edit-provider-address">Adresse</label>
+              <Autocomplete onLoad={(ref) => (autocompleteRef.current = ref)} onPlaceChanged={handlePlaceChanged} options={{ componentRestrictions: { country: "at" } }}>
+                <input
+                  id="edit-provider-address"
+                  type="text"
+                  placeholder="Adresse eingeben"
+                  value={formData.address}
+                  onChange={(e) => {
+                    setFormData((p) => ({ ...p, address: e.target.value }));
+                    setDirty(true);
+                  }}
+                  className="sm-input"
+                />
+              </Autocomplete>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={applyAddressPosition} className="sm-btn-primary !px-4 !py-2" disabled={isGeocoding}>
+                  <MapPinned size={15} /> {isGeocoding ? "Übernehme..." : "Adresse übernehmen"}
+                </button>
+                <button type="button" onClick={locateMe} className="sm-btn-secondary !px-4 !py-2" disabled={isLocating}>
+                  <LocateFixed size={15} /> {isLocating ? "Bestimme..." : "Mein Standort"}
+                </button>
+                <button type="button" onClick={() => setMapType((t) => (t === "roadmap" ? "satellite" : "roadmap"))} className="sm-btn-secondary !px-4 !py-2">
+                  <Satellite size={15} /> {mapType === "roadmap" ? "Satellit" : "Karte"}
+                </button>
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                <GoogleMap
+                  mapContainerStyle={mapContainerStyle}
+                  center={markerPosition}
+                  zoom={15}
+                  onLoad={(map) => (mapRef.current = map)}
+                  onClick={(e) => {
+                    setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+                    setDirty(true);
+                  }}
+                  options={{
+                    mapId: MAP_ID,
+                    mapTypeId: mapType,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: false,
+                    zoomControl: true,
+                  }}
+                >
+                  <Circle center={markerPosition} radius={radius} options={{ strokeOpacity: 0.6, strokeWeight: 1, fillOpacity: 0.12 }} />
+                </GoogleMap>
+              </div>
+            </div>
+
+            <div className="sm-card-soft p-4">
+              <label className="sm-label">Radius: {radius} m</label>
+              <input
+                type="range"
+                min={50}
+                max={5000}
+                step={50}
+                value={radius}
+                onChange={(e) => {
+                  setRadius(Number(e.target.value));
+                  setDirty(true);
+                }}
+                className="w-full"
+              />
+              <div className="mt-1 flex justify-between text-xs text-slate-500">
+                <span>50 m</span>
+                <span>5.000 m</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                <span className="font-semibold text-slate-700">Koordinaten:</span> {markerPosition.lat.toFixed(6)}, {markerPosition.lng.toFixed(6)}
+              </p>
+              <button type="submit" disabled={isSubmitting || isGeocoding || isLocating || !providerId} className="sm-btn-primary !px-4 !py-2">
+                {isSubmitting ? "Speichere..." : "Änderungen speichern"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
-
-      {error && <p className="text-red-500 mb-3">{error}</p>}
-      {success && <p className="text-green-600 mb-3">✅ Änderungen gespeichert!</p>}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          name="name"
-          placeholder="Name"
-          value={formData.name}
-          onChange={handleInputChange}
-          required
-          className="w-full p-2 border rounded"
-        />
-
-        <input
-          name="category"
-          placeholder="Kategorie"
-          value={formData.category}
-          onChange={handleInputChange}
-          required
-          className="w-full p-2 border rounded"
-        />
-
-        <textarea
-          name="description"
-          placeholder="Beschreibung"
-          value={formData.description}
-          onChange={handleInputChange}
-          rows={3}
-          className="w-full p-2 border rounded"
-        />
-
-        <input
-          name="contact"
-          placeholder="Kontaktinfo (optional)"
-          value={formData.contact}
-          onChange={handleInputChange}
-          className="w-full p-2 border rounded"
-        />
-
-        {/* Adresse + Map Controls */}
-        <div className="space-y-2">
-          <Autocomplete
-            onLoad={(ref) => (autocompleteRef.current = ref)}
-            onPlaceChanged={handlePlaceChanged}
-            options={{ componentRestrictions: { country: "at" } }}
-          >
-            <input
-              type="text"
-              placeholder="Adresse eingeben"
-              value={formData.address}
-              onChange={(e) => {
-                setFormData((p) => ({ ...p, address: e.target.value }));
-                setDirty(true);
-              }}
-              className="w-full p-2 border rounded"
-            />
-          </Autocomplete>
-
-          <div className="flex gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={applyAddressPosition}
-              className={`px-3 py-2 rounded text-white ${
-                isGeocoding ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
-              }`}
-              disabled={isGeocoding}
-              title="Marker auf die eingegebene Adresse setzen"
-            >
-              {isGeocoding ? "Übernehme…" : "Adresse übernehmen"}
-            </button>
-
-            <button
-              type="button"
-              onClick={locateMe}
-              className={`px-3 py-2 rounded text-white ${
-                isLocating ? "bg-gray-400" : "bg-emerald-600 hover:bg-emerald-700"
-              }`}
-              disabled={isLocating}
-              title="Marker auf aktuellen GPS-Standort setzen"
-            >
-              {isLocating ? "Bestimme…" : "Mein Standort"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMapType((t) => (t === "roadmap" ? "satellite" : "roadmap"))}
-              className="px-3 py-2 rounded text-white bg-slate-700 hover:bg-slate-800"
-              title="Zwischen Karte und Satellit wechseln"
-            >
-              {mapType === "roadmap" ? "Satellit" : "Karte"}
-            </button>
-          </div>
-
-          <GoogleMap
-            mapContainerStyle={mapContainerStyle}
-            center={markerPosition}
-            zoom={15}
-            onLoad={(map) => (mapRef.current = map)}
-            onClick={(e) => {
-              setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-              setDirty(true);
-            }}
-            options={{
-              mapId: MAP_ID,
-              mapTypeId: mapType,
-              mapTypeControl: false,
-              streetViewControl: false,
-              fullscreenControl: false,
-              zoomControl: true,
-            }}
-          >
-            <Circle
-              center={markerPosition}
-              radius={radius}
-              options={{ strokeOpacity: 0.6, strokeWeight: 1, fillOpacity: 0.12 }}
-            />
-          </GoogleMap>
-        </div>
-
-        {/* Radius */}
-        <div className="space-y-1">
-          <label className="text-sm text-gray-700">
-            Radius: <span className="font-medium">{radius} m</span>
-          </label>
-          <input
-            type="range"
-            min={50}
-            max={5000}
-            step={50}
-            value={radius}
-            onChange={(e) => {
-              setRadius(Number(e.target.value));
-              setDirty(true);
-            }}
-            className="w-full"
-          />
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>50 m</span>
-            <span>5.000 m</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-2">
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">Koordinaten: </span>
-            {markerPosition.lat.toFixed(6)}, {markerPosition.lng.toFixed(6)}
-          </div>
-          {/* Submit-Button bleibt als alternative Speichern-Aktion */}
-          <button
-            type="submit"
-            disabled={isSubmitting || isGeocoding || isLocating || !providerId}
-            className={`px-4 py-2 rounded text-white ${
-              isSubmitting ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"
-            }`}
-          >
-            {isSubmitting ? "Speichere…" : "Änderungen speichern"}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
