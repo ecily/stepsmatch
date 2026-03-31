@@ -3,8 +3,6 @@ import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
 import android.os.Bundle
-import com.ecily.mobile.heartbeat.HeartbeatService
-
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -24,7 +22,9 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
 
     // Stepsmatch – nativer Heartbeat-Foreground-Service
-    HeartbeatService.start(applicationContext)
+    // Native heartbeat is started/stopped by config sync from JS.
+    // Do not force-start here, otherwise Android 12+ may kill the app
+    // when the foreground service does not promote itself in time.
   }
 
   /**

@@ -18,6 +18,7 @@ import PushInitializer, {
 
 // Geführtes Onboarding (Notifs → FG/BG-Location)
 import PermissionGate from '../components/PermissionGate';
+import { clearStopUntilRestart } from '../components/push/service-control';
 
 const API_BASE =
   (Constants?.expoConfig?.extra?.apiBase || Constants?.manifest?.extra?.apiBase) ??
@@ -55,6 +56,7 @@ export default function RootLayout() {
     let mounted = true;
     (async () => {
       try {
+        await clearStopUntilRestart();
         const s = await getBgStatus();
         if (!mounted) return;
         if (s?.locPerms && s?.notifPerms) {

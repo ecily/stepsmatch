@@ -1,4 +1,4 @@
-package com.ecily.mobile.heartbeat
+﻿package com.ecily.mobile.heartbeat
 
 import android.Manifest
 import android.app.Notification
@@ -57,7 +57,20 @@ class HeartbeatService : Service() {
 
         fun start(context: Context) {
             if (!hasLocationPermission(context)) {
-                Log.w(TAG, "start(): missing location permission – not starting HeartbeatService")
+                Log.w(TAG, "start(): missing location permission - not starting HeartbeatService")
+                return
+            }
+            val prefs = context.getSharedPreferences(HeartbeatPrefs.PREFS_NAME, Context.MODE_PRIVATE)
+            val enabled = prefs.getBoolean(HeartbeatPrefs.KEY_ENABLED, false)
+            if (!enabled) {
+                Log.i(TAG, "start(): native heartbeat disabled - skip service start")
+                return
+            }
+            val apiBase = prefs.getString(HeartbeatPrefs.KEY_API_BASE, null)
+            val token = prefs.getString(HeartbeatPrefs.KEY_TOKEN, null)
+            val deviceId = prefs.getString(HeartbeatPrefs.KEY_DEVICE_ID, null)
+            if (apiBase.isNullOrBlank() || token.isNullOrBlank() || deviceId.isNullOrBlank()) {
+                Log.i(TAG, "start(): missing config/token/deviceId - skip service start")
                 return
             }
 
@@ -75,7 +88,11 @@ class HeartbeatService : Service() {
             val intent = Intent(context, HeartbeatService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "stop(): service not running (${e.message})")
+            }
         }
     }
 
@@ -138,7 +155,7 @@ class HeartbeatService : Service() {
 
                     val hasLocPerm = hasLocationPermission(this)
                     if (!hasLocPerm) {
-                        Log.w(TAG, "onStartCommand: missing location permission – cannot start foreground service")
+                        Log.w(TAG, "onStartCommand: missing location permission â€“ cannot start foreground service")
                         isRunning = false
                         stopSelf()
                         return START_NOT_STICKY
@@ -323,7 +340,7 @@ class HeartbeatService : Service() {
                     "Stepsmatch Service",
                     NotificationManager.IMPORTANCE_MIN
                 ).apply {
-                    description = "Hält Stepsmatch im Hintergrund aktiv"
+                    description = "HÃ¤lt Stepsmatch im Hintergrund aktiv"
                     setShowBadge(false)
                     enableVibration(false)
                 }
@@ -344,8 +361,8 @@ class HeartbeatService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Stepsmatch läuft – Angebote aktiv")
-            .setContentText("Sorgt für regelmäßige Heartbeats im Hintergrund.")
+            .setContentTitle("Stepsmatch lÃ¤uft â€“ Angebote aktiv")
+            .setContentText("Sorgt fÃ¼r regelmÃ¤ÃŸige Heartbeats im Hintergrund.")
             .setSmallIcon(iconResId)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

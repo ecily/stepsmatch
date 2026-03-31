@@ -1,23 +1,24 @@
-﻿import React from 'react';
+﻿import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { HelmetProvider } from '@dr.pogodin/react-helmet';
 
-import AddProviderForm from './components/AddProviderForm';
-import AddOfferForm from './components/AddOfferForm';
-import EditOfferForm from './components/EditOfferForm';
-import ProviderDashboard from './components/ProviderDashboard';
 import CookieNotice from './components/CookieNotice';
-import Pitch from './pages/Pitch';
-import Register from './pages/Register';
-import Login from './pages/Login';
-import LandingPage from './pages/LandingPage';
-import AdminCategoryPage from './pages/AdminCategoryPage';
-import AdminOffersMap from './pages/AdminOffersMap';
-import EditProviderForm from './components/EditProviderForm';
-import WhyStepsMatch from './pages/WhyStepsMatch';
-import TesterGate from './pages/TesterGate';
-import NDA from './pages/NDA';
-import PrivacyPage from './pages/PrivacyPage';
+
+const AddProviderForm = lazy(() => import('./components/AddProviderForm'));
+const AddOfferForm = lazy(() => import('./components/AddOfferForm'));
+const EditOfferForm = lazy(() => import('./components/EditOfferForm'));
+const ProviderDashboard = lazy(() => import('./components/ProviderDashboard'));
+const EditProviderForm = lazy(() => import('./components/EditProviderForm'));
+const Pitch = lazy(() => import('./pages/Pitch'));
+const Register = lazy(() => import('./pages/Register'));
+const Login = lazy(() => import('./pages/Login'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const AdminCategoryPage = lazy(() => import('./pages/AdminCategoryPage'));
+const AdminOffersMap = lazy(() => import('./pages/AdminOffersMap'));
+const WhyStepsMatch = lazy(() => import('./pages/WhyStepsMatch'));
+const TesterGate = lazy(() => import('./pages/TesterGate'));
+const NDA = lazy(() => import('./pages/NDA'));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 
 function BootGuard() {
   const navigate = useNavigate();
@@ -74,6 +75,16 @@ function ScrollToTop() {
   return null;
 }
 
+function RouteLoadingFallback() {
+  return (
+    <div className="sm-page">
+      <div className="sm-stack sm-shell grid min-h-[45vh] place-items-center py-10">
+        <div className="sm-card px-6 py-4 text-sm text-slate-600">Seite wird geladen ...</div>
+      </div>
+    </div>
+  );
+}
+
 const AppRoutes = () => {
   const handleLogin = (providerId) => {
     localStorage.setItem('providerId', providerId);
@@ -83,40 +94,42 @@ const AppRoutes = () => {
     <>
       <BootGuard />
       <ScrollToTop />
-      <Routes>
-        <Route path="/" element={<TesterGate />} />
-        <Route path="/nda" element={<NDA />} />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<TesterGate />} />
+          <Route path="/nda" element={<NDA />} />
 
-        <Route path="/home" element={<LandingPage />} />
-        <Route path="/why" element={<WhyStepsMatch />} />
-        <Route path="/pitch" element={<Pitch />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/home" element={<LandingPage />} />
+          <Route path="/why" element={<WhyStepsMatch />} />
+          <Route path="/pitch" element={<Pitch />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
 
-        <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
-        <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />
-        <Route path="/add-provider" element={<AddProviderForm />} />
-        <Route path="/add-offer/:providerId" element={<AddOfferForm />} />
-        <Route path="/edit-offer/:offerId" element={<EditOfferForm />} />
-        <Route path="/dashboard/:providerId" element={<ProviderDashboard />} />
-        <Route path="/admin/categories" element={<AdminCategoryPage />} />
-        <Route path="/admin/offers" element={<AdminOffersMap />} />
-        <Route path="/edit-provider/:providerId" element={<EditProviderForm />} />
-        <Route path="/edit-provider" element={<EditProviderForm />} />
+          <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
+          <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />
+          <Route path="/add-provider" element={<AddProviderForm />} />
+          <Route path="/add-offer/:providerId" element={<AddOfferForm />} />
+          <Route path="/edit-offer/:offerId" element={<EditOfferForm />} />
+          <Route path="/dashboard/:providerId" element={<ProviderDashboard />} />
+          <Route path="/admin/categories" element={<AdminCategoryPage />} />
+          <Route path="/admin/offers" element={<AdminOffersMap />} />
+          <Route path="/edit-provider/:providerId" element={<EditProviderForm />} />
+          <Route path="/edit-provider" element={<EditProviderForm />} />
 
-        <Route
-          path="*"
-          element={
-            <div className="sm-page">
-              <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
-                <div className="sm-card p-8 text-center">
-                  <h1 className="text-3xl font-extrabold">404</h1>
-                  <p className="mt-2 text-slate-600">Seite nicht gefunden.</p>
+          <Route
+            path="*"
+            element={
+              <div className="sm-page">
+                <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
+                  <div className="sm-card p-8 text-center">
+                    <h1 className="text-3xl font-extrabold">404</h1>
+                    <p className="mt-2 text-slate-600">Seite nicht gefunden.</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          }
-        />
-      </Routes>
+            }
+          />
+        </Routes>
+      </Suspense>
     </>
   );
 };

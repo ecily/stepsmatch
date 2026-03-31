@@ -22,9 +22,13 @@ class NativeHeartbeatConfigModule(reactContext: ReactApplicationContext) : React
             putBoolean(HeartbeatPrefs.KEY_ENABLED, enabled)
         }.apply()
 
-        // Ensure service is running after config sync
+        // Keep native service strictly in sync with JS toggle state.
         try {
-            HeartbeatService.start(reactApplicationContext)
+            if (enabled) {
+                HeartbeatService.start(reactApplicationContext)
+            } else {
+                HeartbeatService.stop(reactApplicationContext)
+            }
         } catch (_: Exception) {}
     }
 }

@@ -9,6 +9,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import Constants from 'expo-constants';
+import { Ionicons } from '@expo/vector-icons';
 
 const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
@@ -66,6 +67,8 @@ export default function NavigationMap() {
   const [loadingOffers, setLoadingOffers] = useState(true);
   const [selectedRow, setSelectedRow] = useState(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [showOnlyActive, setShowOnlyActive] = useState(true);
+  const [mapType, setMapType] = useState('standard');
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
@@ -109,7 +112,6 @@ export default function NavigationMap() {
   }, []);
 
   const loadOffers = useCallback(async () => {
-    const url = `${API_BASE_URL}/offers?withProvider=1&page=1&limit=300`;
     try {
       setLoadingOffers(true);
       let token = null;
@@ -120,7 +122,18 @@ export default function NavigationMap() {
           break;
         }
       }
-      const res = await fetch(url, {
+      const params = new URLSearchParams({
+        withProvider: '1',
+        page: '1',
+        limit: '300',
+        activeNow: '1',
+      });
+      if (userPos?.latitude != null && userPos?.longitude != null) {
+        params.set('lat', String(userPos.latitude));
+        params.set('lng', String(userPos.longitude));
+        params.set('maxDistanceM', String(VISIBLE_RADIUS_M * 2));
+      }
+      const res = await fetch(`${API_BASE_URL}/offers?${params.toString()}`, {
         headers: {
           Accept: 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -145,7 +158,7 @@ export default function NavigationMap() {
     } finally {
       setLoadingOffers(false);
     }
-  }, []);
+  }, [userPos]);
 
   useEffect(() => {
     loadOffers();
@@ -171,11 +184,9 @@ export default function NavigationMap() {
       .sort((a, b) => a.distanceM - b.distanceM);
 
     const activeRows = prepared.filter((r) => r.isActive);
-    return {
-      rows: activeRows.length > 0 ? activeRows : prepared,
-      activeCount: activeRows.length,
-    };
-  }, [rawOffers, userPos]);
+    const finalRows = showOnlyActive ? activeRows : prepared;
+    return { rows: finalRows, activeCount: activeRows.length };
+  }, [rawOffers, userPos, showOnlyActive]);
 
   const recenter = () => {
     const c = userPos || FALLBACK_CENTER;
@@ -203,7 +214,8 @@ export default function NavigationMap() {
           style={{ flex: 1 }}
           provider={PROVIDER_GOOGLE}
           initialRegion={regionForRadius(userPos || FALLBACK_CENTER, VISIBLE_RADIUS_M)}
-          customMapStyle={mapStyleStepsmatchLight}
+          mapType={mapType}
+          customMapStyle={mapType === 'standard' ? mapStyleStepsmatchLight : undefined}
           showsUserLocation
           showsMyLocationButton={false}
           zoomControlEnabled={false}
@@ -223,16 +235,35 @@ export default function NavigationMap() {
               pinColor={row.isActive ? t.colors.primary : '#9ca3af'}
               onPress={() => setSelectedRow(row)}
               title={row.offer?.name || 'Angebot'}
-              description={`${row.offer?.category || '-'} � ${fmtDistance(row.distanceM)}`}
+              description={`${row.offer?.category || '-'} | ${fmtDistance(row.distanceM)}`}
             />
           ))}
         </MapView>
 
         <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
-          <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Map Preview</Text>
+          <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Angebote in deiner Naehe</Text>
           <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
-            {activeCount > 0 ? `${activeCount} gueltige Angebote im Radius von 2 km` : `${rows.length} Angebote im Radius von 2 km (aktuell nicht aktiv)`}
+            {activeCount > 0 ? `${activeCount} aktive Angebote im Radius von 2 km` : `${rows.length} Angebote im Radius von 2 km`}
           </Text>
+          <View style={styles.topActions}>
+            <TouchableOpacity
+              onPress={() => setShowOnlyActive((v) => !v)}
+              style={[
+                styles.pillBtn,
+                {
+                  borderColor: t.colors.divider,
+                  backgroundColor: showOnlyActive ? `${t.colors.primary}1A` : t.colors.surface,
+                },
+              ]}
+            >
+              <Text style={[styles.pillText, { color: showOnlyActive ? t.colors.primary : t.colors.ink }]}>
+                {showOnlyActive ? 'Nur aktive' : 'Alle anzeigen'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={loadOffers} style={[styles.pillBtn, { borderColor: t.colors.divider, backgroundColor: t.colors.surface }]}>
+              <Text style={[styles.pillText, { color: t.colors.ink }]}>Aktualisieren</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loadingAny ? (
@@ -254,7 +285,7 @@ export default function NavigationMap() {
               {selectedRow.offer?.name || 'Angebot'}
             </Text>
             <Text style={[styles.sheetMeta, { color: t.colors.inkLow }]}> 
-              {selectedRow.offer?.category || 'Kategorie'} � {fmtDistance(selectedRow.distanceM)} � ca. {etaMin(selectedRow.distanceM)} min � {selectedRow.isActive ? 'aktiv' : 'inaktiv'}
+              {selectedRow.offer?.category || 'Kategorie'} | {fmtDistance(selectedRow.distanceM)} | ca. {etaMin(selectedRow.distanceM)} min | {selectedRow.isActive ? 'aktiv' : 'inaktiv'}
             </Text>
             <Text style={[styles.sheetDesc, { color: t.colors.ink }]} numberOfLines={3}>
               {selectedRow.offer?.description || 'Keine Beschreibung verfuegbar.'}
@@ -271,13 +302,22 @@ export default function NavigationMap() {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          onPress={recenter}
-          style={[styles.fab, { bottom: 20 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}
-          activeOpacity={0.9}
-        >
-          <Text style={[styles.fabText, { color: t.colors.primary }]}>?</Text>
-        </TouchableOpacity>
+        <View style={[styles.fabCol, { bottom: 20 + insets.bottom }]}>
+          <TouchableOpacity
+            onPress={() => setMapType((prev) => (prev === 'standard' ? 'satellite' : 'standard'))}
+            style={[styles.fab, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}
+            activeOpacity={0.9}
+          >
+            <Ionicons name="layers-outline" size={20} color={t.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={recenter}
+            style={[styles.fab, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}
+            activeOpacity={0.9}
+          >
+            <Ionicons name="locate-outline" size={20} color={t.colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -297,6 +337,19 @@ const styles = StyleSheet.create({
   },
   topTitle: { fontSize: 15, fontWeight: '800' },
   topSub: { marginTop: 2, fontSize: 12 },
+  topActions: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pillBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pillText: { fontSize: 12, fontWeight: '700' },
 
   loading: {
     position: 'absolute',
@@ -352,9 +405,12 @@ const styles = StyleSheet.create({
   },
   btnGhostText: { fontWeight: '700' },
 
-  fab: {
+  fabCol: {
     position: 'absolute',
     right: 16,
+    gap: 10,
+  },
+  fab: {
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -363,6 +419,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 6,
   },
-  fabText: { fontSize: 22, fontWeight: '800' },
 });
 

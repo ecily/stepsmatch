@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { stopBackgroundServices, syncRemoteServiceState } from '../../components/PushInitializer';
-import { setServiceEnabled } from '../../components/push/service-control';
+import { isStoppedUntilRestartNow, setServiceEnabled, setStopUntilRestart } from '../../components/push/service-control';
 
 const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
 
@@ -14,6 +14,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const t = useTheme();
   const [privacyOptIn, setPrivacyOptIn] = useState(null);
+  const [hardStopped, setHardStopped] = useState(false);
 
   const loadPrivacy = useCallback(async () => {
     try {
@@ -32,12 +33,48 @@ export default function ProfileScreen() {
     loadPrivacy();
   }, [loadPrivacy]);
 
+  const refreshHardStopState = useCallback(async () => {
+    try {
+      setHardStopped(await isStoppedUntilRestartNow());
+    } catch {
+      setHardStopped(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHardStopState();
+  }, [refreshHardStopState]);
+
   const setPrivacy = useCallback(async (next) => {
     try {
       await AsyncStorage.setItem(PRIVACY_OPTIN_KEY, next ? '1' : '0');
       setPrivacyOptIn(!!next);
     } catch {}
   }, []);
+
+  const hardStopUntilAppRestart = useCallback(async (reason = 'manual-stop') => {
+    try { await setStopUntilRestart(true); } catch {}
+    try { await syncRemoteServiceState(false, reason); } catch {}
+    try { await stopBackgroundServices(reason); } catch {}
+    setHardStopped(true);
+  }, []);
+
+  const handleStopUntilRestart = useCallback(() => {
+    Alert.alert(
+      'Hintergrunddienst stoppen',
+      'Der Hintergrunddienst wird jetzt beendet und bleibt aus, bis du die App neu startest.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Jetzt stoppen',
+          style: 'destructive',
+          onPress: async () => {
+            await hardStopUntilAppRestart('profile-stop-until-restart');
+          },
+        },
+      ]
+    );
+  }, [hardStopUntilAppRestart]);
 
   const handleLogout = async () => {
     Alert.alert('Abmelden', 'Willst du dich wirklich abmelden und lokale App-Daten loeschen?', [
@@ -47,11 +84,11 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
+            await hardStopUntilAppRestart('logout');
             await setServiceEnabled(false, 'logout');
-            await syncRemoteServiceState(false, 'logout');
-            await stopBackgroundServices('logout');
           } catch {}
           await AsyncStorage.clear();
+          await setStopUntilRestart(true);
           router.replace('/(auth)/LoginScreen');
         },
       },
@@ -66,6 +103,16 @@ export default function ProfileScreen() {
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
           <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Einstellungen</Text>
           <Button title="Interessen aendern" variant="primary" size="lg" onPress={() => router.push('/(onboarding)/InterestsScreen')} />
+          <Button
+            title={hardStopped ? 'Hintergrunddienst bereits gestoppt' : 'Hintergrunddienst stoppen'}
+            variant="secondary"
+            size="lg"
+            onPress={handleStopUntilRestart}
+            disabled={hardStopped}
+          />
+          <Text style={[styles.hint, { color: hardStopped ? t.colors.warning : t.colors.inkLow }]}>
+            {hardStopped ? 'Hintergrunddienst ist bis zum naechsten App-Start deaktiviert.' : 'Stoppt Push-/Standortdienst komplett bis zum naechsten App-Start.'}
+          </Text>
         </View>
 
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 

@@ -2,6 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVICE_STATE_KEY = 'bg.service.state.v1';
+const STOP_UNTIL_RESTART_KEY = 'bg.service.stop_until_restart.v1';
 const CACHE_TTL_MS = 5000;
 
 type ServiceState = {
@@ -63,6 +64,11 @@ export function isServiceActive(state: ServiceState, now = Date.now()): boolean 
 }
 
 export async function isServiceActiveNow(): Promise<boolean> {
+  try {
+    const hardStopped = await AsyncStorage.getItem(STOP_UNTIL_RESTART_KEY);
+    if (hardStopped === '1') return false;
+  } catch {}
+
   const st = await getServiceState();
   const now = Date.now();
   if (st.pausedUntil && st.pausedUntil <= now) {
@@ -88,4 +94,23 @@ export async function pauseForMs(ms: number, reason?: string) {
 
 export async function resumeService(reason?: string) {
   return setServiceState({ enabled: true, pausedUntil: 0, reason });
+}
+
+export async function setStopUntilRestart(enabled: boolean) {
+  try {
+    if (enabled) await AsyncStorage.setItem(STOP_UNTIL_RESTART_KEY, '1');
+    else await AsyncStorage.removeItem(STOP_UNTIL_RESTART_KEY);
+  } catch {}
+}
+
+export async function clearStopUntilRestart() {
+  return setStopUntilRestart(false);
+}
+
+export async function isStoppedUntilRestartNow(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(STOP_UNTIL_RESTART_KEY)) === '1';
+  } catch {
+    return false;
+  }
 }

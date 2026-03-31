@@ -11,7 +11,7 @@ import * as Random from 'expo-random';
 import Constants from 'expo-constants';
 import { isOfferActiveNow as _isOfferActiveNow } from '../utils/isOfferActiveNow';
 import { csvToSet, matchesInterests as _matchesInterests } from '../utils/interests';
-import { getServiceState, isServiceActive, isServiceActiveNow } from './push/service-control';
+import { getServiceState, isServiceActive, isServiceActiveNow, isStoppedUntilRestartNow } from './push/service-control';
 
 // ────────────────────────────────────────────────────────────
 // Notification handler
@@ -272,14 +272,16 @@ async function getPersistentDeviceId() {
 }
 
 const NativeHeartbeatConfig = (NativeModules as any)?.NativeHeartbeatConfig;
-async function syncNativeHeartbeatConfig(reason: string, tokenOverride?: string | null) {
+async function syncNativeHeartbeatConfig(reason: string, tokenOverride?: string | null, enabled = true) {
   try {
     if (!NativeHeartbeatConfig?.syncConfig) return;
     const deviceId = await getPersistentDeviceId();
-    const token = tokenOverride ?? (await getCurrentExpoToken());
+    const token = enabled
+      ? (tokenOverride ?? (await getCurrentExpoToken()))
+      : (tokenOverride ?? (await AsyncStorage.getItem(TOKEN_KEY)));
     const projectId = RESOLVED_PROJECT_ID || null;
-    NativeHeartbeatConfig.syncConfig(API_BASE, token || null, deviceId, projectId, true);
-    diagLog('native.sync', { reason, hasToken: !!token, hasDeviceId: !!deviceId }, 'info', 5000);
+    NativeHeartbeatConfig.syncConfig(API_BASE, token || null, deviceId, projectId, !!enabled);
+    diagLog('native.sync', { reason, enabled: !!enabled, hasToken: !!token, hasDeviceId: !!deviceId }, 'info', 5000);
   } catch {}
 }
 
@@ -1971,6 +1973,8 @@ export async function roundtripTest(offerId: string) {
 
 // ───────────── Init
 export async function stopBackgroundServices(reason = 'manual') {
+  try { await syncNativeHeartbeatConfig(`stop:${reason}`, null, false); } catch {}
+
   try {
     const started = await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
     if (started) {
@@ -2032,6 +2036,13 @@ export async function syncRemoteServiceState(enabled: boolean, reason = 'manual'
 
 async function initPush() {
   await ensureChannels().catch(() => {}); // FIX: Channel vor jeglichem Start
+
+  if (await isStoppedUntilRestartNow()) {
+    console.log('[init] service hard-stopped until app restart -> skip');
+    await syncRemoteServiceState(false, 'init-hard-stop').catch(() => {});
+    await stopBackgroundServices('init-hard-stop');
+    return;
+  }
 
   const svc = await getServiceState();
   if (!isServiceActive(svc)) {
@@ -2105,12 +2116,32 @@ export default function PushInitializer() {
 export async function headlessBootstrap() {
   try {
     console.log('[HEADLESS] boot start');
+    if (await isStoppedUntilRestartNow()) {
+      console.log('[HEADLESS] hard-stopped until restart -> skip');
+      await stopBackgroundServices('headless-hard-stop');
+      return;
+    }
+    if (!(await isServiceActiveNow())) {
+      console.log('[HEADLESS] service inactive -> skip');
+      await stopBackgroundServices('headless-inactive');
+      return;
+    }
     await ensureChannels();
     if (await hasNotificationPermissions()) {
       await resolveExpoTokenAuthoritative();
       await registerTokenAtBackend('boot-headless');
     } else {
       console.log('[HEADLESS] skip token/register (no notif permission)');
+    }
+
+    try {
+      if (await hasLocationPermissions()) {
+        await guardedBgRearm('boot-headless');
+        await refreshGeofencesAroundUser(true);
+        await sendHeartbeatOnce();
+      }
+    } catch (e) {
+      logErr('HEADLESS:bg-rearm', e);
     }
     console.log('[HEADLESS] boot done');
   } catch (e: any) {
@@ -2121,6 +2152,11 @@ export async function headlessBootstrap() {
 // ───────────── Öffentliche Helfer (Onboarding/Diag) ─────────────
 export async function ensureBgAfterOnboarding() {
   try {
+    if (await isStoppedUntilRestartNow()) {
+      console.log('[ensureBgAfterOnboarding] hard-stopped until restart');
+      await stopBackgroundServices('onboarding-hard-stop');
+      return;
+    }
     const active = await isServiceActiveNow();
     if (!active) {
       console.log('[ensureBgAfterOnboarding] service disabled or paused');

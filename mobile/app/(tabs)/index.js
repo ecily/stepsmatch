@@ -39,6 +39,7 @@ import { getServiceState, setServiceEnabled, pauseForMs, pauseUntil, resumeServi
 
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const FALLBACK_NEARBY_RADIUS_M = 5000;
 
 /* ───────────── Helpers ───────────── */
 
@@ -113,7 +114,7 @@ function pickRadiusMeters(o) {
   for (const v of candidates) {
     if (Number.isFinite(v) && v > 0) return v;
   }
-  return 150;
+  return null;
 }
 
 /* ─────────── Datums-/Zeit-Parsing ─────────── */
@@ -238,6 +239,16 @@ function formatRelative(ts, now = Date.now()) {
   if (h < 24) return `vor ${h} Std`;
   const d = Math.floor(h / 24);
   return `vor ${d} Tag${d > 1 ? 'en' : ''}`;
+}
+
+function etaFromDistanceM(distanceM) {
+  const m = toNumber(distanceM);
+  if (!Number.isFinite(m) || m <= 0) return null;
+  const walkMinutes = Math.max(1, Math.round(m / 80));
+  if (walkMinutes < 60) return `${walkMinutes} min zu Fuss`;
+  const h = Math.floor(walkMinutes / 60);
+  const r = walkMinutes % 60;
+  return r === 0 ? `${h} h zu Fuss` : `${h} h ${r} min zu Fuss`;
 }
 
 /* ───────────── Screen ───────────── */
@@ -410,7 +421,13 @@ export default function HomeTab() {
                       null;
         } catch {}
 
-        const params = { withProvider: 1, page: pageToLoad, limit };
+        const params = { withProvider: 1, page: pageToLoad, limit, activeNow: 1 };
+        if (interestsCSV) params.interests = interestsCSV;
+        if (loc?.lat != null && loc?.lng != null) {
+          params.lat = loc.lat;
+          params.lng = loc.lng;
+          params.maxDistanceM = 8000;
+        }
         const t0 = (global?.performance && performance.now) ? performance.now() : Date.now();
 
         let res;
@@ -456,13 +473,14 @@ export default function HomeTab() {
 
           const geo = pickOfferLatLng(o);
           const radiusM = pickRadiusMeters(o);
-          if (!geo || !Number.isFinite(radiusM)) continue;
+          if (!geo) continue;
 
           // Wenn loc fehlt → nicht wegfiltern, sondern zeigen (Distance bleibt leer)
           const distanceM =
             toNumber(o.distance) ?? (loc && geo ? haversineMeters(loc.lat, loc.lng, geo.lat, geo.lng) : null);
 
-          const inside = loc ? (Number(distanceM) <= radiusM) : true;
+          const effectiveRadiusM = Number.isFinite(radiusM) ? radiusM : FALLBACK_NEARBY_RADIUS_M;
+          const inside = loc ? (Number(distanceM) <= effectiveRadiusM) : true;
           if (inside) {
             filtered.push(o);
 
@@ -799,6 +817,22 @@ export default function HomeTab() {
     );
   }
 
+  const groupedEntries = Object.entries(grouped);
+  const offersCount = groupedEntries.reduce((sum, [, catOffers]) => sum + (Array.isArray(catOffers) ? catOffers.length : 0), 0);
+  const nearestDistance = (() => {
+    if (!userLoc || offersCount === 0) return null;
+    let best = Infinity;
+    for (const [, catOffers] of groupedEntries) {
+      for (const offer of catOffers) {
+        const geo = pickOfferLatLng(offer);
+        if (!geo) continue;
+        const d = toNumber(offer?.distance) ?? haversineMeters(userLoc.lat, userLoc.lng, geo.lat, geo.lng);
+        if (Number.isFinite(d) && d < best) best = d;
+      }
+    }
+    return Number.isFinite(best) ? best : null;
+  })();
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
       <View style={[styles.container, { backgroundColor: t.colors.surface }]}>
@@ -854,9 +888,7 @@ export default function HomeTab() {
                   </View>
                 ) : null}
               </>
-            ) : (
-              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Tippe, um Optionen zu oeffnen.</Text>
-            )}
+            ) : null}
           </View>
 
           <View style={[styles.privacyCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
@@ -870,9 +902,7 @@ export default function HomeTab() {
               </View>
             </TouchableOpacity>
 
-            {!privacyExpanded ? (
-              <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Tippe, um Optionen zu oeffnen.</Text>
-            ) : (
+            {!privacyExpanded ? null : (
               <>
                 <Text style={[styles.privacyCopy, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund genutzt. Push informiert nur ueber passende Angebote in deiner Naehe.</Text>
                 <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
@@ -897,14 +927,30 @@ export default function HomeTab() {
             </Text>
           )}
 
-          {Object.keys(grouped).length === 0 ? (
+          {offersCount > 0 ? (
+            <View style={[styles.feedSummaryCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.feedSummaryTitle, { color: t.colors.inkHigh }]}>
+                  {offersCount} aktive Angebote fuer dich
+                </Text>
+                <Text style={[styles.feedSummarySub, { color: t.colors.inkLow }]}>
+                  {nearestDistance != null ? `Naechstes Angebot in ${Math.round(nearestDistance)} m` : 'Tippe auf ein Angebot und starte direkt deine Route.'}
+                </Text>
+              </View>
+              <View style={{ width: 120 }}>
+                <Button title="Map oeffnen" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/NavigationMap')} />
+              </View>
+            </View>
+          ) : null}
+
+          {groupedEntries.length === 0 ? (
             <EmptyState
               title="Keine Angebote in deiner Nähe"
               subtitle="Passe deine Interessen an oder versuche es später erneut."
               icon="📍"
             />
           ) : (
-            Object.entries(grouped).map(([category, catOffers]) => (
+            groupedEntries.map(([category, catOffers]) => (
               <View key={category} style={styles.categoryBlock}>
                 <Text style={[styles.categoryTitle, { color: t.colors.inkHigh }]}>{category}</Text>
                 <FlatList
@@ -1011,6 +1057,7 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
   const isActiveNowFlag = isOfferActiveNow(item, 'Europe/Vienna', new Date());
   const remainingMs = getRemainingMs(item);
   const remainingNice = formatRemainingFriendly(remainingMs);
+  const etaNice = etaFromDistanceM(distanceMeters);
 
   // Bild (Hero)
   const hero = Array.isArray(item.images) && item.images.length > 0 ? item.images[0] : null;
@@ -1080,12 +1127,18 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
                 {desc}
               </Text>
             )}
+
+            {!!etaNice && (
+              <Text style={[styles.quickBenefit, { color: t.colors.success }]}>
+                Schnell erreichbar: {etaNice}
+              </Text>
+            )}
           </View>
 
           {/* CTA */}
           <View style={styles.ctaRow}>
             <View style={{ flex: 1 }}>
-              <Button title="Details ansehen" variant="primary" size="sm" onPress={onPress} />
+              <Button title="Jetzt Angebot ansehen" variant="primary" size="sm" onPress={onPress} />
             </View>
           </View>
         </View>
@@ -1218,11 +1271,31 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '900', marginBottom: 4, lineHeight: 22 },
   meta: { fontSize: 12, marginBottom: 6 },
   desc: { fontSize: 14, lineHeight: 20 },
+  quickBenefit: { fontSize: 12, fontWeight: '700', marginTop: 8 },
 
   ctaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
+  },
+  feedSummaryCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  feedSummaryTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  feedSummarySub: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   skel: { backgroundColor: '#e9eef5', borderRadius: 8 },
@@ -1230,8 +1303,9 @@ const styles = StyleSheet.create({
   error: { marginTop: 30, textAlign: 'center' },
   serviceCard: {
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },
@@ -1247,13 +1321,23 @@ const styles = StyleSheet.create({
   serviceActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   privacyCard: {
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
     borderWidth: 1,
   },
   privacyTitle: { fontSize: 15, fontWeight: '800' },
   privacyCopy: { fontSize: 12, lineHeight: 18, marginTop: 6 },
   privacyState: { fontSize: 12, fontWeight: '700', marginTop: 8, marginBottom: 10 },
+  collapseToggle: { fontSize: 12, fontWeight: '600' },
+  inlineNotice: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  inlineNoticeText: { fontSize: 13, fontWeight: '600' },
 });
 
 

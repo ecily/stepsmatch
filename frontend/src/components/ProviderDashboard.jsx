@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CheckCircle, Clock, LogOut, Ruler, Settings2, Trash2, XCircle } from "lucide-react";
 import { GoogleMap, Circle, useJsApiLoader } from "@react-google-maps/api";
@@ -10,6 +10,8 @@ const ProviderDashboard = () => {
   const [offers, setOffers] = useState([]);
   const [error, setError] = useState("");
   const [providerId, setProviderId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [query, setQuery] = useState("");
 
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -57,12 +59,17 @@ const ProviderDashboard = () => {
 
   const getStatusInfo = (offer) => {
     const now = new Date();
-    const startDate = new Date(offer.validDates?.from);
-    const endDate = new Date(offer.validDates?.to);
+    const fromDate = offer.validDates?.from || offer.validDates?.start;
+    const toDate = offer.validDates?.to || offer.validDates?.end || fromDate;
+    const fromTime = offer.validTimes?.from || offer.validTimes?.start || "00:00";
+    const toTime = offer.validTimes?.to || offer.validTimes?.end || "23:59";
+
+    const startDate = new Date(fromDate);
+    const endDate = new Date(toDate);
     endDate.setHours(23, 59, 59, 999);
 
-    const [startHour, startMinute] = offer.validTimes?.start?.split(":") || [];
-    const [endHour, endMinute] = offer.validTimes?.end?.split(":") || [];
+    const [startHour, startMinute] = String(fromTime).split(":") || [];
+    const [endHour, endMinute] = String(toTime).split(":") || [];
     if (startHour && startMinute) startDate.setHours(+startHour, +startMinute, 0);
     if (endHour && endMinute) endDate.setHours(+endHour, +endMinute, 59);
 
@@ -71,6 +78,7 @@ const ProviderDashboard = () => {
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
       return {
+        key: "upcoming",
         icon: <Clock className="mr-1 h-4 w-4 text-orange-500" />,
         text: `Gültig in ${hours}h ${minutes}min`,
       };
@@ -78,6 +86,7 @@ const ProviderDashboard = () => {
 
     if (now > endDate) {
       return {
+        key: "expired",
         icon: <XCircle className="mr-1 h-4 w-4 text-red-500" />,
         text: "Angebot abgelaufen",
       };
@@ -87,10 +96,37 @@ const ProviderDashboard = () => {
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     return {
+      key: "active",
       icon: <CheckCircle className="mr-1 h-4 w-4 text-emerald-600" />,
       text: `Gerade gültig · noch ${hours}h ${minutes}min`,
     };
   };
+
+  const dashboardRows = useMemo(() => {
+    return offers.map((offer) => ({ offer, status: getStatusInfo(offer) }));
+  }, [offers]);
+
+  const metrics = useMemo(() => {
+    const base = { total: offers.length, active: 0, upcoming: 0, expired: 0 };
+    for (const row of dashboardRows) {
+      if (row.status?.key === "active") base.active += 1;
+      if (row.status?.key === "upcoming") base.upcoming += 1;
+      if (row.status?.key === "expired") base.expired += 1;
+    }
+    return base;
+  }, [dashboardRows, offers.length]);
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return dashboardRows.filter((row) => {
+      if (statusFilter !== "all" && row.status?.key !== statusFilter) return false;
+      if (!q) return true;
+      const o = row.offer;
+      return [o?.name, o?.description, o?.category, o?.subcategory]
+        .filter(Boolean)
+        .some((txt) => String(txt).toLowerCase().includes(q));
+    });
+  }, [dashboardRows, query, statusFilter]);
 
   return (
     <div className="sm-page">
@@ -123,6 +159,25 @@ const ProviderDashboard = () => {
                 Neues Angebot anlegen
               </Link>
             )}
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Gesamt</p>
+                <p className="mt-1 text-2xl font-extrabold">{metrics.total}</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">Aktiv</p>
+                <p className="mt-1 text-2xl font-extrabold text-emerald-800">{metrics.active}</p>
+              </div>
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-orange-700">Geplant</p>
+                <p className="mt-1 text-2xl font-extrabold text-orange-800">{metrics.upcoming}</p>
+              </div>
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-red-700">Abgelaufen</p>
+                <p className="mt-1 text-2xl font-extrabold text-red-800">{metrics.expired}</p>
+              </div>
+            </div>
           </section>
 
           {error && <p className="sm-error">{error}</p>}
@@ -131,8 +186,40 @@ const ProviderDashboard = () => {
             <div className="sm-card p-6 text-slate-600">Noch keine Angebote vorhanden.</div>
           ) : (
             <div className="grid gap-4">
-              {offers.map((offer) => {
-                const status = getStatusInfo(offer);
+              <section className="sm-card p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: "all", label: "Alle" },
+                      { id: "active", label: "Aktiv" },
+                      { id: "upcoming", label: "Geplant" },
+                      { id: "expired", label: "Abgelaufen" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setStatusFilter(f.id)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                          statusFilter === f.id ? "border-blue-300 bg-blue-100 text-blue-800" : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Suche nach Name, Kategorie ..."
+                    className="sm-input !w-full sm:!w-[300px]"
+                  />
+                </div>
+              </section>
+
+              {filteredRows.length === 0 ? (
+                <div className="sm-card p-6 text-slate-600">Keine Angebote für den aktuellen Filter gefunden.</div>
+              ) : null}
+
+              {filteredRows.map(({ offer, status }) => {
                 const [lng, lat] = offer.location.coordinates;
                 const center = { lat, lng };
                 const radiusWithBuffer = offer.radius + 10;
@@ -159,7 +246,7 @@ const ProviderDashboard = () => {
                             <span
                               key={day}
                               className={`rounded-full border px-2 py-1 text-xs font-semibold ${
-                                offer.validDays.includes(day)
+                                Array.isArray(offer.validDays) && offer.validDays.includes(day)
                                   ? "border-emerald-300 bg-emerald-100 text-emerald-800"
                                   : "border-slate-200 bg-slate-50 text-slate-400"
                               }`}
