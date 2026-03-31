@@ -26,12 +26,12 @@ export default function Navbar() {
 
   return (
     <header className="sm-glass-nav">
-      <div className="sm-shell flex h-16 items-center justify-between gap-4 py-3">
+      <div className="sm-shell flex h-20 items-center justify-between gap-4 py-2">
         <Link to="/home" className="inline-flex items-center gap-3" aria-label="StepsMatch Startseite">
           <img
             src={brandLockup}
             alt="StepsMatch"
-            className="h-7 w-auto sm:h-8"
+            className="h-10 w-auto sm:h-11 lg:h-12"
             loading="eager"
           />
         </Link>

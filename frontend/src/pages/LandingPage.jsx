@@ -100,7 +100,7 @@ export default function LandingPage() {
 
   const title = "StepsMatch | finden. nicht suchen.";
   const description =
-    "Die StepsMatch MVP-Plattform verbindet lokale Angebote mit Ort, Zeit und Interesse. Push im richtigen Moment statt endloser Suche.";
+    "Finden. Nicht suchen. StepsMatch zeigt dir passende Angebote genau dann, wenn du wirklich in der Naehe bist und macht den Weg dorthin sofort einfach.";
   const url = "https://www.stepsmatch.com/";
 
   const APK_REDIRECT_URL = "https://stepsmatch.fra1.digitaloceanspaces.com/app-release.apk";
@@ -153,9 +153,9 @@ export default function LandingPage() {
               </h1>
 
               <p className="mt-5 max-w-2xl text-base text-slate-700 sm:text-xl">
-                StepsMatch meldet sich nur dann, wenn ein Angebot in deiner echten
-                Laufnähe für dich gerade relevant ist. Genau das ist der Kern der
-                MVP-Lösung.
+                Du musst nicht mehr suchen: StepsMatch sagt dir Bescheid, wenn in
+                deiner Naehe gerade etwas wirklich Passendes verfuegbar ist. Ein
+                Tipp, ein Klick, losgehen. So hilft die App im Alltag ganz konkret.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
@@ -169,9 +169,9 @@ export default function LandingPage() {
 
               <div className="mt-7 grid gap-3 sm:grid-cols-3">
                 {[
-                  ["Ort", "Geofence & Radius"],
-                  ["Zeit", "Datum + Tagesfenster"],
-                  ["Interesse", "klares Matching"],
+                  ["Du sparst Zeit", "Keine Suche, nur passende Hinweise"],
+                  ["Du verpasst weniger", "Hinweise genau im richtigen Moment"],
+                  ["Du kommst direkt hin", "Angebot oeffnen und Route starten"],
                 ].map(([label, sub]) => (
                   <div key={label} className="sm-card-soft p-4">
                     <p className="text-lg font-bold">{label}</p>
@@ -198,11 +198,11 @@ export default function LandingPage() {
 
         <section className="sm-shell py-5 sm:py-8">
           <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-1">
-            <h2 className="sm-section-title">Was der aktuelle MVP leistet</h2>
+            <h2 className="sm-section-title">Warum das im Alltag hilft</h2>
             <p className="sm-section-copy">
-              Anbieter pflegen Angebote mit Radius, Datum, Wochentagen und Zeitfenster.
-              User wählen Interessen. Beim Eintritt in ein gültiges Angebot löst das
-              System zuverlässig Push-Benachrichtigungen aus.
+              Anbieter pflegen ihre Angebote einmal sauber ein. Du legst nur deine
+              Interessen fest. Danach arbeitet StepsMatch im Hintergrund und informiert
+              dich verlässlich dann, wenn ein Angebot wirklich zu deinem Weg passt.
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {mvpPoints.map((item) => (
@@ -247,10 +247,10 @@ export default function LandingPage() {
 
             <article className="sm-card-soft p-5 sm:p-6 sm-rise sm-delay-1">
               <p className="sm-badge">Produktvorschau</p>
-              <h3 className="mt-3 text-2xl font-extrabold">Navigation & Angebote in einem Flow</h3>
+              <h3 className="mt-3 text-2xl font-extrabold">Von der Info bis zum Ziel in einem Flow</h3>
               <p className="mt-2 text-sm text-slate-600">
-                Die App führt Nutzer durch Onboarding, Interessen-Setup und Hintergrundsuche,
-                ohne dass die Kernfunktionen fragmentiert wirken.
+                Du bekommst einen passenden Hinweis, oeffnest das Angebot und startest
+                direkt die Route. Einfach, schnell und ohne Umwege.
               </p>
               <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 {previewOk ? (
