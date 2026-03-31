@@ -8,7 +8,7 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  TouchableWithoutFeedback,
+  Pressable,
   ActivityIndicator,  ScrollView,
   RefreshControl,
   AppState,
@@ -761,7 +761,7 @@ export default function HomeTab() {
                   Heute passt besonders gut zu dir
                 </Text>
                 <Text style={[styles.feedSummarySub, { color: t.colors.inkLow }]}>
-                  {nearestDistance != null ? `Dein naechster Startpunkt liegt ${Math.round(nearestDistance)} m entfernt.` : 'Waehle unten ein Angebot und starte direkt mit deiner Route zu Fuss.'}
+                  {nearestDistance != null ? `Dein naechstes Angebot ist nur ${Math.round(nearestDistance)} m entfernt.` : 'Waehle unten ein Angebot und starte direkt mit deiner Route zu Fuss.'}
                 </Text>
               </View>
               <View style={{ width: 120 }}>
@@ -809,6 +809,10 @@ export default function HomeTab() {
                           router.push({ pathname: '/(tabs)/offers/[id]', params: { id: item._id } });
                         }
                       }}
+                      onNavigate={() => {
+                        if (!item?._id) return;
+                        router.push({ pathname: '/(tabs)/NavigationScreen', params: { id: item._id } });
+                      }}
                     />
                   )}
                   horizontal
@@ -844,7 +848,7 @@ export default function HomeTab() {
 
 /* ───────────── Card (Badges ÜBER dem Hero, WOW: Fade-In & Press-Scale) ───────────── */
 
-function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
+function AnimatedOfferCard({ item, index, onPress, onNavigate, userLoc, theme }) {
   const themeFromHook = useTheme();
   const t = theme || themeFromHook;
 
@@ -904,12 +908,8 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
         },
       ]}
     >
-      <TouchableWithoutFeedback
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        onPress={onPress}
-      >
-        <View style={styles.cardInner}>
+      <View style={styles.cardInner}>
+        <Pressable onPressIn={onPressIn} onPressOut={onPressOut} onPress={onPress}>
           {/* BADGE-ROW (oben, außerhalb des Bildes) */}
           <View style={styles.badgeRowTop}>
             {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={[styles.badgeSpacing, styles.badgeUniform]} />}
@@ -962,14 +962,18 @@ function AnimatedOfferCard({ item, index, onPress, userLoc, theme }) {
             )}
           </View>
 
-          {/* CTA */}
-          <View style={styles.ctaRow}>
-            <View style={{ flex: 1 }}>
-              <Button title="Jetzt Angebot ansehen" variant="primary" size="sm" onPress={onPress} />
-            </View>
+        </Pressable>
+
+        {/* CTA */}
+        <View style={styles.ctaRow}>
+          <View style={styles.ctaSplit}>
+            <Button title="Jetzt Angebot ansehen" variant="secondary" size="sm" onPress={onPress} />
+          </View>
+          <View style={styles.ctaSplit}>
+            <Button title="Bring mich hin" variant="primary" size="sm" onPress={onNavigate} />
           </View>
         </View>
-      </TouchableWithoutFeedback>
+      </View>
     </Animated.View>
   );
 }
@@ -1128,7 +1132,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
+    gap: 8,
   },
+  ctaSplit: { flex: 1 },
   feedSummaryCard: {
     borderWidth: 1,
     borderRadius: 16,

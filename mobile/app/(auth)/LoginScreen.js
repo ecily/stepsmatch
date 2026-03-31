@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
+import { persistAuthSession } from '../../utils/authSession';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 
@@ -20,16 +20,28 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     setLoading(true);
     setError('');
+    const cleanEmail = String(email || '').trim().toLowerCase();
+
     try {
-      const res = await axios.post(`${API_URL}/users/login`, { email, password });
-      const interests = Array.isArray(res?.data?.user?.interests) ? res.data.user.interests : [];
-      await AsyncStorage.setItem('token', res.data.token);
-      await AsyncStorage.setItem('userId', res.data.user._id);
-      await AsyncStorage.setItem('userInterests', JSON.stringify(interests));
-      await AsyncStorage.setItem('userInterests.csv', interests.map((s) => String(s || '').trim()).filter(Boolean).join(','));
+      const res = await axios.post(`${API_URL}/users/login`, { email: cleanEmail, password });
+      await persistAuthSession({ token: res?.data?.token, user: res?.data?.user });
       router.replace('/(tabs)');
     } catch (err) {
-      setError(err?.response?.data?.message || 'Login fehlgeschlagen. Bitte pruefe deine Daten.');
+      const payload = err?.response?.data || {};
+      const mustVerify = payload?.verificationRequired || payload?.errorCode === 'EMAIL_NOT_VERIFIED';
+      if (mustVerify) {
+        router.replace({
+          pathname: '/(auth)/VerifyEmailScreen',
+          params: {
+            email: payload?.email || cleanEmail,
+            codePreview: payload?.verificationCodePreview ? String(payload.verificationCodePreview) : '',
+            next: 'tabs',
+          },
+        });
+        return;
+      }
+
+      setError(payload?.message || 'Login fehlgeschlagen. Bitte pruefe deine Daten.');
     } finally {
       setLoading(false);
     }
@@ -41,12 +53,13 @@ export default function LoginScreen() {
         <Text style={[styles.title, { color: t.colors.inkHigh }]}>Willkommen zurueck</Text>
         <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>Melde dich an und entdecke passende Angebote in deiner Naehe.</Text>
 
-        <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+        <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
           <TextInput
             placeholder="E-Mail"
             placeholderTextColor={t.colors.inkLow}
             style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
             autoCapitalize="none"
+            autoCorrect={false}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"

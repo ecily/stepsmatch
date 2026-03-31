@@ -1,7 +1,7 @@
 const colors = {
   primary: '#0F4C81',
   primarySoft: '#E7F0F8',
-  secondary: '#F3F5F8',
+  secondary: '#F7F5F1',
   accent: '#2C8C6B',
   black: '#101418',
   white: '#FFFFFF',
@@ -10,9 +10,9 @@ const colors = {
   warning: '#B78103',
   text: '#17212B',
   textMuted: '#5E6B78',
-  background: '#F8FAFC',
+  background: '#FCFBF7',
   surface: '#FFFFFF',
-  border: '#DFE5EC',
+  border: '#E6E1D8',
 };
 
 export default colors;

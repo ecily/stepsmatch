@@ -30,7 +30,14 @@ function HeaderGreeting() {
           let first = '';
           try {
             const obj = JSON.parse(raw);
-            const name = String(obj?.firstName || obj?.name || obj?.fullName || obj?.displayName || '').trim();
+            const name = String(
+              obj?.firstName ||
+              obj?.username ||
+              obj?.name ||
+              obj?.fullName ||
+              obj?.displayName ||
+              ''
+            ).trim();
             first = name.split(' ')[0];
           } catch {
             first = String(raw).trim().split(' ')[0];

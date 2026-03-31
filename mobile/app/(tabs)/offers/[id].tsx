@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../../theme/ThemeProvider';
 import Button from '../../../components/ui/Button';
 import Badge from '../../../components/ui/Badge';
@@ -28,7 +27,6 @@ const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 const api = axios.create({ baseURL: API_URL, timeout: 12000 });
 const OID24 = /^[0-9a-fA-F]{24}$/;
 const SCREEN_W = Dimensions.get('window').width;
-const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
 
 function toNumber(val) {
   if (typeof val === 'number') return val;
@@ -97,9 +95,9 @@ export default function OfferDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [userPos, setUserPos] = useState(null);
-  const [privacyOptIn, setPrivacyOptIn] = useState(null);
 
   const mountedRef = useRef(true);
+  const mapRef = useRef(null);
   const titleAnim = useRef(new Animated.Value(0)).current;
 
   const distanceFromParam = useMemo(() => {
@@ -112,21 +110,6 @@ export default function OfferDetailsScreen() {
     return () => {
       mountedRef.current = false;
     };
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(PRIVACY_OPTIN_KEY);
-        if (raw == null) {
-          setPrivacyOptIn(null);
-          return;
-        }
-        setPrivacyOptIn(raw === '1');
-      } catch {
-        setPrivacyOptIn(null);
-      }
-    })();
   }, []);
 
   useEffect(() => {
@@ -209,15 +192,33 @@ export default function OfferDetailsScreen() {
   const images = useMemo(() => (Array.isArray(offer?.images) ? offer.images.filter(Boolean) : []), [offer]);
 
   const mapRegion = useMemo(() => {
-    const p = geo || userPos;
+    const p = userPos || geo;
     if (!p) return null;
     return {
       latitude: p.lat,
       longitude: p.lng,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
+      latitudeDelta: 0.006,
+      longitudeDelta: 0.006,
     };
   }, [geo, userPos]);
+
+  useEffect(() => {
+    if (!userPos || !mapRef.current) return;
+    try {
+      mapRef.current.animateCamera(
+        {
+          center: { latitude: userPos.lat, longitude: userPos.lng },
+          zoom: 17.5,
+          pitch: 0,
+        },
+        { duration: 320 }
+      );
+    } catch {}
+  }, [userPos]);
+
+  const handleStartRoute = () => {
+    router.push({ pathname: '/(tabs)/NavigationScreen', params: { id } });
+  };
 
   const handleBack = () => {
     try {
@@ -311,10 +312,12 @@ export default function OfferDetailsScreen() {
               <Text style={[styles.infoTitle, { color: t.colors.inkHigh, marginBottom: 8 }]}>Karte</Text>
               <View style={styles.mapWrap}>
                 <MapView
+                  ref={mapRef}
                   provider={PROVIDER_GOOGLE}
                   style={StyleSheet.absoluteFill}
                   initialRegion={mapRegion}
                   showsUserLocation={!!userPos}
+                  showsMyLocationButton={false}
                   rotateEnabled={false}
                   pitchEnabled={false}
                   toolbarEnabled={false}
@@ -325,35 +328,20 @@ export default function OfferDetailsScreen() {
             </View>
           )}
 
-          <View style={[styles.privacyBox, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
-            {privacyOptIn ? (
-              <Text style={[styles.privacyState, { color: t.colors.success }]}>DSGVO: Einwilligung aktiv.</Text>
-            ) : (
-              <>
-                <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Datenschutz-Hinweis</Text>
-                <Text style={[styles.infoSub, { color: t.colors.inkLow }]}>Standortdaten werden fuer passende Angebote und Navigation genutzt. Push-Mitteilungen basieren auf deiner Einwilligung.</Text>
-                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : 'Einwilligung pausiert'}</Text>
-                <View style={{ marginTop: 8, width: 180 }}>
-                  <Button title="Im Profil aendern" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
-                </View>
-              </>
-            )}
-          </View>
         </ScrollView>
 
         <SafeAreaView style={{ backgroundColor: t.colors.background }}>
           <View style={[styles.footer, { borderTopColor: t.colors.divider, paddingBottom: 10 + insets.bottom }]}> 
-            <View style={{ flex: 1 }}>
+            <View style={{ width: '100%' }}>
               <Button
-                title="Route starten"
+                title="Bring mich hin"
                 variant="primary"
                 size="lg"
-                onPress={() => router.push({ pathname: '/(tabs)/NavigationScreen', params: { id } })}
+                onPress={handleStartRoute}
               />
             </View>
-            <View style={{ width: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Button title="Zurueck" variant="secondary" size="lg" onPress={handleBack} />
+            <View style={{ marginTop: 8, width: '100%' }}>
+              <Button title="Angebot ansehen" variant="secondary" size="sm" onPress={handleBack} />
             </View>
           </View>
         </SafeAreaView>
@@ -393,17 +381,9 @@ const styles = StyleSheet.create({
 
   mapWrap: { height: 190, borderRadius: 12, overflow: 'hidden' },
 
-  privacyBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginTop: 12,
-  },
-  privacyState: { marginTop: 8, fontSize: 12, fontWeight: '700' },
-
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 10,
     paddingHorizontal: 16,

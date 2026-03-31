@@ -49,8 +49,8 @@ export type Tokens = {
 export const tokens: Tokens = {
   colors: {
     light: {
-      background: '#FFF9F2',
-      surface:    '#F6F0E7',
+      background: '#FFFCF8',
+      surface:    '#FAF6EF',
       elevated:   '#FFFFFF',
       card:       '#FFFFFF',
       primary:    '#1D4ED8',

@@ -69,8 +69,13 @@ export default function IndexGate() {
         }
 
 
-        // 2) Onboarding-Gate
-        const has = await AsyncStorage.getItem('hasOnboarded');
+        // 2) Auth + Onboarding-Gate
+        const [has, token, emailVerified, userEmail] = await Promise.all([
+          AsyncStorage.getItem('hasOnboarded'),
+          AsyncStorage.getItem('token'),
+          AsyncStorage.getItem('userEmailVerified'),
+          AsyncStorage.getItem('userEmail'),
+        ]);
         if (!mounted) return;
 
         // 3) Permissions-Gate
@@ -84,7 +89,14 @@ export default function IndexGate() {
         }
 
         // 4) Routing
-        if (has === '1') {
+        if (!token) {
+          router.replace('/(auth)/LoginScreen');
+        } else if (emailVerified === '0') {
+          router.replace({
+            pathname: '/(auth)/VerifyEmailScreen',
+            params: { email: userEmail || '', next: has === '1' ? 'tabs' : 'onboarding' },
+          });
+        } else if (has === '1') {
           router.replace('/(tabs)');
         } else {
           router.replace('/(onboarding)/WelcomeScreen');
@@ -107,8 +119,20 @@ export default function IndexGate() {
     setBootstrapping(false);
     if (ok) {
       // Wenn Permissions jetzt ok sind, erneut Onboarding-Gate prüfen und weiter
-      const has = await AsyncStorage.getItem('hasOnboarded');
-      if (has === '1') {
+      const [has, token, emailVerified, userEmail] = await Promise.all([
+        AsyncStorage.getItem('hasOnboarded'),
+        AsyncStorage.getItem('token'),
+        AsyncStorage.getItem('userEmailVerified'),
+        AsyncStorage.getItem('userEmail'),
+      ]);
+      if (!token) {
+        router.replace('/(auth)/LoginScreen');
+      } else if (emailVerified === '0') {
+        router.replace({
+          pathname: '/(auth)/VerifyEmailScreen',
+          params: { email: userEmail || '', next: has === '1' ? 'tabs' : 'onboarding' },
+        });
+      } else if (has === '1') {
         router.replace('/(tabs)');
       } else {
         router.replace('/(onboarding)/WelcomeScreen');

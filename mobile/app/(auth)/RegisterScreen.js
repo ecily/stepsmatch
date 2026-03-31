@@ -2,45 +2,110 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
+import { persistAuthSession, persistVerifiedUser } from '../../utils/authSession';
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+
+const normalize = (value) => String(value || '').trim();
 
 export default function RegisterScreen() {
   const router = useRouter();
   const t = useTheme();
-  const [name, setName] = useState('');
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const routeToVerification = async (payload, fallbackEmail) => {
+    const safeEmail = normalize(payload?.email || fallbackEmail);
+    if (payload?.user) {
+      try {
+        await persistVerifiedUser(payload.user);
+      } catch {}
+    }
+
+    router.replace({
+      pathname: '/(auth)/VerifyEmailScreen',
+      params: {
+        email: safeEmail,
+        codePreview: payload?.verificationCodePreview ? String(payload.verificationCodePreview) : '',
+        next: 'onboarding',
+      },
+    });
+  };
+
   const handleRegister = async () => {
     setError('');
-    if (!name || !email || !password || !password2) {
-      setError('Bitte alle Felder ausfuellen.');
+
+    const cleanFirstName = normalize(firstName);
+    const cleanLastName = normalize(lastName);
+    const cleanUsername = normalize(username);
+    const cleanEmail = normalize(email).toLowerCase();
+
+    if (!cleanEmail || !password || !password2) {
+      setError('Bitte E-Mail und Passwort vollstaendig eingeben.');
       return;
     }
+
+    const hasNamePair = Boolean(cleanFirstName && cleanLastName);
+    if (!hasNamePair && !cleanUsername) {
+      setError('Bitte Vorname + Nachname oder alternativ einen Username angeben.');
+      return;
+    }
+
     if (password !== password2) {
       setError('Die Passwoerter stimmen nicht ueberein.');
       return;
     }
 
+    if (String(password).length < 8) {
+      setError('Das Passwort muss mindestens 8 Zeichen lang sein.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/users/register`, { name, email, password });
-      const interests = Array.isArray(res?.data?.user?.interests) ? res.data.user.interests : [];
-      await AsyncStorage.setItem('token', res.data.token);
-      await AsyncStorage.setItem('userId', res.data.user._id);
-      await AsyncStorage.setItem('userInterests', JSON.stringify(interests));
-      await AsyncStorage.setItem('userInterests.csv', interests.map((s) => String(s || '').trim()).filter(Boolean).join(','));
-      router.replace('/(onboarding)/WelcomeScreen');
+      const computedName = hasNamePair
+        ? `${cleanFirstName} ${cleanLastName}`.trim()
+        : cleanUsername;
+
+      const res = await axios.post(`${API_URL}/users/register`, {
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
+        username: cleanUsername,
+        name: computedName,
+        email: cleanEmail,
+        password,
+      });
+
+      if (res?.data?.verificationRequired) {
+        await routeToVerification(res.data, cleanEmail);
+        return;
+      }
+
+      if (res?.data?.token && res?.data?.user) {
+        await persistAuthSession({ token: res.data.token, user: res.data.user });
+        router.replace('/(onboarding)/WelcomeScreen');
+        return;
+      }
+
+      setError('Registrierung abgeschlossen, bitte pruefe die E-Mail-Verifizierung.');
     } catch (err) {
-      setError(err?.response?.data?.message || 'Registrierung fehlgeschlagen.');
+      const payload = err?.response?.data || {};
+      if (payload?.verificationRequired) {
+        await routeToVerification(payload, cleanEmail);
+        return;
+      }
+
+      setError(payload?.message || 'Registrierung fehlgeschlagen.');
     } finally {
       setLoading(false);
     }
@@ -50,13 +115,57 @@ export default function RegisterScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.wrap}>
         <Text style={[styles.title, { color: t.colors.inkHigh }]}>Konto erstellen</Text>
-        <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>In weniger als einer Minute startklar.</Text>
+        <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>Mit Profil und bestaetigter E-Mail bist du in weniger als einer Minute startklar.</Text>
 
-        <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
-          <TextInput placeholder="Name" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} value={name} onChangeText={setName} />
-          <TextInput placeholder="E-Mail" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} autoCapitalize="none" value={email} onChangeText={setEmail} keyboardType="email-address" />
-          <TextInput placeholder="Passwort" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} secureTextEntry value={password} onChangeText={setPassword} />
-          <TextInput placeholder="Passwort wiederholen" placeholderTextColor={t.colors.inkLow} style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]} secureTextEntry value={password2} onChangeText={setPassword2} />
+        <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+          <TextInput
+            placeholder="Vorname (optional mit Username)"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            value={firstName}
+            onChangeText={setFirstName}
+          />
+          <TextInput
+            placeholder="Nachname (optional mit Username)"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            value={lastName}
+            onChangeText={setLastName}
+          />
+          <TextInput
+            placeholder="oder Username"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            autoCapitalize="none"
+            value={username}
+            onChangeText={setUsername}
+          />
+          <TextInput
+            placeholder="E-Mail"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+          />
+          <TextInput
+            placeholder="Passwort (mind. 8 Zeichen)"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TextInput
+            placeholder="Passwort wiederholen"
+            placeholderTextColor={t.colors.inkLow}
+            style={[styles.input, { backgroundColor: t.colors.surface, borderColor: t.colors.divider, color: t.colors.inkHigh }]}
+            secureTextEntry
+            value={password2}
+            onChangeText={setPassword2}
+          />
 
           {error ? <Text style={[styles.error, { color: t.colors.danger }]}>{error}</Text> : null}
 

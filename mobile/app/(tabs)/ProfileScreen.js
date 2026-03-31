@@ -15,6 +15,7 @@ export default function ProfileScreen() {
   const t = useTheme();
   const [privacyOptIn, setPrivacyOptIn] = useState(null);
   const [hardStopped, setHardStopped] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
 
   const loadPrivacy = useCallback(async () => {
     try {
@@ -32,6 +33,23 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadPrivacy();
   }, [loadPrivacy]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('userProfile');
+        if (!alive || !raw) return;
+        const parsed = JSON.parse(raw);
+        setUserProfile(parsed && typeof parsed === 'object' ? parsed : null);
+      } catch {
+        if (alive) setUserProfile(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const refreshHardStopState = useCallback(async () => {
     try {
@@ -101,6 +119,15 @@ export default function ProfileScreen() {
         <View style={[styles.hero, { backgroundColor: '#174ea6' }]}>
           <Text style={styles.heroTitle}>Dein Bereich, deine Kontrolle</Text>
           <Text style={styles.heroSub}>Passe Interessen, Push und Hintergrunddienst jederzeit auf deinen Alltag an.</Text>
+          <Text style={styles.profileMeta}>
+            {(userProfile?.firstName && userProfile?.lastName)
+              ? `${userProfile.firstName} ${userProfile.lastName}`
+              : (userProfile?.username || userProfile?.name || 'Nutzerprofil')}
+            {userProfile?.email ? ` • ${userProfile.email}` : ''}
+          </Text>
+          <Text style={styles.profileMeta}>
+            E-Mail: {userProfile?.emailVerified ? 'verifiziert' : 'noch nicht verifiziert'}
+          </Text>
           <View style={styles.heroPills}>
             <View style={[styles.heroPill, { backgroundColor: hardStopped ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)' }]}>
               <Text style={styles.heroPillText}>{hardStopped ? 'Dienst gestoppt' : 'Dienst aktiv beim naechsten Start'}</Text>
@@ -164,6 +191,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
   heroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, lineHeight: 18, marginTop: 6 },
+  profileMeta: { color: 'rgba(255,255,255,0.88)', fontSize: 12, marginTop: 5 },
   heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   heroPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   heroPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },

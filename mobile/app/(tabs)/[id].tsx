@@ -180,12 +180,14 @@ export default function OfferDetail() {
   };
 
   useEffect(() => {
-    if (!mapRef.current || !userPosRef.current || !loc) return;
+    if (!mapRef.current) return;
+    const center = userPosRef.current || loc;
+    if (!center) return;
     try {
-      (mapRef.current as any).fitToCoordinates([userPosRef.current, loc], {
-        edgePadding: { top: 40, right: 40, bottom: 40, left: 40 },
-        animated: true,
-      });
+      (mapRef.current as any).animateCamera(
+        { center, zoom: 17.2, pitch: 0 },
+        { duration: 320 }
+      );
     } catch {}
   }, [loc]);
 
@@ -319,11 +321,13 @@ export default function OfferDetail() {
               style={{ flex: 1 }}
               provider={PROVIDER_GOOGLE}
               mapType={mapType}
+              showsUserLocation={!!userPosRef.current}
+              showsMyLocationButton={false}
               initialRegion={{
-                latitude: (pickOfferLocation(offer)?.latitude ?? userPosRef.current?.latitude ?? 47.0707),
-                longitude: (pickOfferLocation(offer)?.longitude ?? userPosRef.current?.longitude ?? 15.4395),
-                latitudeDelta: 0.02,
-                longitudeDelta: 0.02,
+                latitude: (userPosRef.current?.latitude ?? pickOfferLocation(offer)?.latitude ?? 47.0707),
+                longitude: (userPosRef.current?.longitude ?? pickOfferLocation(offer)?.longitude ?? 15.4395),
+                latitudeDelta: 0.006,
+                longitudeDelta: 0.006,
               }}
               accessibilityRole="image"
               accessibilityLabel="Karte mit Ziel und aktuellem Standort"

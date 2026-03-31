@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
-const VISIBLE_RADIUS_M = 2000;
+const VISIBLE_RADIUS_M = 900;
 const WALKING_SPEED_MPS = 1.33;
 
 const toRad = (deg) => (deg * Math.PI) / 180;
@@ -199,7 +199,7 @@ export default function NavigationMap() {
     (row) => {
       const id = row?.offer?._id || row?.offer?.id;
       if (!id) return;
-      router.push(`/NavigationScreen?id=${id}`);
+      router.push({ pathname: '/(tabs)/NavigationScreen', params: { id } });
     },
     [router]
   );
@@ -243,7 +243,9 @@ export default function NavigationMap() {
         <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
           <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Deine Entdeckungs-Karte</Text>
           <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
-            {activeCount > 0 ? `${activeCount} aktive Angebote warten in deinem 2-km-Radius` : `${rows.length} Angebote in deinem 2-km-Radius`}
+            {activeCount > 0
+              ? `${activeCount} aktive Angebote warten in deinem ${(VISIBLE_RADIUS_M / 1000).toFixed(1).replace('.', ',')}-km-Radius`
+              : `${rows.length} Angebote in deinem ${(VISIBLE_RADIUS_M / 1000).toFixed(1).replace('.', ',')}-km-Radius`}
           </Text>
           <Text style={[styles.topMood, { color: t.colors.ink }]}>
             {activeCount > 0 ? 'Tippe auf einen Marker und starte direkt zu Fuss.' : 'Aktuell ist es ruhiger. Ein Refresh bringt neue Treffer.'}
