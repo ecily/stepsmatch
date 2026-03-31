@@ -68,14 +68,28 @@
         Für Deep-Links wird die SPA-Startseite geöffnet. Falls du nicht automatisch
         weitergeleitet wirst, gehe direkt zur Startseite.
       </p>
-      <a href="/">Zur Startseite</a>
-      <p class="small">Automatische Weiterleitung in 1 Sekunde…</p>
+      <a id="fallback-link" href="/">Zur Startseite</a>
+      <p class="small">Automatische Weiterleitung in wenigen Augenblicken…</p>
     </main>
 
     <script>
-      setTimeout(function () {
-        window.location.replace("/");
-      }, 1000);
+      (function () {
+        var targetPath = window.location.pathname + window.location.search + window.location.hash;
+        var redirectTo = "/";
+
+        if (targetPath && targetPath !== "/") {
+          redirectTo = "/?redirect=" + encodeURIComponent(targetPath);
+        }
+
+        var link = document.getElementById("fallback-link");
+        if (link) {
+          link.setAttribute("href", redirectTo);
+        }
+
+        setTimeout(function () {
+          window.location.replace(redirectTo);
+        }, 120);
+      })();
     </script>
   </body>
 </html>

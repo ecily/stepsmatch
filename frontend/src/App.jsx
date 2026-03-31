@@ -20,12 +20,45 @@ const TesterGate = lazy(() => import('./pages/TesterGate'));
 const NDA = lazy(() => import('./pages/NDA'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 
+function DeepLinkRestore() {
+  const navigate = useNavigate();
+  const { pathname, search, hash } = useLocation();
+
+  React.useLayoutEffect(() => {
+    const params = new URLSearchParams(search);
+    const redirect = params.get('redirect');
+    if (!redirect) return;
+
+    const isSafe = redirect.startsWith('/') && !redirect.startsWith('//');
+    if (isSafe && redirect !== pathname) {
+      navigate(redirect, { replace: true });
+      return;
+    }
+
+    params.delete('redirect');
+    const nextSearch = params.toString();
+    navigate(
+      {
+        pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+        hash,
+      },
+      { replace: true }
+    );
+  }, [navigate, pathname, search, hash]);
+
+  return null;
+}
+
 function BootGuard() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   React.useLayoutEffect(() => {
     try {
+      const hasRedirectHint = new URLSearchParams(search).has('redirect');
+      if (hasRedirectHint) return;
+
       const key = localStorage.getItem('stepsmatch_tester_key');
       const accepted = localStorage.getItem('stepsmatch_ndaa_accepted') === '1';
 
@@ -62,7 +95,7 @@ function BootGuard() {
     } catch (e) {
       void e;
     }
-  }, [navigate, pathname]);
+  }, [navigate, pathname, search]);
 
   return null;
 }
@@ -92,6 +125,7 @@ const AppRoutes = () => {
 
   return (
     <>
+      <DeepLinkRestore />
       <BootGuard />
       <ScrollToTop />
       <Suspense fallback={<RouteLoadingFallback />}>
