@@ -6,6 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../theme/ThemeProvider';
 
+function HeaderBrand() {
+  const t = useTheme();
+  return (
+    <View>
+      <Text style={{ color: t.colors.inkHigh, fontWeight: '900', fontSize: 24, letterSpacing: 0.2 }}>StepsMatch</Text>
+    </View>
+  );
+}
+
 function HeaderGreeting() {
   const t = useTheme();
   const [firstName, setFirstName] = useState(null);
@@ -40,7 +49,7 @@ function HeaderGreeting() {
 
   return (
     <View style={{ paddingRight: 10, alignItems: 'flex-end' }}>
-      <Text style={{ color: t.colors.inkLow, fontSize: 11 }}>Willkommen</Text>
+      <Text style={{ color: t.colors.inkLow, fontSize: 11 }}>Schoen, dass du da bist</Text>
       <Text style={{ color: t.colors.inkHigh, fontSize: 14, fontWeight: '700' }}>{firstName || 'du'}</Text>
     </View>
   );
@@ -53,13 +62,22 @@ export default function TabLayout() {
   const tabBarStyle = useMemo(
     () => ({
       backgroundColor: t.colors.elevated,
-      borderTopColor: t.colors.divider,
-      borderTopWidth: 1,
+      borderTopColor: 'transparent',
+      borderTopWidth: 0,
       height: 58 + insets.bottom,
       paddingBottom: Math.max(8, insets.bottom),
       paddingTop: 6,
+      marginHorizontal: 14,
+      marginBottom: 10,
+      borderRadius: 18,
+      position: 'absolute',
+      elevation: 8,
+      shadowColor: '#0f172a',
+      shadowOpacity: 0.09,
+      shadowOffset: { width: 0, height: 5 },
+      shadowRadius: 12,
     }),
-    [insets.bottom, t.colors.divider, t.colors.elevated]
+    [insets.bottom, t.colors.elevated]
   );
 
   return (
@@ -67,16 +85,10 @@ export default function TabLayout() {
       sceneContainerStyle={{ backgroundColor: t.colors.background }}
       screenOptions={({ route }) => ({
         headerShown: true,
-        headerTitle: 'StepsMatch',
+        headerTitle: () => <HeaderBrand />,
         headerTitleAlign: 'left',
         headerStyle: { backgroundColor: t.colors.background },
         headerShadowVisible: false,
-        headerTitleStyle: {
-          color: t.colors.inkHigh,
-          fontWeight: '800',
-          fontSize: 20,
-          letterSpacing: 0.2,
-        },
         headerRight: () => <HeaderGreeting />,
         headerTintColor: t.colors.inkHigh,
         statusBarStyle: 'dark',
@@ -84,7 +96,8 @@ export default function TabLayout() {
         tabBarActiveTintColor: t.colors.primary,
         tabBarInactiveTintColor: t.colors.inkLow,
         tabBarStyle,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '700' },
+        tabBarItemStyle: { borderRadius: 12, marginHorizontal: 2 },
         tabBarHideOnKeyboard: true,
         tabBarIcon: ({ focused, color, size }) => {
           let icon = 'ellipse-outline';
@@ -96,10 +109,10 @@ export default function TabLayout() {
         },
       })}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="NavigationMap" options={{ title: 'Map' }} />
+      <Tabs.Screen name="index" options={{ title: 'Start' }} />
+      <Tabs.Screen name="NavigationMap" options={{ title: 'Karte' }} />
       <Tabs.Screen name="ProfileScreen" options={{ title: 'Profil' }} />
-      <Tabs.Screen name="diagnostics" options={{ title: 'Diagnose' }} />
+      <Tabs.Screen name="diagnostics" options={{ title: 'Check' }} />
 
       <Tabs.Screen name="offers/[id]" options={{ href: null, headerTitle: 'Angebot' }} />
       <Tabs.Screen name="[id]" options={{ href: null }} />

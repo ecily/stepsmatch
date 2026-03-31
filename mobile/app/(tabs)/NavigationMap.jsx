@@ -241,9 +241,12 @@ export default function NavigationMap() {
         </MapView>
 
         <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
-          <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Angebote in deiner Naehe</Text>
+          <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Deine Entdeckungs-Karte</Text>
           <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
-            {activeCount > 0 ? `${activeCount} aktive Angebote im Radius von 2 km` : `${rows.length} Angebote im Radius von 2 km`}
+            {activeCount > 0 ? `${activeCount} aktive Angebote warten in deinem 2-km-Radius` : `${rows.length} Angebote in deinem 2-km-Radius`}
+          </Text>
+          <Text style={[styles.topMood, { color: t.colors.ink }]}>
+            {activeCount > 0 ? 'Tippe auf einen Marker und starte direkt zu Fuss.' : 'Aktuell ist es ruhiger. Ein Refresh bringt neue Treffer.'}
           </Text>
           <View style={styles.topActions}>
             <TouchableOpacity
@@ -257,19 +260,19 @@ export default function NavigationMap() {
               ]}
             >
               <Text style={[styles.pillText, { color: showOnlyActive ? t.colors.primary : t.colors.ink }]}>
-                {showOnlyActive ? 'Nur aktive' : 'Alle anzeigen'}
+                {showOnlyActive ? 'Jetzt aktiv' : 'Alle anzeigen'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={loadOffers} style={[styles.pillBtn, { borderColor: t.colors.divider, backgroundColor: t.colors.surface }]}>
-              <Text style={[styles.pillText, { color: t.colors.ink }]}>Aktualisieren</Text>
+              <Text style={[styles.pillText, { color: t.colors.ink }]}>Neu laden</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {loadingAny ? (
-          <View style={[styles.loading, { top: insets.top + 70, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+          <View style={[styles.loading, { top: insets.top + 114, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
             <ActivityIndicator size="small" color={t.colors.primary} />
-            <Text style={[styles.loadingText, { color: t.colors.ink }]}>{loadingPos ? 'Position' : 'Angebote'} werden geladen ...</Text>
+            <Text style={[styles.loadingText, { color: t.colors.ink }]}>{loadingPos ? 'Lade Position ...' : 'Lade Angebote ...'}</Text>
           </View>
         ) : null}
 
@@ -279,13 +282,20 @@ export default function NavigationMap() {
           </View>
         ) : null}
 
+        {!loadingAny && !permissionDenied && rows.length === 0 ? (
+          <View style={[styles.notice, { top: insets.top + 120, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+            <Text style={[styles.noticeText, { color: t.colors.inkHigh }]}>Noch keine passenden Angebote in der direkten Umgebung.</Text>
+            <Text style={[styles.noticeText, { color: t.colors.inkLow, marginTop: 4 }]}>Ein kleiner Spaziergang oder ein Refresh bringt oft schnell neue Treffer.</Text>
+          </View>
+        ) : null}
+
         {selectedRow ? (
           <View style={[styles.sheet, { paddingBottom: 12 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
             <Text style={[styles.sheetTitle, { color: t.colors.inkHigh }]} numberOfLines={2}>
               {selectedRow.offer?.name || 'Angebot'}
             </Text>
             <Text style={[styles.sheetMeta, { color: t.colors.inkLow }]}> 
-              {selectedRow.offer?.category || 'Kategorie'} | {fmtDistance(selectedRow.distanceM)} | ca. {etaMin(selectedRow.distanceM)} min | {selectedRow.isActive ? 'aktiv' : 'inaktiv'}
+              {selectedRow.offer?.category || 'Kategorie'} | {fmtDistance(selectedRow.distanceM)} | etwa {etaMin(selectedRow.distanceM)} min zu Fuss | {selectedRow.isActive ? 'aktiv' : 'inaktiv'}
             </Text>
             <Text style={[styles.sheetDesc, { color: t.colors.ink }]} numberOfLines={3}>
               {selectedRow.offer?.description || 'Keine Beschreibung verfuegbar.'}
@@ -293,10 +303,10 @@ export default function NavigationMap() {
 
             <View style={styles.sheetActions}>
               <TouchableOpacity onPress={() => onGoNavigateOffer(selectedRow)} style={[styles.btn, { backgroundColor: t.colors.primary }]}>
-                <Text style={styles.btnPrimaryText}>Route starten</Text>
+                <Text style={styles.btnPrimaryText}>Zu Fuss starten</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setSelectedRow(null)} style={[styles.btnGhost, { borderColor: t.colors.divider }]}>
-                <Text style={[styles.btnGhostText, { color: t.colors.ink }]}>Schliessen</Text>
+                <Text style={[styles.btnGhostText, { color: t.colors.ink }]}>Weiter schauen</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -331,12 +341,18 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 6,
   },
-  topTitle: { fontSize: 15, fontWeight: '800' },
+  topTitle: { fontSize: 17, fontWeight: '900' },
   topSub: { marginTop: 2, fontSize: 12 },
+  topMood: { marginTop: 5, fontSize: 12, lineHeight: 18 },
   topActions: {
     marginTop: 8,
     flexDirection: 'row',
@@ -381,8 +397,13 @@ const styles = StyleSheet.create({
     right: 12,
     bottom: 0,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 12,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    elevation: 8,
   },
   sheetTitle: { fontSize: 18, fontWeight: '900' },
   sheetMeta: { marginTop: 4, fontSize: 12 },

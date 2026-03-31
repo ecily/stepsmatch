@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -97,27 +97,31 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
-      <View style={styles.container}>
-        <Text style={[styles.headline, { color: t.colors.inkHigh }]}>Profil</Text>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={[styles.hero, { backgroundColor: '#174ea6' }]}>
+          <Text style={styles.heroTitle}>Dein Bereich, deine Kontrolle</Text>
+          <Text style={styles.heroSub}>Passe Interessen, Push und Hintergrunddienst jederzeit auf deinen Alltag an.</Text>
+          <View style={styles.heroPills}>
+            <View style={[styles.heroPill, { backgroundColor: hardStopped ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)' }]}>
+              <Text style={styles.heroPillText}>{hardStopped ? 'Dienst gestoppt' : 'Dienst aktiv beim naechsten Start'}</Text>
+            </View>
+            <View style={[styles.heroPill, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Text style={styles.heroPillText}>
+                {privacyOptIn === null ? 'Push offen' : (privacyOptIn ? 'Push ein' : 'Push pausiert')}
+              </Text>
+            </View>
+          </View>
+        </View>
 
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
-          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Einstellungen</Text>
-          <Button title="Interessen aendern" variant="primary" size="lg" onPress={() => router.push('/(onboarding)/InterestsScreen')} />
-          <Button
-            title={hardStopped ? 'Hintergrunddienst bereits gestoppt' : 'Hintergrunddienst stoppen'}
-            variant="secondary"
-            size="lg"
-            onPress={handleStopUntilRestart}
-            disabled={hardStopped}
-          />
-          <Text style={[styles.hint, { color: hardStopped ? t.colors.warning : t.colors.inkLow }]}>
-            {hardStopped ? 'Hintergrunddienst ist bis zum naechsten App-Start deaktiviert.' : 'Stoppt Push-/Standortdienst komplett bis zum naechsten App-Start.'}
-          </Text>
+          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Entdecker-Profil</Text>
+          <Text style={[styles.hint, { color: t.colors.inkLow }]}>Je besser deine Interessen, desto passender werden Angebote, Wege und Timing.</Text>
+          <Button title="Interessen aktualisieren" variant="primary" size="lg" onPress={() => router.push('/(onboarding)/InterestsScreen')} />
         </View>
 
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
           <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Datenschutz & Push</Text>
-          <Text style={[styles.hint, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund verarbeitet. Du kannst die Push-Einwilligung jederzeit aendern.</Text>
+          <Text style={[styles.hint, { color: t.colors.inkLow }]}>Du entscheidest, wie oft wir dich auf passende Angebote in deiner Naehe hinweisen.</Text>
           <Text style={[styles.state, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
           <View style={styles.row}>
             <Button title="Einwilligen" variant="primary" size="sm" onPress={() => setPrivacy(true)} />
@@ -126,26 +130,50 @@ export default function ProfileScreen() {
         </View>
 
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
-          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Konto</Text>
-          <Button title="Logout & App zuruecksetzen" variant="secondary" size="lg" onPress={handleLogout} />
-          <Text style={[styles.hint, { color: t.colors.inkLow }]}>Lokale Daten werden geloescht. Push und Service kannst du danach neu aktivieren.</Text>
+          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Hintergrunddienst</Text>
+          <Text style={[styles.hint, { color: t.colors.inkLow }]}>
+            {hardStopped ? 'Der Dienst bleibt bis zum naechsten App-Start aus.' : 'Der Dienst meldet deinen Standort akkuschonend fuer passende Live-Angebote.'}
+          </Text>
+          <Button
+            title={hardStopped ? 'Hintergrunddienst bereits gestoppt' : 'Hintergrunddienst stoppen'}
+            variant="secondary"
+            size="lg"
+            onPress={handleStopUntilRestart}
+            disabled={hardStopped}
+          />
         </View>
-      </View>
+
+        <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
+          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Konto</Text>
+          <Text style={[styles.hint, { color: t.colors.inkLow }]}>Wenn du neu starten willst, loeschen wir lokale Daten sauber und sicher.</Text>
+          <Button title="Logout & App zuruecksetzen" variant="secondary" size="lg" onPress={handleLogout} />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 8, gap: 14 },
-  headline: { fontSize: 30, fontWeight: '800', marginBottom: 4 },
+  container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 26, gap: 12 },
+  hero: {
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 2,
+  },
+  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  heroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, lineHeight: 18, marginTop: 6 },
+  heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  heroPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  heroPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   section: {
     borderWidth: 1,
     borderRadius: 16,
-    padding: 14,
+    padding: 12,
     gap: 10,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
+  sectionTitle: { fontSize: 17, fontWeight: '800' },
   hint: { fontSize: 12, lineHeight: 18 },
   state: { fontSize: 12, fontWeight: '700' },
   row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },

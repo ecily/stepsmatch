@@ -89,6 +89,7 @@ export default function NavigationScreen() {
   const [arrived, setArrived] = useState(false);
   const [showArrivalCard, setShowArrivalCard] = useState(false);
   const [mapType, setMapType] = useState('standard');
+  const [startDistance, setStartDistance] = useState(null);
 
   const mapRef = useRef(null);
   const posSub = useRef(null);
@@ -226,6 +227,14 @@ export default function NavigationScreen() {
     if (!userLocation || !offerPos) return;
     const m = distanceMeters(userLocation, offerPos);
     setRemaining(m);
+    if (Number.isFinite(m)) {
+      setStartDistance((prev) => {
+        if (!Number.isFinite(prev)) return m;
+        // If user starts a fresh route from farther away, reset baseline.
+        if (m > prev + 50) return m;
+        return prev;
+      });
+    }
     if (m != null && m <= ARRIVAL_THRESHOLD_METERS && !arrivalNotified.current) {
       arrivalNotified.current = true;
       setArrived(true);
@@ -249,6 +258,21 @@ export default function NavigationScreen() {
     const mins = Math.max(1, Math.ceil(remaining / 80));
     return `${mins} min`;
   }, [remaining]);
+  const progressPct = useMemo(() => {
+    if (!Number.isFinite(remaining) || !Number.isFinite(startDistance) || startDistance <= 0) return 0;
+    const pct = Math.round(((startDistance - remaining) / startDistance) * 100);
+    return Math.max(0, Math.min(100, pct));
+  }, [remaining, startDistance]);
+
+  const motivationText = useMemo(() => {
+    if (arrived) return 'Perfekt. Du bist am Ziel angekommen.';
+    if (!Number.isFinite(remaining)) return 'Route wird berechnet. Gleich geht es los.';
+    if (remaining > 1500) return 'Starker Start. Folge der blauen Route Schritt fuer Schritt.';
+    if (remaining > 800) return 'Sehr gut. Du bist klar auf Kurs.';
+    if (remaining > 300) return 'Super Tempo. Jetzt beginnt der letzte Abschnitt.';
+    if (remaining > 100) return 'Fast geschafft. Nur noch wenige Minuten.';
+    return 'Letzte Meter. Zieh durch, du bist gleich da.';
+  }, [arrived, remaining]);
 
   if (loading) {
     return (
@@ -316,8 +340,13 @@ export default function NavigationScreen() {
       <View style={[styles.hudTop, { top: insets.top + 10, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
         <Text style={[styles.offerTitle, { color: t.colors.inkHigh }]} numberOfLines={1}>{offer?.name || 'Navigation'}</Text>
         <Text style={[styles.offerMeta, { color: t.colors.inkLow }]}>
-          {remaining == null ? 'Distanz ...' : `Noch ${remaining < 1000 ? `${remaining} m` : `${(remaining / 1000).toFixed(1)} km`} · ETA ${etaText}`}
+          {remaining == null ? 'Distanz ...' : `Noch ${remaining < 1000 ? `${remaining} m` : `${(remaining / 1000).toFixed(1)} km`} | ETA ${etaText}`}
         </Text>
+        <Text style={[styles.motivation, { color: t.colors.ink }]}>{motivationText}</Text>
+        <View style={[styles.progressRail, { backgroundColor: t.colors.surface }]}>
+          <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: t.colors.primary }]} />
+        </View>
+        <Text style={[styles.progressText, { color: t.colors.inkLow }]}>{progressPct}% der Strecke geschafft</Text>
         {routeError ? <Text style={[styles.warn, { color: t.colors.warning }]}>{routeError}</Text> : null}
         {routeCoords.length < 2 ? <Text style={[styles.warn, { color: t.colors.inkLow }]}>Route wird vorbereitet ...</Text> : null}
       </View>
@@ -396,6 +425,19 @@ const styles = StyleSheet.create({
   },
   offerTitle: { fontSize: 16, fontWeight: '900' },
   offerMeta: { marginTop: 4, fontSize: 13 },
+  motivation: { marginTop: 6, fontSize: 13, fontWeight: '600' },
+  progressRail: {
+    marginTop: 8,
+    height: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    minWidth: 6,
+  },
+  progressText: { marginTop: 5, fontSize: 12, fontWeight: '700' },
   warn: { marginTop: 6, fontSize: 12 },
 
   arrivalCard: {

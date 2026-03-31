@@ -460,7 +460,7 @@ export default function Diagnostics() {
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
         {/* Header */}
         <View style={s.header}>
-          <Text style={s.h}>Diagnostics</Text>
+          <Text style={s.h}>System-Check</Text>
           <View style={s.row}>
             <TouchableOpacity style={[s.btn, s.bGray]} onPress={() => setOnlyTagged((v) => !v)}>
               <Text style={s.bt}>{onlyTagged ? 'Alle Logs' : 'Nur Tags'}</Text>
@@ -694,59 +694,59 @@ function lineStyle(line) {
 
 // ===== Styles
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0b0f17' },
+  root: { flex: 1, backgroundColor: '#f4f7ff' },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 24 },
 
-  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, backgroundColor: '#0b0f17' },
-  h: { fontSize: 20, fontWeight: '800', color: 'white' },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, backgroundColor: '#f4f7ff' },
+  h: { fontSize: 20, fontWeight: '900', color: '#0b1220' },
   row: { flexDirection: 'row', gap: 8, marginTop: 10 },
 
-  actions: { padding: 16, gap: 10, backgroundColor: '#0b0f17' },
+  actions: { padding: 16, gap: 10, backgroundColor: '#f4f7ff' },
 
   btn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
   btnFull: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' },
 
-  bBlue: { backgroundColor: '#2c6bed' },
-  bGray: { backgroundColor: '#1b2433' },
+  bBlue: { backgroundColor: '#2563eb' },
+  bGray: { backgroundColor: '#334155' },
 
   bt: { color: 'white', fontWeight: '700' },
 
   cards: { paddingHorizontal: 16, paddingTop: 8, gap: 12 },
-  card: { backgroundColor: '#101827', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#13203a' },
-  cardTitle: { color: 'white', fontWeight: '800', fontSize: 14, marginBottom: 2 },
+  card: { backgroundColor: '#ffffff', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#d8e1f0' },
+  cardTitle: { color: '#0f172a', fontWeight: '900', fontSize: 14, marginBottom: 2 },
 
   kvRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  kvK: { color: '#93a4bd' },
-  kvV: { color: '#e4ecf7', fontWeight: '700' },
-  kvDim: { color: '#93a4bd' },
-  good: { color: '#9ae6b4' },
-  bad: { color: '#ff8b8b' },
+  kvK: { color: '#64748b' },
+  kvV: { color: '#0f172a', fontWeight: '700' },
+  kvDim: { color: '#64748b' },
+  good: { color: '#15803d' },
+  bad: { color: '#b91c1c' },
 
   logWrapper: { paddingHorizontal: 16, paddingTop: 8 },
   logBox: {
-    backgroundColor: '#0e1421',
+    backgroundColor: '#f8fafc',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#13203a',
+    borderColor: '#d8e1f0',
     maxHeight: 360,
   },
   logContent: { padding: 12 },
-  log: { color: '#c9d1d9', fontFamily: 'monospace', marginBottom: 4 },
-  logInfo: { color: '#8ab4f8', fontFamily: 'monospace', marginBottom: 4 },
-  logHot: { color: '#9ae6b4', fontFamily: 'monospace', marginBottom: 4 },
-  logWarn: { color: '#ffd580', fontFamily: 'monospace', marginBottom: 4 },
-  logErr: { color: '#ff8b8b', fontFamily: 'monospace', marginBottom: 4 },
-  logEmpty: { color: '#7f8ea3', fontStyle: 'italic' },
+  log: { color: '#334155', fontFamily: 'monospace', marginBottom: 4 },
+  logInfo: { color: '#1d4ed8', fontFamily: 'monospace', marginBottom: 4 },
+  logHot: { color: '#15803d', fontFamily: 'monospace', marginBottom: 4 },
+  logWarn: { color: '#b45309', fontFamily: 'monospace', marginBottom: 4 },
+  logErr: { color: '#b91c1c', fontFamily: 'monospace', marginBottom: 4 },
+  logEmpty: { color: '#64748b', fontStyle: 'italic' },
 
-  hint: { color: '#7f8ea3', padding: 12, fontSize: 12 },
-  hintSmall: { color: '#7f8ea3', paddingTop: 8, fontSize: 11 },
+  hint: { color: '#64748b', padding: 12, fontSize: 12 },
+  hintSmall: { color: '#64748b', paddingTop: 8, fontSize: 11 },
 });
 
 const v = StyleSheet.create({
   badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, fontWeight: '800', alignSelf: 'flex-start' },
-  ok:   { backgroundColor: '#11391d', color: '#7CFCA7', borderWidth: 1, borderColor: '#1f7040' },
-  warn: { backgroundColor: '#3a2a12', color: '#ffd580', borderWidth: 1, borderColor: '#7a5d26' },
-  fail: { backgroundColor: '#3a141b', color: '#ff8b8b', borderWidth: 1, borderColor: '#7a2e3a' },
+  ok:   { backgroundColor: '#dcfce7', color: '#166534', borderWidth: 1, borderColor: '#86efac' },
+  warn: { backgroundColor: '#fef3c7', color: '#92400e', borderWidth: 1, borderColor: '#fcd34d' },
+  fail: { backgroundColor: '#fee2e2', color: '#991b1b', borderWidth: 1, borderColor: '#fca5a5' },
 });
 

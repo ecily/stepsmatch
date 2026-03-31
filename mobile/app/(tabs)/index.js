@@ -2,14 +2,13 @@
 // Robustheit: Standort-Fallback (LastKnown + Persist), Offers trotz fehlender Position, Axios-Timeout + Retry
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { sendHeartbeat, ensureBgAfterOnboarding, stopBackgroundServices, syncRemoteServiceState, refreshGeofencesAroundUser } from '../../components/PushInitializer';
+import { sendHeartbeat, refreshGeofencesAroundUser } from '../../components/PushInitializer';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
   TouchableWithoutFeedback,
-  TouchableOpacity,
   ActivityIndicator,  ScrollView,
   RefreshControl,
   AppState,
@@ -35,7 +34,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { DistanceBadge } from '../../components/DistanceBadge';
 
 import { csvToSet, matchesInterests } from '../../utils/interests';
-import { getServiceState, setServiceEnabled, pauseForMs, pauseUntil, resumeService, isPaused } from '../../components/push/service-control';
 
 
 const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
@@ -648,43 +646,7 @@ export default function HomeTab() {
   /* UI */
 
 
-  const [svcState, setSvcState] = useState(null);
-  const [svcBusy, setSvcBusy] = useState(false);
-  const [privacyOptIn, setPrivacyOptIn] = useState(null);
   const [fgNotice, setFgNotice] = useState('');
-  const [serviceExpanded, setServiceExpanded] = useState(false);
-  const [privacyExpanded, setPrivacyExpanded] = useState(false);
-  const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
-
-  const loadServiceState = useCallback(async () => {
-    try {
-      const st = await getServiceState();
-      setSvcState(st);
-    } catch {}
-  }, []);
-
-  useEffect(() => { loadServiceState(); }, [loadServiceState]);
-
-  const loadPrivacyState = useCallback(async () => {
-    try {
-      const raw = await AsyncStorage.getItem(PRIVACY_OPTIN_KEY);
-      if (raw == null) {
-        setPrivacyOptIn(null);
-        return;
-      }
-      setPrivacyOptIn(raw === '1');
-    } catch {
-      setPrivacyOptIn(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPrivacyState();
-  }, [loadPrivacyState]);
-
-  useEffect(() => {
-    setPrivacyExpanded(privacyOptIn !== true);
-  }, [privacyOptIn]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('offers:foreground-signal', (payload) => {
@@ -698,91 +660,6 @@ export default function HomeTab() {
       try { sub?.remove?.(); } catch {}
       if (fgNoticeTimerRef.current) clearTimeout(fgNoticeTimerRef.current);
     };
-  }, []);
-
-  const formatPauseUntil = (ts) => {
-    try {
-      const d = new Date(ts);
-      return d.toLocaleString('de-AT', {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  const isSvcPaused = svcState ? isPaused(svcState) : false;
-  const isSvcEnabled = svcState ? !!svcState.enabled : true;
-  const isSvcActive = isSvcEnabled && !isSvcPaused;
-
-  const handleEnableService = useCallback(async () => {
-    if (svcBusy) return;
-    setSvcBusy(true);
-    try {
-      await resumeService('user-on');
-      await syncRemoteServiceState(true, 'user-on');
-      await ensureBgAfterOnboarding();
-      await refreshGeofencesAroundUser(true).catch(() => {});
-      await loadServiceState();
-    } finally {
-      setSvcBusy(false);
-    }
-  }, [svcBusy, loadServiceState]);
-
-  const handleDisableService = useCallback(async () => {
-    if (svcBusy) return;
-    setSvcBusy(true);
-    try {
-      await setServiceEnabled(false, 'user-off');
-      await syncRemoteServiceState(false, 'user-off');
-      await stopBackgroundServices('user-off');
-      await loadServiceState();
-    } finally {
-      setSvcBusy(false);
-    }
-  }, [svcBusy, loadServiceState]);
-
-  const handlePauseFor = useCallback(async (ms, reason) => {
-    if (svcBusy) return;
-    setSvcBusy(true);
-    try {
-      await pauseForMs(ms, reason || 'user-pause');
-      await syncRemoteServiceState(false, reason || 'user-pause');
-      await stopBackgroundServices('user-pause');
-      await loadServiceState();
-    } finally {
-      setSvcBusy(false);
-    }
-  }, [svcBusy, loadServiceState]);
-
-  const handlePauseUntilTomorrow = useCallback(async () => {
-    if (svcBusy) return;
-    setSvcBusy(true);
-    try {
-      const now = new Date();
-      const until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
-      await pauseUntil(until, 'user-pause-tomorrow');
-      await syncRemoteServiceState(false, 'user-pause-tomorrow');
-      await stopBackgroundServices('user-pause');
-      await loadServiceState();
-    } finally {
-      setSvcBusy(false);
-    }
-  }, [svcBusy, loadServiceState]);
-
-  const handleResume = useCallback(async () => {
-    await handleEnableService();
-  }, [handleEnableService]);
-
-  const handlePrivacyOptIn = useCallback(async (next) => {
-    try {
-      await AsyncStorage.setItem(PRIVACY_OPTIN_KEY, next ? '1' : '0');
-      setPrivacyOptIn(!!next);
-    } catch {}
   }, []);
 
   if (!hasLoadedOnce && initialLoading) {
@@ -832,6 +709,10 @@ export default function HomeTab() {
     }
     return Number.isFinite(best) ? best : null;
   })();
+  const heroTitle = offersCount > 0 ? `${offersCount} aktive Angebote fuer deinen Tag` : 'Neue Wege warten schon auf dich';
+  const heroSubtitle = nearestDistance != null
+    ? `Das naechste Angebot ist nur ${Math.round(nearestDistance)} m entfernt. Starte entspannt und sammle Schritte mit Sinn.`
+    : 'Sobald in deiner Umgebung etwas Spannendes aktiv ist, findest du es hier sofort.';
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
@@ -840,79 +721,25 @@ export default function HomeTab() {
           contentContainerStyle={styles.categoryContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          <View style={[styles.heroCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+          <View style={[styles.heroCard, { backgroundColor: '#0f3a8a', borderColor: 'rgba(255,255,255,0.2)' }]}>
+            <View style={styles.heroGlowA} />
+            <View style={styles.heroGlowB} />
             <View style={styles.heroTopRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.heroEyebrow, { color: t.colors.inkLow }]}>In deiner Naehe</Text>
-                <Text style={[styles.heroTitle, { color: t.colors.inkHigh }]}>Entdecke Angebote und starte direkt deine Route</Text>
-                <Text style={[styles.heroSubtitle, { color: t.colors.ink }]}>Feed-first mit schneller Karte und Navigation.</Text>
+                <Text style={[styles.heroEyebrow, { color: 'rgba(255,255,255,0.76)' }]}>Heute fuer dich</Text>
+                <Text style={[styles.heroTitle, { color: '#ffffff' }]}>{heroTitle}</Text>
+                <Text style={[styles.heroSubtitle, { color: 'rgba(255,255,255,0.92)' }]}>{heroSubtitle}</Text>
               </View>
               <Badge label="Live" tone="success" />
             </View>
-          </View>
-          <View style={[styles.serviceCard, { backgroundColor: t.colors.card }]}>
-            <TouchableOpacity style={styles.serviceHeader} activeOpacity={0.85} onPress={() => setServiceExpanded((v) => !v)}>
-              <Text style={[styles.serviceTitle, { color: t.colors.inkHigh }]}>Hintergrunddienst</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.serviceStatus, { color: isSvcActive ? t.colors.success : (isSvcPaused ? t.colors.warning : t.colors.danger) }]}>
-                  {isSvcActive ? 'Aktiv' : (isSvcPaused ? 'Pausiert' : 'Aus')}
-                </Text>
-                <Text style={[styles.collapseToggle, { color: t.colors.inkLow }]}>{serviceExpanded ? 'Ausblenden' : 'Anzeigen'}</Text>
+            <View style={styles.heroActionRow}>
+              <View style={{ flex: 1 }}>
+                <Button title="Zur Karte" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/NavigationMap')} />
               </View>
-            </TouchableOpacity>
-
-            {serviceExpanded ? (
-              <>
-                {isSvcPaused && svcState?.pausedUntil ? (
-                  <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Pausiert bis: {formatPauseUntil(svcState.pausedUntil)}</Text>
-                ) : (
-                  <Text style={[styles.serviceHint, { color: t.colors.inkLow }]}>Steuert Standort im Hintergrund und liefert Push-Angebote auch bei gesperrtem Display.</Text>
-                )}
-
-                <View style={styles.serviceActionsRow}>
-                  {isSvcActive ? (
-                    <Button title="Ausschalten" variant="danger" size="sm" onPress={handleDisableService} disabled={svcBusy} />
-                  ) : (
-                    <Button title="Aktivieren" variant="primary" size="sm" onPress={handleEnableService} disabled={svcBusy} />
-                  )}
-                  {isSvcPaused ? (
-                    <Button title="Fortsetzen" variant="secondary" size="sm" onPress={handleResume} disabled={svcBusy} />
-                  ) : null}
-                </View>
-
-                {isSvcActive ? (
-                  <View style={styles.serviceActionsRow}>
-                    <Button title="Pause 1h" variant="secondary" size="sm" onPress={() => handlePauseFor(60 * 60 * 1000, 'pause-1h')} disabled={svcBusy} />
-                    <Button title="Pause 3h" variant="secondary" size="sm" onPress={() => handlePauseFor(3 * 60 * 60 * 1000, 'pause-3h')} disabled={svcBusy} />
-                    <Button title="Bis morgen" variant="secondary" size="sm" onPress={handlePauseUntilTomorrow} disabled={svcBusy} />
-                  </View>
-                ) : null}
-              </>
-            ) : null}
-          </View>
-
-          <View style={[styles.privacyCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
-            <TouchableOpacity style={styles.serviceHeader} activeOpacity={0.85} onPress={() => setPrivacyExpanded((v) => !v)}>
-              <Text style={[styles.privacyTitle, { color: t.colors.inkHigh }]}>Datenschutz & Push-Einwilligung</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success, marginTop: 0, marginBottom: 0 }]}>
-                  {privacyOptIn ? 'Einwilligung aktiv' : (privacyOptIn === false ? 'Einwilligung pausiert' : 'Nicht festgelegt')}
-                </Text>
-                <Text style={[styles.collapseToggle, { color: t.colors.inkLow }]}>{privacyExpanded ? 'Ausblenden' : 'Anzeigen'}</Text>
+              <View style={{ flex: 1 }}>
+                <Button title="Interessen" variant="secondary" size="sm" onPress={() => router.push('/(onboarding)/InterestsScreen')} />
               </View>
-            </TouchableOpacity>
-
-            {!privacyExpanded ? null : (
-              <>
-                <Text style={[styles.privacyCopy, { color: t.colors.inkLow }]}>Standortdaten werden fuer Matching im Hintergrund genutzt. Push informiert nur ueber passende Angebote in deiner Naehe.</Text>
-                <Text style={[styles.privacyState, { color: privacyOptIn === false ? t.colors.warning : t.colors.success }]}>Status: {privacyOptIn === null ? 'Noch nicht festgelegt' : (privacyOptIn ? 'Einwilligung aktiv' : 'Einwilligung pausiert')}</Text>
-                <View style={styles.serviceActionsRow}>
-                  <Button title="Einwilligen" variant="primary" size="sm" onPress={() => handlePrivacyOptIn(true)} />
-                  <Button title="Ablehnen" variant="secondary" size="sm" onPress={() => handlePrivacyOptIn(false)} />
-                  <Button title="Mehr im Profil" variant="ghost" size="sm" onPress={() => router.push('/(tabs)/ProfileScreen')} />
-                </View>
-              </>
-            )}
+            </View>
           </View>
 
           {fgNotice ? (
@@ -931,14 +758,14 @@ export default function HomeTab() {
             <View style={[styles.feedSummaryCard, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.feedSummaryTitle, { color: t.colors.inkHigh }]}>
-                  {offersCount} aktive Angebote fuer dich
+                  Heute passt besonders gut zu dir
                 </Text>
                 <Text style={[styles.feedSummarySub, { color: t.colors.inkLow }]}>
-                  {nearestDistance != null ? `Naechstes Angebot in ${Math.round(nearestDistance)} m` : 'Tippe auf ein Angebot und starte direkt deine Route.'}
+                  {nearestDistance != null ? `Dein naechster Startpunkt liegt ${Math.round(nearestDistance)} m entfernt.` : 'Waehle unten ein Angebot und starte direkt mit deiner Route zu Fuss.'}
                 </Text>
               </View>
               <View style={{ width: 120 }}>
-                <Button title="Map oeffnen" variant="secondary" size="sm" onPress={() => router.push('/(tabs)/NavigationMap')} />
+                <Button title="Route starten" variant="primary" size="sm" onPress={() => router.push('/(tabs)/NavigationMap')} />
               </View>
             </View>
           ) : null}
@@ -1193,6 +1020,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginBottom: 12,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  heroGlowA: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    right: -45,
+    top: -60,
+    backgroundColor: 'rgba(99,179,237,0.30)',
+  },
+  heroGlowB: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    left: -30,
+    bottom: -70,
+    backgroundColor: 'rgba(236,72,153,0.22)',
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -1216,9 +1062,14 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 6,
   },
+  heroActionRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
 
   categoryBlock: { marginBottom: 16 },
-  categoryTitle: { fontSize: 20, fontWeight: '800', marginBottom: 10 },
+  categoryTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
 
   horizontalList: { paddingLeft: 2, paddingRight: 2 },
 
@@ -1280,9 +1131,9 @@ const styles = StyleSheet.create({
   },
   feedSummaryCard: {
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     marginBottom: 12,
     flexDirection: 'row',
     gap: 10,
@@ -1301,35 +1152,6 @@ const styles = StyleSheet.create({
   skel: { backgroundColor: '#e9eef5', borderRadius: 8 },
 
   error: { marginTop: 30, textAlign: 'center' },
-  serviceCard: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-  },
-  serviceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  serviceTitle: { fontSize: 16, fontWeight: '800' },
-  serviceStatus: { fontSize: 12, fontWeight: '700' },
-  serviceHint: { fontSize: 12, marginBottom: 10 },
-  serviceActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  privacyCard: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-  },
-  privacyTitle: { fontSize: 15, fontWeight: '800' },
-  privacyCopy: { fontSize: 12, lineHeight: 18, marginTop: 6 },
-  privacyState: { fontSize: 12, fontWeight: '700', marginTop: 8, marginBottom: 10 },
-  collapseToggle: { fontSize: 12, fontWeight: '600' },
   inlineNotice: {
     borderWidth: 1,
     borderRadius: 12,
