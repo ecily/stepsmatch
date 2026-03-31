@@ -103,7 +103,7 @@ export default function LandingPage() {
     "Finden. Nicht suchen. StepsMatch zeigt dir passende Angebote genau dann, wenn du wirklich in der Naehe bist und macht den Weg dorthin sofort einfach.";
   const url = "https://www.stepsmatch.com/";
 
-  const APK_REDIRECT_URL = "https://lobster-app-ie9a5.ondigitalocean.app/apk";
+  const APK_REDIRECT_URL = "https://www.stepsmatch.com/StepsMatchV2.apk";
 
   React.useEffect(() => {
     try {
