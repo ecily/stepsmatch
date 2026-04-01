@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 
@@ -11,8 +11,22 @@ const Login = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const [verifyEmail, setVerifyEmail] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyHint, setVerifyHint] = useState("");
+  const [verifyPreview, setVerifyPreview] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+
   const handleChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const resolveProviderAndGo = async (userId) => {
+    const providerRes = await axiosInstance.get(`/providers/user/${userId}`);
+    const providerId = providerRes?.data?._id;
+    if (!providerId) throw new Error("Kein Anbieterprofil gefunden.");
+    navigate(`/dashboard/${providerId}`);
   };
 
   const handleSubmit = async (e) => {
@@ -25,16 +39,60 @@ const Login = () => {
       const userId = res?.data?.user?._id;
       if (!userId) throw new Error("userId fehlt in der Login-Antwort");
       localStorage.setItem("userId", userId);
-
-      const providerRes = await axiosInstance.get(`/providers/user/${userId}`);
-      const providerId = providerRes?.data?._id;
-      if (!providerId) throw new Error("Kein Anbieterprofil gefunden.");
-
-      navigate(`/dashboard/${providerId}`);
+      setVerifyEmail("");
+      setVerifyCode("");
+      setVerifyHint("");
+      setVerifyPreview("");
+      await resolveProviderAndGo(userId);
     } catch (err) {
-      setError(err?.response?.data?.error || err?.message || "Login fehlgeschlagen. Bitte erneut versuchen.");
+      const data = err?.response?.data || {};
+      if (err?.response?.status === 403 && data?.verificationRequired) {
+        setVerifyEmail(data?.email || formData.email || "");
+        setVerifyHint(data?.message || "Bitte bestaetige zuerst deine E-Mail-Adresse.");
+        setVerifyPreview(data?.verificationCodePreview || "");
+        setError("");
+      } else {
+        setError(data?.message || data?.error || err?.message || "Login fehlgeschlagen. Bitte erneut versuchen.");
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setError("");
+    setVerifyLoading(true);
+    try {
+      const email = (verifyEmail || formData.email || "").trim();
+      const code = (verifyCode || "").trim();
+      const res = await axiosInstance.post("/users/verify-email", { email, code });
+      const userId = res?.data?.user?._id;
+      if (!userId) throw new Error("Verifizierung erfolgreich, aber userId fehlt.");
+      localStorage.setItem("userId", userId);
+      setVerifyHint("E-Mail bestaetigt. Du wirst weitergeleitet...");
+      await resolveProviderAndGo(userId);
+    } catch (err) {
+      const data = err?.response?.data || {};
+      setError(data?.message || data?.error || err?.message || "Verifizierung fehlgeschlagen.");
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError("");
+    setResendLoading(true);
+    try {
+      const email = (verifyEmail || formData.email || "").trim();
+      const res = await axiosInstance.post("/users/resend-verification", { email });
+      setVerifyHint(res?.data?.message || "Neuer Verifizierungscode wurde gesendet.");
+      setVerifyPreview(res?.data?.verificationCodePreview || "");
+    } catch (err) {
+      const data = err?.response?.data || {};
+      setError(data?.message || data?.error || err?.message || "Code konnte nicht erneut gesendet werden.");
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -46,7 +104,7 @@ const Login = () => {
             <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Provider Access</p>
             <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Dein Anbieter-Dashboard in Sekunden</h1>
             <p className="mt-3 text-blue-50 sm:text-lg">
-              Verwalte Radius, Gültigkeit und Inhalte deiner Angebote in einem klaren Flow.
+              Verwalte Radius, Gueltigkeit und Inhalte deiner Angebote in einem klaren Flow.
             </p>
             <div className="mt-6 flex items-center gap-2 text-sm text-blue-50">
               <LogIn className="h-4 w-4" />
@@ -100,9 +158,40 @@ const Login = () => {
               </div>
 
               <button type="submit" disabled={isLoading} className="sm-btn-primary !w-full">
-                {isLoading ? "Prüfe Zugang..." : "Einloggen"}
+                {isLoading ? "Pruefe Zugang..." : "Einloggen"}
               </button>
             </form>
+
+            {!!verifyEmail && (
+              <form onSubmit={handleVerify} className="mt-5 space-y-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+                <p className="text-sm font-semibold text-blue-900">E-Mail Verifizierung erforderlich</p>
+                {!!verifyHint && <p className="text-sm text-blue-800">{verifyHint}</p>}
+                {!!verifyPreview && (
+                  <p className="text-xs text-blue-700">
+                    Testcode: <span className="font-semibold">{verifyPreview}</span>
+                  </p>
+                )}
+                <div>
+                  <label className="sm-label" htmlFor="verifyCode">Verifizierungscode</label>
+                  <input
+                    id="verifyCode"
+                    type="text"
+                    inputMode="numeric"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value)}
+                    className="sm-input"
+                    placeholder="6-stelliger Code"
+                    required
+                  />
+                </div>
+                <button type="submit" disabled={verifyLoading} className="sm-btn-primary !w-full">
+                  {verifyLoading ? "Pruefe Code..." : "E-Mail bestaetigen"}
+                </button>
+                <button type="button" disabled={resendLoading} onClick={handleResend} className="sm-btn-secondary !w-full">
+                  {resendLoading ? "Sende erneut..." : "Code erneut senden"}
+                </button>
+              </form>
+            )}
 
             <div className="mt-4 flex items-center justify-between text-sm">
               <Link to="/register" className="font-semibold text-blue-700 hover:text-blue-800">
