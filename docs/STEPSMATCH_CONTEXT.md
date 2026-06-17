@@ -25,6 +25,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Relevante uncommitted Aenderungen betreffen Backend-Routen/Modelle, Frontend-UX/API-Resolver und viele Mobile-Dateien fuer Push, Location, Navigation, Permissions und Android-Konfiguration.
 - Viele untracked Dateien sind Screenshots, UI-Dumps, Retest-Logs und temporäre Skripte (`screen_*.png`, `retest_*.png`, `temp_*.mjs`, `temp_*.ps1`, `uidump*.xml` usw.).
 - Stabilisierungsstand nach Cleanup am 2026-06-17: Kontextdatei und `.gitignore` wurden committed; 97 lokale Test-/Screenshot-/Dump-/Temp-Artefakte wurden geloescht. Verbleibend: 62 tracked Produkt-/Config-Aenderungen und 17 untracked Dateien.
+- Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Verbleibende Backend-Diffs betreffen Auth/User/Tester, Push und Location; Push/Location enthalten auffaellige Encoding-/Mojibake-Diffs und sollten nicht ungeprueft committed werden.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -144,7 +145,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
   - Kein automatischer Test-Runner im Backend-Package definiert.
   - E-Mail-Verifikation haengt von Resend-ENV ab; Laufzeit nicht geprueft.
   - Schema-Migration ist teilweise sichtbar: `categoryId`/`subcategoryId` plus Legacy-Felder existieren parallel.
-  - Viele Backend-Dateien sind uncommitted geaendert.
+  - Viele Backend-Dateien sind uncommitted geaendert; `backend/server.js` ist nach Commit `3fd8df1` nicht mehr darunter.
 
 ## 6. Infrastruktur und Konfiguration
 
@@ -195,6 +196,7 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - `mobile/README.md` ist generisch und nicht projektspezifisch.
 - `.gitignore` ignoriert lokale Logs, Screenshots, UI-Dumps, Temp-Skripte, APK/AAB-Artefakte und Credential-Dateitypen; `.env.example` bleibt ausdruecklich versionierbar.
 - Git-Cleanup-Check vom 2026-06-17: lokale `.env*` und Release-Keystore-Dateien sind durch `.gitignore` abgedeckt; tracked bleiben jedoch Google/Firebase-Konfigurationsdateien und `mobile/android/app/debug.keystore`, die vor einem Commit/Release bewusst geprueft werden muessen.
+- Backend-Resttreffer-Check vom 2026-06-17: `backend/server.js` enthaelt keine Ultreia-/Camino-Treffer mehr; `backend/scripts/ensure-indexes.mjs` enthaelt weiterhin einen kritischen sensiblen Config-/URI-Treffer und muss ohne Ausgabe von Werten separat bereinigt werden.
 - Zeichencodierung in einigen Markdown-/JS-Ausgaben wirkt teilweise mojibake-betroffen; echte UX-Texte in App/Web muessten separat visuell geprueft werden.
 
 ## 9. Empfohlene nächste Schritte
