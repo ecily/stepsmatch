@@ -181,15 +181,20 @@ router.post('/register', async (req, res) => {
       email: normalizedEmail,
     });
 
-    const newUser = new User({
+    const newUserPayload = {
       name: finalName,
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
-      username: normalizedUsername || null,
       email: normalizedEmail,
       password,
       emailVerified: false,
-    });
+    };
+
+    if (normalizedUsername) {
+      newUserPayload.username = normalizedUsername;
+    }
+
+    const newUser = new User(newUserPayload);
 
     await newUser.save();
 

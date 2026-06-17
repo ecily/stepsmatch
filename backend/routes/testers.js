@@ -28,6 +28,7 @@ router.post("/validate", async (req, res) => {
         key: tester.key,
         name: tester.name,
         email: tester.email,
+        gateModalMessage: tester.gateModalMessage || "",
       },
     });
   } catch (err) {

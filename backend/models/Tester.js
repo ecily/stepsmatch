@@ -9,6 +9,7 @@ const testerSchema = new mongoose.Schema(
     validatedAt: { type: Date },
     acceptedAt: { type: Date },
     ndaVersion: { type: String },
+    gateModalMessage: { type: String },
     status: { type: String, enum: ["pending", "validated", "accepted"], default: "pending" },
   },
   { timestamps: true }
