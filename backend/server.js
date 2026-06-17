@@ -5,6 +5,7 @@ import cors from 'cors';
 import compression from 'compression';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import os from 'os';
 
 import connectDB from './config/db.js';
 import offerRoutes from './routes/offers.js';
@@ -71,6 +72,20 @@ function parseEnvOrigins(val) {
     .map((s) => s.trim())
     .filter(Boolean)
     .filter((s) => /^https?:\/\/|^exp:\/\//i.test(s));
+}
+
+function guessLanIp() {
+  try {
+    const all = os.networkInterfaces();
+    for (const entries of Object.values(all)) {
+      for (const entry of entries || []) {
+        if (entry?.family === 'IPv4' && !entry.internal) {
+          return entry.address;
+        }
+      }
+    }
+  } catch {}
+  return null;
 }
 
 const ALLOWED_ORIGINS = Array.from(
@@ -211,11 +226,14 @@ connectDB()
 
     serverInstance = app.listen(PORT, '0.0.0.0', () => {
       const local = `http://localhost:${PORT}`;
-      const lan = `http://10.0.0.34:${PORT}`;
+      const lanIp = guessLanIp();
+      const lan = lanIp ? `http://${lanIp}:${PORT}` : null;
       console.log('🚀 Server läuft:');
       console.log(`→ lokal:       ${local}`);
-      console.log(`→ im Netzwerk: ${lan}`);
-      console.log(`→ Geräte im WLAN erreichen: ${lan}/api`);
+      if (lan) {
+        console.log(`→ im Netzwerk: ${lan}`);
+        console.log(`→ Geräte im WLAN erreichen: ${lan}/api`);
+      }
       console.log(`NODE_ENV=${process.env.NODE_ENV || 'development'}`);
       console.log('CORS erlaubt für:', ALLOWED_ORIGINS.join(', '));
       console.log('APK_TARGET_URL=', process.env.APK_TARGET_URL || DEFAULT_APK_URL);
