@@ -2,6 +2,8 @@
 node_modules/
 .env
 .env.*
+!.env.example
+!**/.env.example
 .DS_Store
 *.log
 
@@ -12,6 +14,27 @@ build/
 *.tmp
 *.swp
 
+# Local test/debug artifacts
+screen_*.png
+retest_*.png
+test_*.png
+ui2_*.png
+map_*.png
+profile_*.png
+uidump*.xml
+mapdump.xml
+dev_*.xml
+dev_*.txt
+__tmp_*.txt
+temp_*.mjs
+temp_*.ps1
+temp_*.js
+retest_log_*.txt
+
+# Build artifacts
+*.aab
+*.apk
+
 # Android (React Native)
 *.iml
 .gradle/
@@ -19,6 +42,14 @@ build/
 android/app/build/
 android/.gradle/
 android/.idea/
+mobile/android/keystore.properties
+mobile/android/keystores/
+
+# Credentials
+*.jks
+*.p12
+*.pem
+*.keystore
 
 # iOS (falls später relevant)
 ios/build/
