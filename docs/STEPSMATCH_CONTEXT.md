@@ -25,7 +25,8 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Relevante uncommitted Aenderungen betreffen Backend-Routen/Modelle, Frontend-UX/API-Resolver und viele Mobile-Dateien fuer Push, Location, Navigation, Permissions und Android-Konfiguration.
 - Viele untracked Dateien sind Screenshots, UI-Dumps, Retest-Logs und temporäre Skripte (`screen_*.png`, `retest_*.png`, `temp_*.mjs`, `temp_*.ps1`, `uidump*.xml` usw.).
 - Stabilisierungsstand nach Cleanup am 2026-06-17: Kontextdatei und `.gitignore` wurden committed; 97 lokale Test-/Screenshot-/Dump-/Temp-Artefakte wurden geloescht. Verbleibend: 62 tracked Produkt-/Config-Aenderungen und 17 untracked Dateien.
-- Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); Auth/User/Tester wurde isoliert committed (`4524ffd`). Die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Verbleibende Backend-Diffs betreffen Push und Location; sie enthalten auffaellige Encoding-/Mojibake-Diffs und sollten nicht ungeprueft committed werden.
+- Live-Status laut Betreiberhinweis vom 2026-06-17: Frontend und Backend laufen bereits auf DigitalOcean; MongoDB ist live angebunden. Kein Push, Deploy oder DB-Mutation ohne explizite Freigabe.
+- Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); Auth/User/Tester wurde isoliert committed (`4524ffd`). Die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Push-Dateien wurden auf HEAD zurueckgefuehrt, weil die offenen Diffs nur Encoding-/Mojibake-Rauschen enthielten. Verbleibende Backend-Diffs betreffen Location.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -145,7 +146,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
   - Kein automatischer Test-Runner im Backend-Package definiert.
   - E-Mail-Verifikation haengt von Resend-ENV ab; Laufzeit nicht geprueft.
   - Schema-Migration ist teilweise sichtbar: `categoryId`/`subcategoryId` plus Legacy-Felder existieren parallel.
-  - Verbleibende Backend-Diffs betreffen Push und Location; `backend/server.js` sowie Auth/User/Tester sind nach Commits `3fd8df1` und `4524ffd` nicht mehr darunter.
+  - Verbleibende Backend-Diffs betreffen Location; `backend/server.js`, Auth/User/Tester und Push-Dateien sind nicht mehr darunter.
 
 ## 6. Infrastruktur und Konfiguration
 
@@ -220,6 +221,7 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - Keine Secrets in Logs, Commits oder Markdown schreiben.
 - Vor Codeaenderungen immer zuerst den aktuellen Git-Status pruefen.
 - Build/Deploy/ADB/DB-Mutationen nur nach expliziter Freigabe oder wenn eindeutig lokal und risikoarm.
+- Wegen Live-Betrieb auf DigitalOcean und live angebundener MongoDB: kein Push, kein Deploy und keine DB-Mutation ohne explizite Freigabe.
 - Bestehende uncommitted Aenderungen als User-Arbeitsstand behandeln und nicht revertieren.
 - Am Ende jeder Aufgabe berichten:
   - Ampel: Gruen/Gelb/Rot
