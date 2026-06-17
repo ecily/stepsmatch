@@ -518,7 +518,7 @@ router.post('/heartbeat', async (req, res) => {
           const vis = x.vis || null;
           if (!shouldNotifyDoc(vis, now)) continue;
 
-          const title = x.offer.name || 'Angebot in deiner N?he';
+          const title = x.offer.name || 'Angebot in deiner Nähe';
           const body = 'Tippe, um Details zu sehen.';
           const data = {
             type: 'offer',
