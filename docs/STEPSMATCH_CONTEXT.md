@@ -24,6 +24,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Git-Arbeitsbaum bei Bestandsaufnahme: deutlich dirty. `git status --porcelain` zeigt 174 Eintraege: 63 tracked modified/deleted und 111 untracked.
 - Relevante uncommitted Aenderungen betreffen Backend-Routen/Modelle, Frontend-UX/API-Resolver und viele Mobile-Dateien fuer Push, Location, Navigation, Permissions und Android-Konfiguration.
 - Viele untracked Dateien sind Screenshots, UI-Dumps, Retest-Logs und temporäre Skripte (`screen_*.png`, `retest_*.png`, `temp_*.mjs`, `temp_*.ps1`, `uidump*.xml` usw.).
+- Stabilisierungsstand nach Cleanup am 2026-06-17: Kontextdatei und `.gitignore` wurden committed; 97 lokale Test-/Screenshot-/Dump-/Temp-Artefakte wurden geloescht. Verbleibend: 62 tracked Produkt-/Config-Aenderungen und 17 untracked Dateien.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -192,7 +193,7 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - Mobile Background-Services koennen auf Android durch OEM-Akku-Management, Doze, fehlende "Immer erlauben"-Location oder deaktivierte Notification Channels ausfallen.
 - Native Manifest enthaelt Berechtigungen, deren Bedarf nicht aus der kurzen Analyse belegt ist (`RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, Storage).
 - `mobile/README.md` ist generisch und nicht projektspezifisch.
-- `.gitignore` ignoriert `*.log`, aber viele Screenshots/XML-Dumps/temp-Skripte sind weiterhin untracked.
+- `.gitignore` ignoriert lokale Logs, Screenshots, UI-Dumps, Temp-Skripte, APK/AAB-Artefakte und Credential-Dateitypen; `.env.example` bleibt ausdruecklich versionierbar.
 - Git-Cleanup-Check vom 2026-06-17: lokale `.env*` und Release-Keystore-Dateien sind durch `.gitignore` abgedeckt; tracked bleiben jedoch Google/Firebase-Konfigurationsdateien und `mobile/android/app/debug.keystore`, die vor einem Commit/Release bewusst geprueft werden muessen.
 - Zeichencodierung in einigen Markdown-/JS-Ausgaben wirkt teilweise mojibake-betroffen; echte UX-Texte in App/Web muessten separat visuell geprueft werden.
 
