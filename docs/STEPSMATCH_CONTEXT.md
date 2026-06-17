@@ -25,7 +25,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Relevante uncommitted Aenderungen betreffen Backend-Routen/Modelle, Frontend-UX/API-Resolver und viele Mobile-Dateien fuer Push, Location, Navigation, Permissions und Android-Konfiguration.
 - Viele untracked Dateien sind Screenshots, UI-Dumps, Retest-Logs und temporäre Skripte (`screen_*.png`, `retest_*.png`, `temp_*.mjs`, `temp_*.ps1`, `uidump*.xml` usw.).
 - Stabilisierungsstand nach Cleanup am 2026-06-17: Kontextdatei und `.gitignore` wurden committed; 97 lokale Test-/Screenshot-/Dump-/Temp-Artefakte wurden geloescht. Verbleibend: 62 tracked Produkt-/Config-Aenderungen und 17 untracked Dateien.
-- Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Verbleibende Backend-Diffs betreffen Auth/User/Tester, Push und Location; Push/Location enthalten auffaellige Encoding-/Mojibake-Diffs und sollten nicht ungeprueft committed werden.
+- Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); Auth/User/Tester wurde isoliert committed (`4524ffd`). Die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Verbleibende Backend-Diffs betreffen Push und Location; sie enthalten auffaellige Encoding-/Mojibake-Diffs und sollten nicht ungeprueft committed werden.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -145,7 +145,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
   - Kein automatischer Test-Runner im Backend-Package definiert.
   - E-Mail-Verifikation haengt von Resend-ENV ab; Laufzeit nicht geprueft.
   - Schema-Migration ist teilweise sichtbar: `categoryId`/`subcategoryId` plus Legacy-Felder existieren parallel.
-  - Viele Backend-Dateien sind uncommitted geaendert; `backend/server.js` ist nach Commit `3fd8df1` nicht mehr darunter.
+  - Verbleibende Backend-Diffs betreffen Push und Location; `backend/server.js` sowie Auth/User/Tester sind nach Commits `3fd8df1` und `4524ffd` nicht mehr darunter.
 
 ## 6. Infrastruktur und Konfiguration
 
