@@ -19,6 +19,7 @@ const WhyStepsMatch = lazy(() => import('./pages/WhyStepsMatch'));
 const TesterGate = lazy(() => import('./pages/TesterGate'));
 const NDA = lazy(() => import('./pages/NDA'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
+const ImpressumPage = lazy(() => import('./pages/ImpressumPage'));
 
 function DeepLinkRestore() {
   const navigate = useNavigate();
@@ -137,6 +138,7 @@ const AppRoutes = () => {
           <Route path="/why" element={<WhyStepsMatch />} />
           <Route path="/pitch" element={<Pitch />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/impressum" element={<ImpressumPage />} />
 
           <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
           <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />
