@@ -3,6 +3,21 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+def mobileEnvProperties = new java.util.Properties()
+def mobileEnvFile = new File(projectRoot, ".env")
+
+if (mobileEnvFile.exists()) {
+    mobileEnvProperties.load(new FileInputStream(mobileEnvFile))
+}
+
+def readMobileEnv = { name ->
+    System.getenv(name) ?: mobileEnvProperties.getProperty(name)
+}
+
+def googleMapsAndroidApiKey =
+    readMobileEnv("EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY") ?:
+    readMobileEnv("GOOGLE_MAPS_ANDROID_API_KEY") ?:
+    ""
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -94,6 +109,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 2
         versionName "1.0.1"
+        manifestPlaceholders = [
+            GOOGLE_MAPS_ANDROID_API_KEY: googleMapsAndroidApiKey
+        ]
     }
     signingConfigs {
         debug {
