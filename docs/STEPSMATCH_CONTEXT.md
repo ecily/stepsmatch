@@ -27,6 +27,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Stabilisierungsstand nach Cleanup am 2026-06-17: Kontextdatei und `.gitignore` wurden committed; 97 lokale Test-/Screenshot-/Dump-/Temp-Artefakte wurden geloescht. Verbleibend: 62 tracked Produkt-/Config-Aenderungen und 17 untracked Dateien.
 - Live-Status laut Betreiberhinweis vom 2026-06-17: Frontend und Backend laufen bereits auf DigitalOcean; MongoDB ist live angebunden. Kein Push, Deploy oder DB-Mutation ohne explizite Freigabe.
 - Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); Auth/User/Tester wurde isoliert committed (`4524ffd`). Die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Push-Dateien wurden auf HEAD zurueckgefuehrt, weil die offenen Diffs nur Encoding-/Mojibake-Rauschen enthielten. Location wurde auf HEAD zurueckgefuehrt und nur der sichtbare Fallback-Text `Angebot in deiner Naehe` korrigiert (`5a7a7d0`). Der Backend-Worktree ist damit ohne offene tracked Diffs.
+- Backend-Env-Beispielstand am 2026-06-19: `backend/routes/location.js` wurde erneut sauber geprueft. `backend/.env.example` wurde geprueft; der alte `ultreia.app`-Beispielwert in `CORS_ORIGINS` wurde durch StepsMatch-Beispieldomains ersetzt. Es wurden keine echten Secrets in `backend/.env.example` erkannt. Kein Push, Deploy oder DB-Mutation.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -142,7 +143,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
   - Offer-Poller-Job beim Start, abschaltbar ueber `OFFER_POLLER_ENABLED=0`.
   - APK Redirect auf `APK_TARGET_URL` oder Default-Spaces-URL.
 - bekannte offene Punkte/Risiken:
-  - `backend/.env.example` enthaelt noch Ultreia-Domains in `CORS_ORIGINS`.
+  - `backend/.env.example` nutzt jetzt StepsMatch-Beispieldomains in `CORS_ORIGINS`; echte Runtime-ENV bleibt separat zu pruefen und darf keine Secrets in Git enthalten.
   - Kein automatischer Test-Runner im Backend-Package definiert.
   - E-Mail-Verifikation haengt von Resend-ENV ab; Laufzeit nicht geprueft.
   - Schema-Migration ist teilweise sichtbar: `categoryId`/`subcategoryId` plus Legacy-Felder existieren parallel.
