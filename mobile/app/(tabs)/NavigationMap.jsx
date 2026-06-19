@@ -68,6 +68,7 @@ export default function NavigationMap() {
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [mapType, setMapType] = useState('standard');
+  const [mapReady, setMapReady] = useState(false);
 
   const mapRef = useRef(null);
   const posSubRef = useRef(null);
@@ -218,6 +219,16 @@ export default function NavigationMap() {
           showsMyLocationButton={false}
           zoomControlEnabled={false}
           toolbarEnabled={false}
+          onMapReady={() => {
+            setMapReady(true);
+            console.log('[map] ready NavigationMap');
+          }}
+          onMapLoaded={() => {
+            console.log('[map] loaded NavigationMap');
+          }}
+          onRegionChangeComplete={() => {
+            console.log('[map] region NavigationMap');
+          }}
         >
           {userPos ? (
             <>
@@ -238,7 +249,12 @@ export default function NavigationMap() {
           ))}
         </MapView>
 
-        <View style={[styles.topCard, { top: insets.top + 8, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+        <View style={[styles.debugBadge, { top: insets.top + 8 }]}>
+          <Text style={styles.debugText}>Map debug: NavigationMap mounted</Text>
+          <Text style={styles.debugText}>mapReady: {mapReady ? 'true' : 'false'}</Text>
+        </View>
+
+        <View style={[styles.topCard, { top: insets.top + 64, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
           <Text style={[styles.topTitle, { color: t.colors.inkHigh }]}>Deine Entdeckungs-Karte</Text>
           <Text style={[styles.topSub, { color: t.colors.inkLow }]}>
             {activeCount > 0
@@ -337,11 +353,32 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   mapRoot: {
     flex: 1,
-    minHeight: 1,
+    minHeight: 420,
     overflow: 'hidden',
+    backgroundColor: '#dbeafe',
+    borderWidth: 2,
+    borderColor: '#2563eb',
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  debugBadge: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    zIndex: 20,
+    elevation: 20,
+  },
+  debugText: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   topCard: {
