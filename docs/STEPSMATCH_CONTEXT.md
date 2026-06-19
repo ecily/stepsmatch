@@ -33,6 +33,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Frontend-Untracked-Stand am 2026-06-19: `frontend/.env.example` wurde als Example-Datei ohne echte Secrets geprueft und auf StepsMatch-Beispieldomains ausgerichtet. Untracked Frontend-/Legal-/Textdateien wurden auf StepsMatch-Branding korrigiert; Camino/CaminoShell-Assets bleiben bewusst uncommitted/zurueckgestellt. Kein Push, Deploy oder DB-Mutation.
 - Frontend-Shell-Bereinigung am 2026-06-19: Navbar/Landing wurden von alten Camino/CaminoShell-Asset-Referenzen geloest; die verbleibenden untracked Drift-Assets wurden geloescht. Kein Push, kein Deploy, keine DB-Mutation, keine Mobile-/Android-Aenderung.
 - Frontend-Low-Risk-Branding am 2026-06-19: `index.html`, `App.css`, `Pitch.jsx` und `WhyStepsMatch.jsx` wurden auf StepsMatch-Branding bereinigt. Keine Routing-/API-/Auth-/Provider-Logik geaendert; Frontend-Block bleibt wegen `axios.js`, `App.jsx` und Auth-/Provider-Flows offen. Kein Push, kein Deploy, keine DB-Mutation.
+- Frontend-API-Client am 2026-06-19: `frontend/src/api/axios.js` wurde auf StepsMatch bereinigt: Env-first API-Basis, Produktionsfallback zur Live-Backend-API, keine Ultreia-/Camino-Host-Mappings, Tester-Key-Headerlogik erhalten. Keine Secrets dokumentiert, kein Push, kein Deploy, keine DB-Mutation.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack

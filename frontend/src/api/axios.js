@@ -1,17 +1,17 @@
-// C:\coding\stepsmatch\frontend\src\api\axios.js
+// c:/coding/stepsmatch/frontend/src/api/axios.js
 import axios from "axios";
 
 /**
- * Base-URL Priorität:
- * 1) VITE_API_BASE_URL (aus .env.*)
- * 2) window.__SM_API__ (optional per <script> setzbar)
- * 3) Fallback je nach Host:
- *    - lokal: http://localhost:8080/api
- *    - gehostet: PROD_API_FALLBACK
+ * Base URL priority:
+ * 1) VITE_API_BASE_URL
+ * 2) window.__SM_API__
+ * 3) fallback by host:
+ *    - local: http://localhost:8080/api
+ *    - hosted: production API fallback
  *
  * Policy:
- * - Gehostetes Frontend verwendet niemals localhost als API.
- * - Lokales Frontend fällt ohne ENV auf localhost zurück.
+ * - Hosted frontend never uses localhost as API.
+ * - Local frontend falls back to localhost without env.
  */
 const envBase = import.meta?.env?.VITE_API_BASE_URL;
 const winBase = typeof window !== "undefined" ? window.__SM_API__ : undefined;
@@ -42,17 +42,18 @@ if (!baseURL && isLocalHost) {
 if (!isLocalHost) {
   if (!baseURL) {
     baseURL = PROD_API_FALLBACK;
-    console.warn("[StepsMatch] Missing VITE_API_BASE_URL on hosted frontend. Using PROD_API_FALLBACK.");
+    console.warn("[StepsMatch] Missing VITE_API_BASE_URL on hosted frontend. Using production API fallback.");
   }
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|::1)(:\\d+)?/i.test(baseURL)) {
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|::1)(:\d+)?/i.test(baseURL)) {
     baseURL = PROD_API_FALLBACK;
-    console.warn("[StepsMatch] Hosted frontend resolved localhost API. Overriding to PROD_API_FALLBACK.");
+    console.warn("[StepsMatch] Hosted frontend resolved localhost API. Overriding to production API fallback.");
   }
 }
 
 if (!baseURL) {
   throw new Error("[StepsMatch] Could not resolve API base URL.");
 }
+
 const axiosInstance = axios.create({
   baseURL,
   withCredentials: true,
@@ -62,9 +63,6 @@ const axiosInstance = axios.create({
   },
 });
 
-// ────────────────────────────────────────────────────────────
-// 🧪 Tester-Key: persistent & konsistent über Reloads
-// ────────────────────────────────────────────────────────────
 const TESTER_STORAGE_KEY = "stepsmatch_tester_key";
 
 function readTesterKey() {
@@ -105,23 +103,21 @@ if (initialTesterKey) {
 }
 
 axiosInstance.interceptors.request.use((config) => {
-  const tk = readTesterKey();
-  if (tk && tk.trim()) {
+  const testerKey = readTesterKey();
+  if (testerKey && testerKey.trim()) {
     config.headers = config.headers ?? {};
-    config.headers["X-Tester-Key"] = tk.trim();
+    config.headers["X-Tester-Key"] = testerKey.trim();
   } else if (config.headers && "X-Tester-Key" in config.headers) {
     delete config.headers["X-Tester-Key"];
   }
   return config;
 });
 
-// Debug
-if (typeof window !== "undefined") {
-  console.log("🔗 Axios Base URL:", baseURL);
-  console.log("🌍 VITE_API_BASE_URL:", envBase);
-  console.log("🏗️ Build Mode:", buildMode, "| DEV:", isBuildDev, "| PROD:", isBuildProd);
+if (typeof window !== "undefined" && (isLocalHost || isBuildDev)) {
+  console.log("[StepsMatch] Axios Base URL:", baseURL);
+  console.log("[StepsMatch] Build Mode:", buildMode, "| DEV:", isBuildDev, "| PROD:", isBuildProd);
   if (!isLocalHost && isBuildDev) {
-    console.warn("[StepsMatch] Hosted frontend runs in DEV build mode. Check deploy build command (expected: `npm run build`).");
+    console.warn("[StepsMatch] Hosted frontend runs in DEV build mode. Check deploy build command.");
   }
 }
 
