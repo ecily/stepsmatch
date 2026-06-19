@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Building2, Gauge, Target } from "lucide-react";
 
@@ -12,19 +12,19 @@ const blocks = [
   },
   {
     icon: <Gauge className="h-5 w-5 text-blue-700" />,
-    title: "Lösung",
-    text: "Realtime-Matching über Ort, Zeit und Interesse mit zuverlässigem Push-Trigger.",
+    title: "Loesung",
+    text: "Realtime-Matching ueber Ort, Zeit und Interesse mit zuverlaessigem Push-Trigger.",
   },
   {
     icon: <Building2 className="h-5 w-5 text-blue-700" />,
     title: "Business-Impact",
-    text: "Mehr relevante Kontakte für Anbieter, bessere Conversion und weniger Suchaufwand für Nutzer.",
+    text: "Mehr relevante Kontakte fuer Anbieter, bessere Conversion und weniger Suchaufwand fuer Nutzer.",
   },
 ];
 
 const investorSignals = [
   "Technischer USP: Background-Matching mit Geofence + Heartbeat auch bei geschlossener App",
-  "Beidseitiger Netzwerkeffekt: mehr Anbieter erhöhen Nutzwert für User und umgekehrt",
+  "Beidseitiger Netzwerkeffekt: mehr Anbieter erhoehen Nutzwert fuer User und umgekehrt",
   "Klare Monetarisierung: lokale Sichtbarkeit als messbarer Performance-Channel",
   "MVP-ready Operations: Anbieter-Dashboard, Radiussteuerung, Zeitfenster-Logik, Admin-Karte",
 ];
@@ -33,17 +33,17 @@ const competitiveLens = [
   {
     app: "Google Maps / Local Discovery",
     strength: "Hohe Reichweite und starke Kartennutzung",
-    gap: "Keine fokussierte Interessen- und Angebotslogik für lokale Echtzeit-Trigger",
+    gap: "Keine fokussierte Interessen- und Angebotslogik fuer lokale Echtzeit-Trigger",
   },
   {
     app: "Groupon / Deal-Portale",
     strength: "Deal-Dichte und bekannte Angebotsmechanik",
-    gap: "Primär Pull-basiert, wenig Kontext über aktuellen Laufweg",
+    gap: "Primaer Pull-basiert, wenig Kontext ueber aktuellen Weg",
   },
   {
     app: "Delivery-Apps / Nearby Feeds",
     strength: "Hohe Nutzung im konkreten Bestellmoment",
-    gap: "Angebote selten kontextgetrieben auf Geh-Nähe + Zeitfenster + Interessen",
+    gap: "Angebote selten kontextgetrieben auf Naehe + Zeitfenster + Interessen",
   },
 ];
 
@@ -59,11 +59,11 @@ export default function Pitch() {
             <h1 className="mt-4 text-4xl font-extrabold leading-tight sm:text-5xl lg:text-6xl">
               StepsMatch baut die Infrastruktur
               <br />
-              für Zero-Search im Alltag.
+              fuer Zero-Search im Alltag.
             </h1>
             <p className="sm-section-copy max-w-4xl">
               Die Plattform monetarisiert Relevanz im Moment: statt Reichweite um jeden
-              Preis entsteht ein präziser Match zwischen lokalen Angeboten und realem Bedarf.
+              Preis entsteht ein praeziser Match zwischen lokalen Angeboten und realem Bedarf.
             </p>
           </div>
         </section>
@@ -83,32 +83,27 @@ export default function Pitch() {
         <section className="sm-shell pb-12">
           <div className="sm-card p-6 sm:p-8 sm-rise sm-delay-1">
             <h2 className="text-2xl font-extrabold sm:text-3xl">Competitive Lens</h2>
-            <p className="mt-2 text-slate-600">
-              StepsMatch adressiert nicht "noch mehr Reichweite", sondern den präzisen Moment der Relevanz.
+            <p className="mt-2 text-slate-700">
+              StepsMatch adressiert nicht "noch mehr Reichweite", sondern den praezisen Moment der Relevanz.
             </p>
 
-            <div className="mt-5 overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
+            <div className="mt-5 overflow-x-auto sm-table-wrap">
+              <table className="sm-table">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
-                    <th className="py-2 pr-4 font-semibold">Kategorie</th>
-                    <th className="py-2 pr-4 font-semibold">Stärke</th>
-                    <th className="py-2 font-semibold">Gap</th>
+                  <tr>
+                    <th>Kategorie</th>
+                    <th>Staerke</th>
+                    <th>Gap</th>
                   </tr>
                 </thead>
                 <tbody>
                   {competitiveLens.map((row) => (
-                    <tr key={row.app} className="border-b border-slate-100 align-top">
-                      <td className="py-3 pr-4 font-semibold text-slate-800">{row.app}</td>
-                      <td className="py-3 pr-4 text-slate-700">{row.strength}</td>
-                      <td className="py-3 text-slate-700">{row.gap}</td>
+                    <tr key={row.app}>
+                      <td className="font-bold text-slate-800">{row.app}</td>
+                      <td className="text-slate-700">{row.strength}</td>
+                      <td className="text-slate-700">{row.gap}</td>
                     </tr>
                   ))}
-                  <tr className="align-top">
-                    <td className="py-3 pr-4 font-semibold text-blue-800">StepsMatch</td>
-                    <td className="py-3 pr-4 text-slate-700">Ort + Zeit + Interesse als Trigger im echten Kontext</td>
-                    <td className="py-3 text-slate-700">Skalierung über regionale Angebotsdichte und Partneraufbau</td>
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -130,8 +125,8 @@ export default function Pitch() {
           <div className="sm-card-strong p-8 sm:p-10 sm-rise sm-delay-2">
             <h3 className="text-3xl font-extrabold sm:text-4xl">Lokale Nachfrage in Echtzeit ist ein klarer Category-Fit</h3>
             <p className="mt-3 max-w-3xl text-blue-50 sm:text-lg">
-              StepsMatch verbindet Angebotsdichte, Laufwege und persönliche Präferenzen
-              zu einem Live-Marketplace mit hoher operativer Präzision.
+              StepsMatch verbindet Angebotsdichte, Laufwege und persoenliche Praeferenzen
+              zu einem Live-Marketplace mit hoher operativer Praezision.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="mailto:hello@stepsmatch.com" className="sm-btn-secondary gap-2">
