@@ -28,6 +28,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Live-Status laut Betreiberhinweis vom 2026-06-17: Frontend und Backend laufen bereits auf DigitalOcean; MongoDB ist live angebunden. Kein Push, Deploy oder DB-Mutation ohne explizite Freigabe.
 - Backend-Stabilisierungsstand am 2026-06-17: `backend/server.js` LAN-Startup-Logging wurde isoliert committed (`3fd8df1`); Auth/User/Tester wurde isoliert committed (`4524ffd`). Die CORS-Domains in `backend/server.js` sind wieder StepsMatch-Domains. Push-Dateien wurden auf HEAD zurueckgefuehrt, weil die offenen Diffs nur Encoding-/Mojibake-Rauschen enthielten. Location wurde auf HEAD zurueckgefuehrt und nur der sichtbare Fallback-Text `Angebot in deiner Naehe` korrigiert (`5a7a7d0`). Der Backend-Worktree ist damit ohne offene tracked Diffs.
 - Backend-Env-Beispielstand am 2026-06-19: `backend/routes/location.js` wurde erneut sauber geprueft. `backend/.env.example` wurde geprueft; der alte `ultreia.app`-Beispielwert in `CORS_ORIGINS` wurde durch StepsMatch-Beispieldomains ersetzt. Es wurden keine echten Secrets in `backend/.env.example` erkannt. Kein Push, Deploy oder DB-Mutation.
+- Backend-Script-Sicherheitsstand am 2026-06-19: Das hardcoded MongoDB-URI-/Branding-Risiko in `backend/scripts/ensure-indexes.mjs` wurde entfernt; das Script liest die URI nur noch aus Env (`MONGODB_URI`, `MONGO_URI`, `DATABASE_URL`) und bricht ohne URI mit sicherem Fehlertext ab. Keine DB-Scripts ausgefuehrt, kein Push, kein Deploy, keine DB-Mutation.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
@@ -198,7 +199,7 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - `mobile/README.md` ist generisch und nicht projektspezifisch.
 - `.gitignore` ignoriert lokale Logs, Screenshots, UI-Dumps, Temp-Skripte, APK/AAB-Artefakte und Credential-Dateitypen; `.env.example` bleibt ausdruecklich versionierbar.
 - Git-Cleanup-Check vom 2026-06-17: lokale `.env*` und Release-Keystore-Dateien sind durch `.gitignore` abgedeckt; tracked bleiben jedoch Google/Firebase-Konfigurationsdateien und `mobile/android/app/debug.keystore`, die vor einem Commit/Release bewusst geprueft werden muessen.
-- Backend-Resttreffer-Check vom 2026-06-17: `backend/server.js` enthaelt keine Ultreia-/Camino-Treffer mehr; `backend/scripts/ensure-indexes.mjs` enthaelt weiterhin einen kritischen sensiblen Config-/URI-Treffer und muss ohne Ausgabe von Werten separat bereinigt werden.
+- Backend-Resttreffer-Check vom 2026-06-19: `backend/server.js` enthaelt keine Ultreia-/Camino-Treffer mehr; das zuvor kritische Config-/URI-Risiko in `backend/scripts/ensure-indexes.mjs` wurde entfernt.
 - Zeichencodierung in einigen Markdown-/JS-Ausgaben wirkt teilweise mojibake-betroffen; echte UX-Texte in App/Web muessten separat visuell geprueft werden.
 
 ## 9. Empfohlene nächste Schritte
