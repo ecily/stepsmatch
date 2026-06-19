@@ -42,6 +42,9 @@ export default function CookieNotice() {
             <Link to="/privacy" className="sm-btn-secondary !px-4 !py-2">
               Datenschutz
             </Link>
+            <Link to="/impressum" className="sm-btn-secondary !px-4 !py-2">
+              Impressum
+            </Link>
           </div>
         </div>
       </div>

@@ -68,8 +68,11 @@ export default function PrivacyPage() {
               Diese Seite dient der transparenten Information und ersetzt keine individuelle
               Rechtsberatung.
             </p>
-            <div className="mt-6">
-              <Link to="/home" className="sm-btn-secondary">
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link to="/impressum" className="sm-btn-secondary">
+                Zum Impressum
+              </Link>
+              <Link to="/home" className="sm-btn-ghost">
                 Zurück zur Startseite
               </Link>
             </div>
