@@ -209,7 +209,7 @@ const ProviderDashboard = () => {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Suche nach Name, Kategorie ..."
+                    placeholder="Nach Name oder Kategorie filtern ..."
                     className="sm-input !w-full sm:!w-[300px]"
                   />
                 </div>

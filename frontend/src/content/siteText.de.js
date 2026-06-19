@@ -3,38 +3,41 @@ const siteTextDe = {
   brand: {
     name: "StepsMatch",
     appCta: "Mobile-App testen",
-    appModalTitle: "StepsMatch intern auf dem Handy testen",
+    appModalTitle: "StepsMatch intern auf dem Handy prüfen",
     appModalBody:
-      "Scanne den QR-Code oder lade die App direkt herunter. In der Alpha prüfen wir, wie zuverlässig lokale Hinweise auf echten Geräten funktionieren.",
+      "Scanne den QR-Code oder lade die App direkt herunter. In der internen Alpha prüfen wir, wie zuverlässig lokale Hinweise auf echten Geräten funktionieren.",
     appDownloadLabel: "App herunterladen",
     appDownloadUrl: "https://www.stepsmatch.com/apk",
   },
   landing: {
-    title: "StepsMatch | Relevante lokale Angebote",
+    title: "StepsMatch | Angebote finden dich",
     description:
       "StepsMatch testet standortbasiertes Angebots-Matching: Nähe, Interesse und aktive Angebote entscheiden, wann ein Hinweis relevant ist.",
-    badge: "INTERNE ALPHA FÜR LOKALES MATCHING",
-    heroTitle: "Relevante lokale Angebote.\nZur richtigen Zeit. Am richtigen Ort.",
+    badge: "LOKALES MATCHING",
+    preAlphaLabel: "PRE ALPHA",
+    preAlphaLine:
+      "Interner Teststand - der Matching-Kern wird gerade verlässlich gemacht.",
+    heroTitle: "Angebote finden dich.",
     heroLead:
-      "Angebote finden dich, wenn Nähe und Interesse passen. StepsMatch ist kein Branchenbuch, kein Dealportal und keine Social-Ad-Fläche.",
+      "Wenn Nähe, Interesse und ein aktives Angebot zusammenpassen, entsteht ein relevanter Hinweis.",
     heroQuickLine:
-      "Die Mobile-App ist der Produktkern: Standort, Background-Heartbeat, Push und Geofence werden auf Verlässlichkeit getestet.",
-    quickTrustLine: "Weniger suchen. Relevante Hinweise in der Nähe erhalten.",
+      "Kurze Hinweise statt langer Listen. Lokal gematcht werden.",
+    quickTrustLine: "Der USP in wenigen Worten: Nähe + Interesse + aktives Angebot.",
 
     founderMessage:
-      "StepsMatch wird aufgebaut, um Menschen unterwegs mit aktiven lokalen Angeboten zusammenzubringen, wenn Kontext und Interesse passen.",
+      "StepsMatch wird aufgebaut, damit lokale Angebote nicht in Listen warten, sondern im passenden Moment relevant werden.",
     founderIntent:
-      "Aktuell geht es um interne Produktklarheit und stabile Tests, nicht um öffentliche Beta-Versprechen.",
+      "Aktuell geht es um interne Produktklarheit und stabile Prüfungen, nicht um öffentliche Versprechen.",
     founderContact:
       "Rückfragen zum Projekt laufen über die im Impressum angegebene Kontaktadresse.",
 
     helpTitle: "Wie hilft dir StepsMatch konkret?",
     helpText:
-      "StepsMatch vergleicht deine Interessen mit aktiven Angeboten in deiner Umgebung. Ein Hinweis soll nur entstehen, wenn Nähe, Interesse und Verfügbarkeit zusammenpassen.",
+      "StepsMatch vergleicht Standort, Interessen und aktive Angebote. Ein Hinweis soll nur entstehen, wenn diese drei Faktoren zusammenpassen.",
 
     painTitle: "Für Nutzer",
     painIntro:
-      "Du suchst nicht zuerst in langen Listen. Die App prüft im Hintergrund, ob etwas in deiner Nähe relevant sein könnte.",
+      "Die App prüft im Hintergrund, ob ein aktives Angebot in deiner Nähe zu deinen Interessen passt.",
     painCards: [
       {
         title: "Unbekannter Ort",
@@ -46,7 +49,7 @@ const siteTextDe = {
       },
       {
         title: "Weniger Bildschirmzeit",
-        text: "Die App soll weniger Suche brauchen und nur dann aufmerksam machen, wenn der Kontext stimmt.",
+        text: "Die App soll weniger Bildschirmzeit brauchen und nur dann aufmerksam machen, wenn der Kontext stimmt.",
       },
       {
         title: "Bewusste Kontrolle",
@@ -54,11 +57,11 @@ const siteTextDe = {
       },
     ],
 
-    routeFocusTitle: "So funktioniert der Kern",
+    routeFocusTitle: "Das Matching in drei Signalen",
     routeFocusSteps: [
-      "Nutzer wählen Interessen und erlauben Standortfunktionen bewusst.",
-      "Anbieter legen Angebote mit Radius, Gültigkeit und Relevanz an.",
-      "Die Mobile-App prüft Nähe, Interesse und aktive Angebote auf echten Geräten.",
+      "Nähe: Die App erkennt, ob ein Angebot räumlich erreichbar ist.",
+      "Interesse: Nur passende Kategorien und Präferenzen zählen.",
+      "Aktives Angebot: Radius, Zeitraum und Verfügbarkeit müssen stimmen.",
     ],
 
     symbolsTitle: "Wofür StepsMatch steht",
@@ -67,7 +70,7 @@ const siteTextDe = {
     symbolsFacts: [
       "Anbieter werden sichtbar, wenn Angebot, Radius und Interesse zusammenpassen.",
       "Nutzerinnen und Nutzer behalten die Kontrolle über Interessen und Standortfreigaben.",
-      "Die App priorisiert Nähe, Relevanz und Verfügbarkeit statt allgemeiner Suche.",
+      "Die App priorisiert Nähe, Relevanz und Verfügbarkeit statt allgemeiner Listen.",
     ],
     symbolsSourceLine:
       "Interne Alpha: Der Kern wird auf Verlässlichkeit geprüft.",
@@ -88,7 +91,7 @@ const siteTextDe = {
     emotionalCards: [
       {
         title: "Angebote finden dich.",
-        text: "Nicht über Suche zuerst, sondern über Nähe, Interesse und aktive Angebote.",
+        text: "Nicht über lange Listen zuerst, sondern über Nähe, Interesse und aktive Angebote.",
       },
       {
         title: "Relevanz vor Reichweite",
@@ -110,11 +113,11 @@ const siteTextDe = {
     posts: [
       {
         slug: "lokale-orientierung",
-        title: "1. Lokale Relevanz statt Suchstress",
+        title: "1. Lokale Relevanz statt Listenstress",
         excerpt:
           "Warum relevante Hinweise oft hilfreicher sind als lange Trefferlisten.",
         content:
-          "Wenn du unterwegs bist, zählt Kontext: Wo bist du, was interessiert dich, welches Angebot ist gerade aktiv? StepsMatch soll diese Faktoren zusammenbringen, ohne eine weitere Suche-first-Plattform zu werden.",
+          "Wenn du unterwegs bist, zählt Kontext: Wo bist du, was interessiert dich, welches Angebot ist gerade aktiv? StepsMatch soll diese Faktoren zusammenbringen, ohne eine weitere Listen-first-Plattform zu werden.",
       },
       {
         slug: "interessen-und-naehe",
@@ -130,7 +133,7 @@ const siteTextDe = {
         excerpt:
           "Warum kleine Angebote im richtigen Moment mehr Wirkung entfalten.",
         content:
-          "Lokale Anbieter konkurrieren oft mit großen Plattformen und allgemeiner Suche. StepsMatch setzt auf konkrete Situationen, in denen ein Angebot relevant sein kann.",
+          "Lokale Anbieter konkurrieren oft mit großen Plattformen und breiter Aufmerksamkeit. StepsMatch setzt auf konkrete Situationen, in denen ein Angebot relevant sein kann.",
       },
       {
         slug: "datensparsamkeit",
@@ -247,7 +250,7 @@ const siteTextDe = {
       "StepsMatch ist ein privat betriebenes Informations- und Orientierungsprojekt für lokale Angebote. Zweck ist die digitale Bereitstellung kontextbezogener Hinweise zu Angeboten und Services in der Nähe, um Alltagssituationen praktisch zu unterstützen.",
     mediaOwner: "Mag. Andreas Franz MA",
     editorialLine:
-      "Informationen und digitale Services für Menschen, die passende lokale Angebote suchen.",
+      "Informationen und digitale Services für Menschen, die passende lokale Angebote erhalten möchten.",
     sourceLabel:
       "Angaben gemäß § 5 ECG und Offenlegung gemäß § 24 Mediengesetz.",
   },

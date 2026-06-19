@@ -24,24 +24,24 @@ const blocks = [
 
 const investorSignals = [
   "Mobile-App als Produktkern: Background-Heartbeat, Push und Geofence werden auf echten Geräten getestet",
-  "Relevanzlogik: Nähe + Interesse + aktives Angebot statt Suche-first oder Branchenbuch",
+  "Relevanzlogik: Nähe + Interesse + aktives Angebot mit klarem mobilem Kontext",
   "Anbieter-Werkzeug: Angebot erstellen, Radius und Zeitfenster pflegen, lokale Reichweite prüfen",
   "Interne Alpha: Fokus auf Verlässlichkeit, klare Texte und saubere Konfiguration",
 ];
 
 const competitiveLens = [
   {
-    app: "Google Maps / Local Discovery",
-    strength: "Hohe Reichweite und starke Kartennutzung",
-    gap: "Keine fokussierte Interessen- und Angebotslogik fuer lokale Echtzeit-Trigger",
+    app: "Karten- und Ortsdienste",
+    strength: "Stark in Orientierung und Ortsinformation",
+    gap: "StepsMatch fokussiert auf aktive Angebote im passenden Moment",
   },
   {
-    app: "Groupon / Deal-Portale",
-    strength: "Deal-Dichte und bekannte Angebotsmechanik",
-    gap: "Primaer Pull-basiert, wenig Kontext ueber aktuellen Weg",
+    app: "Gutschein- und Angebotsportale",
+    strength: "Viele Angebote an einem Ort",
+    gap: "StepsMatch priorisiert aktuelle Nähe, Interesse und Gültigkeit",
   },
   {
-    app: "Delivery-Apps / Nearby Feeds",
+    app: "Bestell-Apps und lokale Feeds",
     strength: "Hohe Nutzung im konkreten Bestellmoment",
     gap: "Angebote selten kontextgetrieben auf Naehe + Zeitfenster + Interessen",
   },
@@ -84,7 +84,8 @@ export default function Pitch() {
           <div className="sm-card p-6 sm:p-8 sm-rise sm-delay-1">
             <h2 className="text-2xl font-extrabold sm:text-3xl">Abgrenzung</h2>
             <p className="mt-2 text-slate-700">
-              StepsMatch ist kein Branchenbuch, kein Dealportal und keine Social-Ad-Fläche. Entscheidend ist die lokale Passung.
+              StepsMatch wird über Passung erklärt: Nähe, Interesse, aktives Angebot und ein ruhiger Hinweis,
+              wenn der Kontext stimmt.
             </p>
 
             <div className="mt-5 overflow-x-auto sm-table-wrap">

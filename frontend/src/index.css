@@ -1,4 +1,4 @@
-﻿@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,20 +6,24 @@
 
 @layer base {
   :root {
-    --sm-bg: #eef4f8;
-    --sm-bg-deep: #dce8f0;
+    --sm-bg: #f4f7f3;
+    --sm-bg-deep: #dfe8dd;
     --sm-surface: #ffffff;
-    --sm-surface-muted: #f6f9fc;
-    --sm-ink: #10263a;
-    --sm-ink-soft: #41586d;
-    --sm-primary: #0f6fff;
-    --sm-primary-strong: #0a56cb;
-    --sm-accent: #10b0a3;
-    --sm-stroke: #d4e0ea;
-    --sm-danger: #cb3a3a;
-    --sm-success: #0c9a63;
-    --sm-shadow-soft: 0 14px 40px rgba(17, 51, 78, 0.08);
-    --sm-shadow-strong: 0 26px 56px rgba(16, 44, 69, 0.14);
+    --sm-surface-muted: #eef4ef;
+    --sm-ink: #111827;
+    --sm-ink-soft: #526071;
+    --sm-primary: #173b57;
+    --sm-primary-strong: #0c2438;
+    --sm-route: #276ef1;
+    --sm-accent: #b8ff4d;
+    --sm-accent-strong: #79c900;
+    --sm-signal: #ff6b4a;
+    --sm-teal: #0f8b7e;
+    --sm-stroke: #d6dfda;
+    --sm-danger: #c43b33;
+    --sm-success: #0f855a;
+    --sm-shadow-soft: 0 16px 34px rgba(17, 24, 39, 0.08);
+    --sm-shadow-strong: 0 28px 70px rgba(10, 23, 39, 0.26);
   }
 
   * {
@@ -34,12 +38,9 @@
 
   body {
     margin: 0;
-    font-family: "Manrope", "Segoe UI", sans-serif;
+    font-family: "Inter", "Segoe UI", sans-serif;
     color: var(--sm-ink);
-    background:
-      radial-gradient(1000px 640px at -8% -12%, rgba(15, 111, 255, 0.13), transparent 58%),
-      radial-gradient(760px 520px at 112% 4%, rgba(16, 176, 163, 0.12), transparent 56%),
-      linear-gradient(180deg, #f9fcff 0%, var(--sm-bg) 48%, #f0f5f9 100%);
+    background: linear-gradient(180deg, #f9fbf8 0%, var(--sm-bg) 48%, #e9f0ea 100%);
   }
 
   h1,
@@ -48,8 +49,8 @@
   h4,
   h5,
   h6 {
-    font-family: "Sora", "Manrope", sans-serif;
-    letter-spacing: -0.02em;
+    font-family: "Space Grotesk", "Inter", sans-serif;
+    letter-spacing: 0;
   }
 
   a {
@@ -71,11 +72,12 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background:
-      linear-gradient(120deg, rgba(255, 255, 255, 0.22), transparent 42%),
-      radial-gradient(460px 280px at 15% 22%, rgba(15, 111, 255, 0.07), transparent 75%),
-      radial-gradient(560px 300px at 86% 8%, rgba(16, 176, 163, 0.08), transparent 72%);
     z-index: 0;
+    background:
+      linear-gradient(rgba(17, 24, 39, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(17, 24, 39, 0.035) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent 74%);
   }
 
   .sm-stack {
@@ -84,46 +86,46 @@
 
   .sm-glass-nav {
     @apply sticky top-0 z-50 border-b;
-    border-color: color-mix(in oklab, var(--sm-stroke) 84%, white);
-    background: rgba(248, 252, 255, 0.84);
-    backdrop-filter: blur(16px);
+    border-color: color-mix(in oklab, var(--sm-stroke) 86%, white);
+    background: rgba(249, 251, 248, 0.88);
+    backdrop-filter: blur(14px);
   }
 
   .sm-nav-link {
-    @apply inline-flex items-center rounded-xl px-3 py-2 text-sm font-semibold transition;
+    @apply inline-flex items-center rounded-xl px-3 py-2 text-sm font-bold transition;
     color: var(--sm-ink-soft);
   }
 
   .sm-nav-link:hover {
     @apply -translate-y-px;
-    color: var(--sm-ink);
-    background: rgba(255, 255, 255, 0.82);
+    color: var(--sm-primary-strong);
+    background: rgba(184, 255, 77, 0.22);
   }
 
   .sm-nav-link-active {
     color: var(--sm-primary-strong);
-    background: rgba(15, 111, 255, 0.12);
-    box-shadow: inset 0 0 0 1px rgba(15, 111, 255, 0.24);
+    background: rgba(184, 255, 77, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(23, 59, 87, 0.18);
   }
 
   .sm-card {
-    @apply rounded-3xl border;
+    @apply rounded-lg border;
     border-color: var(--sm-stroke);
     background: var(--sm-surface);
     box-shadow: var(--sm-shadow-soft);
   }
 
   .sm-card-soft {
-    @apply rounded-3xl border;
-    border-color: color-mix(in oklab, var(--sm-stroke) 78%, white);
-    background: linear-gradient(165deg, rgba(255, 255, 255, 0.95), rgba(247, 251, 255, 0.98));
+    @apply rounded-lg border;
+    border-color: color-mix(in oklab, var(--sm-stroke) 82%, white);
+    background: linear-gradient(165deg, #ffffff 0%, #eef4ef 100%);
     box-shadow: var(--sm-shadow-soft);
   }
 
   .sm-card-strong {
-    @apply rounded-3xl border text-white;
-    border-color: rgba(255, 255, 255, 0.22);
-    background: linear-gradient(140deg, #0b4fae 0%, #0f6fff 54%, #0d8eb0 100%);
+    @apply rounded-lg border text-white;
+    border-color: rgba(184, 255, 77, 0.34);
+    background: linear-gradient(145deg, #0c2438 0%, #173b57 58%, #0f8b7e 100%);
     box-shadow: var(--sm-shadow-strong);
   }
 
@@ -141,81 +143,81 @@
   }
 
   .sm-badge {
-    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold;
-    border-color: color-mix(in oklab, var(--sm-primary) 28%, white);
+    @apply inline-flex items-center gap-2 rounded-md border px-3 py-1 text-xs font-bold uppercase tracking-[0.08em];
+    border-color: rgba(23, 59, 87, 0.18);
     color: var(--sm-primary-strong);
-    background: rgba(15, 111, 255, 0.08);
+    background: rgba(184, 255, 77, 0.2);
   }
 
   .sm-chip {
-    @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold;
-    border-color: color-mix(in oklab, var(--sm-stroke) 82%, white);
-    color: var(--sm-ink-soft);
-    background: rgba(255, 255, 255, 0.82);
+    @apply inline-flex items-center rounded-md border px-3 py-1 text-xs font-bold uppercase tracking-[0.08em];
+    border-color: rgba(184, 255, 77, 0.5);
+    color: #ecffe0;
+    background: rgba(184, 255, 77, 0.12);
   }
 
   .sm-btn {
-    @apply inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold tracking-tight transition;
+    @apply inline-flex items-center justify-center rounded-md px-5 py-3 text-sm font-bold tracking-tight transition;
   }
 
   .sm-btn-primary {
     @apply sm-btn;
-    color: white;
-    background: linear-gradient(145deg, var(--sm-primary) 0%, var(--sm-primary-strong) 100%);
-    box-shadow: 0 10px 24px rgba(15, 111, 255, 0.25);
+    color: #0c2438;
+    background: linear-gradient(145deg, #d6ff77 0%, #b8ff4d 58%, #79c900 100%);
+    box-shadow: 0 12px 26px rgba(121, 201, 0, 0.25);
   }
 
   .sm-btn-primary:hover {
     @apply -translate-y-px;
-    box-shadow: 0 14px 30px rgba(15, 111, 255, 0.3);
+    box-shadow: 0 16px 30px rgba(121, 201, 0, 0.32);
   }
 
   .sm-btn-secondary {
     @apply sm-btn border;
-    border-color: var(--sm-stroke);
-    color: var(--sm-ink);
+    border-color: color-mix(in oklab, var(--sm-primary) 34%, white);
+    color: var(--sm-primary-strong);
     background: #ffffff;
   }
 
   .sm-btn-secondary:hover {
     @apply -translate-y-px;
-    background: var(--sm-surface-muted);
+    background: #f0f7f4;
   }
 
   .sm-btn-ghost {
     @apply sm-btn border;
-    border-color: rgba(255, 255, 255, 0.34);
-    color: white;
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(184, 255, 77, 0.44);
+    color: #f0ffe6;
+    background: rgba(184, 255, 77, 0.08);
   }
 
   .sm-btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(184, 255, 77, 0.16);
   }
 
   .sm-btn-danger {
     @apply sm-btn;
     color: white;
-    background: linear-gradient(145deg, #e14e4e 0%, #b72f2f 100%);
+    background: linear-gradient(145deg, #d64d44 0%, #ac2f28 100%);
   }
 
   .sm-label {
-    @apply mb-1 block text-sm font-semibold;
+    @apply mb-1 block text-sm font-bold;
     color: var(--sm-ink);
   }
 
   .sm-input,
   .sm-select,
   .sm-textarea {
-    @apply w-full rounded-xl border bg-white px-3 py-2.5 text-[15px] text-slate-900 outline-none transition;
+    @apply w-full rounded-md border bg-white px-3 py-2.5 text-[15px] text-slate-900 outline-none transition;
     border-color: var(--sm-stroke);
   }
 
   .sm-input:focus,
   .sm-select:focus,
   .sm-textarea:focus {
-    border-color: color-mix(in oklab, var(--sm-primary) 52%, white);
-    box-shadow: 0 0 0 4px rgba(15, 111, 255, 0.14);
+    border-color: color-mix(in oklab, var(--sm-primary) 56%, white);
+    box-shadow: 0 0 0 4px rgba(39, 110, 241, 0.14);
   }
 
   .sm-helper {
@@ -225,26 +227,26 @@
 
   .sm-error {
     @apply rounded-xl border px-4 py-3 text-sm;
-    border-color: rgba(203, 58, 58, 0.25);
-    color: #8c2222;
-    background: rgba(253, 238, 238, 0.9);
+    border-color: rgba(185, 61, 52, 0.25);
+    color: #8d2b24;
+    background: rgba(254, 237, 234, 0.92);
   }
 
   .sm-success {
     @apply rounded-xl border px-4 py-3 text-sm;
-    border-color: rgba(12, 154, 99, 0.3);
-    color: #0b744d;
-    background: rgba(228, 248, 239, 0.92);
+    border-color: rgba(15, 133, 90, 0.3);
+    color: #0f6b49;
+    background: rgba(230, 248, 239, 0.94);
   }
 
   .sm-kpi-card {
-    @apply rounded-2xl border p-4;
+    @apply rounded-lg border p-4;
     border-color: var(--sm-stroke);
-    background: #fff;
+    background: #ffffff;
   }
 
   .sm-kpi-label {
-    @apply text-xs font-semibold uppercase tracking-[0.1em];
+    @apply text-xs font-bold uppercase tracking-[0.1em];
     color: var(--sm-ink-soft);
   }
 
@@ -256,7 +258,7 @@
   .sm-table-wrap {
     @apply overflow-auto rounded-2xl border;
     border-color: var(--sm-stroke);
-    background: white;
+    background: #ffffff;
   }
 
   .sm-table {
@@ -264,7 +266,7 @@
   }
 
   .sm-table thead {
-    background: #f5f9fc;
+    background: #eef4ef;
   }
 
   .sm-table th {
@@ -274,7 +276,7 @@
 
   .sm-table td {
     @apply px-4 py-3;
-    border-top: 1px solid #e8eef4;
+    border-top: 1px solid #efe3c3;
   }
 
   .sm-divider {
@@ -284,7 +286,7 @@
 
   .sm-pulse-dot {
     @apply h-2 w-2 rounded-full;
-    background: var(--sm-accent);
+    background: var(--sm-accent-strong);
     animation: smPulse 2s ease-in-out infinite;
   }
 }
@@ -339,18 +341,4 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Keep delay helpers outside Tailwind layers to avoid class pruning
-   when class names are composed in JSX templates. */
-.sm-delay-1 {
-  animation-delay: 90ms;
-}
-
-.sm-delay-2 {
-  animation-delay: 180ms;
-}
-
-.sm-delay-3 {
-  animation-delay: 270ms;
 }

@@ -18,6 +18,7 @@ import {
 import Navbar from "../components/Navbar";
 import SiteFooter from "../components/SiteFooter";
 import { getPreferredSiteText } from "../content/siteContent";
+import heroCity from "../assets/hero-city-daylight.jpg";
 
 function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
   if (!open) return null;
@@ -92,6 +93,7 @@ export default function LandingPage() {
   }, [location.pathname, location.search, location.hash]);
 
   const journeyIcons = [Pill, UtensilsCrossed, House, BellRing];
+  const signalIcons = [MapPin, Sparkles, BellRing];
 
   return (
     <div className="sm-page">
@@ -104,57 +106,77 @@ export default function LandingPage() {
       <div className="sm-stack">
         <Navbar />
 
-        <section className="sm-shell pt-4 sm:pt-6">
-          <div className="sm-card-soft p-6 sm:p-8 sm-rise sm-delay-1">
-            <p className="sm-badge">StepsMatch</p>
-            <p className="mt-4 text-lg font-bold leading-snug text-slate-900 sm:text-2xl">
-              StepsMatch testet lokale Relevanz in echten Alltagssituationen.
-            </p>
-            <p className="mt-3 max-w-5xl text-slate-700 sm:text-lg">{text.landing.founderMessage}</p>
-            <p className="mt-4 max-w-5xl rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-slate-800 sm:text-base font-semibold">
-              {text.landing.founderIntent}
-            </p>
-            <p className="mt-3 max-w-5xl text-sm font-semibold text-slate-700 sm:text-base">
-              {text.landing.founderContact}
-            </p>
-          </div>
-        </section>
+        <header className="relative overflow-hidden border-b border-white/20 bg-slate-950">
+          <img
+            src={heroCity}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,13,25,0.92)_0%,rgba(10,23,39,0.82)_44%,rgba(10,23,39,0.32)_100%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-slate-950/80 to-transparent" />
 
-        <header className="sm-shell py-8 sm:py-10 lg:py-14">
-          <section className="relative overflow-hidden rounded-[2rem] border border-white/40 bg-gradient-to-br from-blue-950 via-blue-800 to-cyan-700 shadow-2xl sm-rise">
-            <div className="absolute inset-0 bg-gradient-to-r from-[#082956]/85 via-[#0b3f85]/65 to-[#0b3f85]/42" />
-
-            <div className="relative z-10 max-w-3xl p-6 text-white sm:p-10 lg:p-14">
-              <p className="sm-badge !border-white/30 !bg-white/20 !text-white">{text.landing.badge}</p>
-              <h1 className="sm-hero-title mt-5 whitespace-pre-line drop-shadow-[0_3px_10px_rgba(0,0,0,0.55)]">
+          <section className="sm-shell relative z-10 flex min-h-[76vh] items-center py-12 sm:min-h-[72vh] lg:py-16">
+            <div className="max-w-4xl text-white sm-rise">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="sm-badge !border-white/30 !bg-white/10 !text-white">{text.landing.badge}</p>
+                <div className="rounded-md border border-[var(--sm-accent)] bg-[var(--sm-accent)] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-950 shadow-lg shadow-black/20">
+                  {text.landing.preAlphaLabel}
+                </div>
+              </div>
+              <p className="mt-4 max-w-2xl text-sm font-bold uppercase tracking-[0.08em] text-white/82">
+                {text.landing.preAlphaLine}
+              </p>
+              <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[0.92] sm:text-6xl lg:text-8xl">
                 {text.landing.heroTitle}
               </h1>
-              <p className="mt-5 max-w-2xl text-base font-semibold leading-relaxed text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-xl">
+              <p className="mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-white/92 sm:text-2xl">
                 {text.landing.heroLead}
               </p>
 
-              <div className="mt-7 flex flex-wrap gap-3">
+              <div className="mt-7 flex flex-wrap gap-2">
+                {["Nähe", "Interesse", "aktives Angebot"].map((item) => (
+                  <span key={item} className="rounded-md border border-white/25 bg-white/12 px-3 py-2 text-sm font-extrabold uppercase tracking-[0.08em] text-white backdrop-blur-sm">
+                    {item}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-8 flex flex-wrap gap-3">
                 <button onClick={() => setApkOpen(true)} className="sm-btn-primary gap-2">
                   {text.landing.ctaPrimary} <ArrowRight size={16} />
                 </button>
-                <Link to="/why" className="sm-btn-secondary gap-2 !bg-white/90">
+                <Link to="/why" className="sm-btn-secondary gap-2">
                   <Compass size={16} />
                   {text.landing.ctaSecondary}
                 </Link>
               </div>
 
-              <p className="mt-5 inline-flex max-w-2xl rounded-2xl border border-white/35 bg-white/15 px-4 py-3 text-sm font-semibold leading-relaxed text-white/95 backdrop-blur-sm sm:text-base">
+              <p className="mt-6 max-w-2xl text-base font-bold text-[var(--sm-accent)] sm:text-lg">
                 {text.landing.heroQuickLine}
               </p>
             </div>
           </section>
-
-          <section className="mt-4 sm-card p-6 sm:p-7 sm-rise sm-delay-1">
-            <p className="sm-badge">Lokale Relevanz</p>
-            <p className="mt-3 text-lg font-extrabold text-slate-900 sm:text-2xl">{text.landing.quickTrustLine}</p>
-            <p className="mt-2 max-w-4xl text-slate-700 sm:text-lg">{text.landing.helpText}</p>
-          </section>
         </header>
+
+        <section className="sm-shell py-8 sm:py-10">
+          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="sm-card p-6 sm:p-8 sm-rise">
+              <p className="sm-badge">USP</p>
+              <h2 className="mt-4 text-3xl font-extrabold leading-tight sm:text-4xl">
+                {text.landing.quickTrustLine}
+              </h2>
+              <p className="mt-4 max-w-3xl text-lg text-slate-700">{text.landing.helpText}</p>
+            </div>
+            <div className="sm-card-strong p-6 sm:p-8 sm-rise sm-delay-1">
+              <p className="sm-chip">Status</p>
+              <p className="mt-4 text-2xl font-extrabold">Interne Alpha. Mobile zuerst.</p>
+              <p className="mt-3 text-sm font-semibold leading-relaxed text-white/85">
+                {text.landing.heroQuickLine}
+              </p>
+            </div>
+          </div>
+        </section>
 
         <section id="nutzer" className="sm-shell pb-8 sm:pb-12">
           <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-1">
@@ -183,14 +205,19 @@ export default function LandingPage() {
             <p className="sm-badge">Matching-Logik</p>
             <h2 className="sm-section-title mt-4">{text.landing.routeFocusTitle}</h2>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              {text.landing.routeFocusSteps.map((step, index) => (
-                <div key={step} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-sm font-extrabold text-blue-800">
-                    {index + 1}
-                  </p>
-                  <p className="mt-3 text-sm text-slate-700 sm:text-base">{step}</p>
-                </div>
-              ))}
+              {text.landing.routeFocusSteps.map((step, index) => {
+                const Icon = signalIcons[index % signalIcons.length];
+                const [label, description] = step.split(": ");
+                return (
+                  <div key={step} className="rounded-lg border border-slate-200 bg-white p-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-[var(--sm-accent)]">
+                      <Icon size={18} />
+                    </div>
+                    <p className="mt-4 text-lg font-extrabold text-slate-950">{label}</p>
+                    <p className="mt-2 text-sm text-slate-700 sm:text-base">{description || step}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
