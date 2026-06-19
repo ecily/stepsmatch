@@ -36,6 +36,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Frontend-API-Client am 2026-06-19: `frontend/src/api/axios.js` wurde auf StepsMatch bereinigt: Env-first API-Basis, Produktionsfallback zur Live-Backend-API, keine Ultreia-/Camino-Host-Mappings, Tester-Key-Headerlogik erhalten. Keine Secrets dokumentiert, kein Push, kein Deploy, keine DB-Mutation.
 - Frontend-Routing-Baseline am 2026-06-19: `frontend/src/App.jsx` wurde konservativ auf die Gate-Baseline zurueckgefuehrt; `BootGuard`, `TesterGate`, `/nda`, `/pitch` und `/home` bleiben erhalten. Nur die versionierte `/impressum` Route wurde ergaenzt. Kein Push, kein Deploy, keine DB-Mutation.
 - Frontend-Legal/Cookie am 2026-06-19: Cookie-Hinweis und Datenschutzseite wurden auf StepsMatch-Branding geprueft; der alte Ultreia-Consent-Key wurde auf den StepsMatch-Namespace zurueckgefuehrt. Keine neuen Rechtsangaben erfunden, kein Push, kein Deploy, keine DB-Mutation.
+- Mobile-Runtime-Konfiguration am 2026-06-19: `mobile/lib/runtimeConfig.js` wurde versioniert, weil tracked Mobile-Code diese Datei importiert. Altbranding wurde entfernt; API-Basis bleibt Env-/Expo-Extra-first mit bewusstem Live-Backend-Fallback nur fuer interne Tests. Keine Push-/Heartbeat-/Geofence-Logik geaendert, kein Gradle Build, kein APK-Test, kein Push, kein Deploy, keine DB-Mutation.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack
