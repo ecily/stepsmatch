@@ -2,7 +2,7 @@ const siteTextDe = {
   locale: "de",
   brand: {
     name: "StepsMatch",
-    appCta: "Mobile-App testen",
+    appCta: "Alpha ansehen",
     appModalTitle: "StepsMatch intern auf dem Handy prüfen",
     appModalBody:
       "Scanne den QR-Code oder lade die App direkt herunter. In der internen Alpha prüfen wir, wie zuverlässig lokale Hinweise auf echten Geräten funktionieren.",
@@ -17,11 +17,11 @@ const siteTextDe = {
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
       "Interner Teststand - der Matching-Kern wird gerade verlässlich gemacht.",
-    heroTitle: "Angebote finden dich.",
+    heroTitle: "Angebote finden dich",
     heroLead:
-      "Wenn Nähe, Interesse und ein aktives Angebot zusammenpassen, entsteht ein relevanter Hinweis.",
+      "StepsMatch prüft, welche Angebote in deiner Nähe gerade relevant sind - passend zu deinen Interessen.",
     heroQuickLine:
-      "Kurze Hinweise statt langer Listen. Lokal gematcht werden.",
+      "Mobile-App als Kern: Nähe, Interessen und aktive Angebote werden im Alltag geprüft.",
     quickTrustLine: "Der USP in wenigen Worten: Nähe + Interesse + aktives Angebot.",
 
     founderMessage:

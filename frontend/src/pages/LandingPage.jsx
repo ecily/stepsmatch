@@ -116,7 +116,7 @@ export default function LandingPage() {
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,13,25,0.92)_0%,rgba(10,23,39,0.82)_44%,rgba(10,23,39,0.32)_100%)]" />
           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-slate-950/80 to-transparent" />
 
-          <section className="sm-shell relative z-10 flex min-h-[76vh] items-center py-12 sm:min-h-[72vh] lg:py-16">
+          <section className="sm-shell relative z-10 grid min-h-[76vh] items-center gap-8 py-12 sm:min-h-[72vh] lg:grid-cols-[minmax(0,1fr)_420px] lg:py-16">
             <div className="max-w-4xl text-white sm-rise">
               <div className="flex flex-wrap items-center gap-3">
                 <p className="sm-badge !border-white/30 !bg-white/10 !text-white">{text.landing.badge}</p>
@@ -156,6 +156,34 @@ export default function LandingPage() {
                 {text.landing.heroQuickLine}
               </p>
             </div>
+
+            <aside className="sm-match-panel sm-rise sm-delay-1" aria-label="Matching-Signal aus Nähe, Interesse und aktivem Angebot">
+              <div className="sm-match-radar">
+                <div className="sm-match-ring sm-match-ring-1" />
+                <div className="sm-match-ring sm-match-ring-2" />
+                <div className="sm-match-ring sm-match-ring-3" />
+                <div className="sm-match-center">
+                  <MapPin size={22} />
+                  <span>Hier</span>
+                </div>
+                <div className="sm-match-node sm-match-node-interest">
+                  <Sparkles size={16} />
+                  <span>Interesse</span>
+                </div>
+                <div className="sm-match-node sm-match-node-offer">
+                  <Store size={16} />
+                  <span>Angebot aktiv</span>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-2">
+                {["Nähe erkannt", "Interesse passt", "Angebot ist aktiv"].map((item) => (
+                  <div key={item} className="flex items-center gap-3 rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-white/90">
+                    <span className="h-2 w-2 rounded-full bg-[var(--sm-accent)]" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </aside>
           </section>
         </header>
 

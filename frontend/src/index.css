@@ -129,6 +129,87 @@
     box-shadow: var(--sm-shadow-strong);
   }
 
+  .sm-match-panel {
+    @apply hidden rounded-lg border p-5 lg:block;
+    border-color: rgba(255, 255, 255, 0.18);
+    background: linear-gradient(160deg, rgba(12, 36, 56, 0.78), rgba(15, 139, 126, 0.28));
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(16px);
+  }
+
+  .sm-match-radar {
+    position: relative;
+    min-height: 320px;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      radial-gradient(circle at 50% 52%, rgba(184, 255, 77, 0.16), transparent 56%),
+      rgba(5, 13, 25, 0.52);
+    background-size: 34px 34px, 34px 34px, auto, auto;
+  }
+
+  .sm-match-ring {
+    position: absolute;
+    inset: 50%;
+    border: 1px solid rgba(184, 255, 77, 0.34);
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+  }
+
+  .sm-match-ring-1 {
+    width: 100px;
+    height: 100px;
+    background: rgba(184, 255, 77, 0.06);
+  }
+
+  .sm-match-ring-2 {
+    width: 190px;
+    height: 190px;
+    border-color: rgba(15, 139, 126, 0.58);
+  }
+
+  .sm-match-ring-3 {
+    width: 286px;
+    height: 286px;
+    border-color: rgba(255, 107, 74, 0.42);
+  }
+
+  .sm-match-center,
+  .sm-match-node {
+    @apply absolute inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-extrabold uppercase tracking-[0.08em];
+  }
+
+  .sm-match-center {
+    left: 50%;
+    top: 50%;
+    color: #0c2438;
+    border-color: rgba(184, 255, 77, 0.9);
+    background: var(--sm-accent);
+    transform: translate(-50%, -50%);
+  }
+
+  .sm-match-node {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+  }
+
+  .sm-match-node-interest {
+    left: 22px;
+    top: 72px;
+  }
+
+  .sm-match-node-offer {
+    right: 22px;
+    bottom: 64px;
+    border-color: rgba(255, 107, 74, 0.58);
+    background: rgba(255, 107, 74, 0.2);
+  }
+
   .sm-hero-title {
     @apply text-4xl font-extrabold leading-[0.95] sm:text-5xl lg:text-7xl;
   }
