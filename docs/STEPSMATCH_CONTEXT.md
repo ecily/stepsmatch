@@ -41,6 +41,7 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 - Mobile-Theme-Migration am 2026-06-19: `mobile/theme/tokens.js` wurde durch `mobile/theme/tokens.ts` ersetzt; `ThemeProvider.tsx` bleibt mit extensionless `./tokens` kompatibel. Keine Push-/Heartbeat-/Geofence-/Android-Aenderung, kein Gradle Build, kein APK-Test, kein Push, kein Deploy, keine DB-Mutation.
 - Mobile-Babel-Konfiguration am 2026-06-19: `mobile/babel.config.js` wurde ohne Production-Console-Removal aufgenommen; Diagnose-Logs bleiben fuer den Background-Heartbeat-/Push-Audit erhalten. Keine Package-Dateien geaendert, kein Gradle Build, kein APK-Test, kein Push, kein Deploy, keine DB-Mutation.
 - Mobile-Package-Bereinigung am 2026-06-19: Die ungenutzten `babel-plugin-transform-remove-console`-Package-Diffs wurden entfernt; Diagnose-Logs bleiben fuer den Background-Heartbeat-/Push-Audit erhalten. Kein npm install, kein Gradle Build, kein APK-Test, kein Push, kein Deploy, keine DB-Mutation.
+- Mobile-HeartbeatService-Text am 2026-06-19: Sichtbare Foreground-Service-/Notification-Texte in `HeartbeatService.kt` wurden auf StepsMatch/neutral bereinigt. Keine Heartbeat-, Foreground-Service-, Permission-, Gradle-, Manifest- oder Package-ID-Logik geaendert; Package-ID/Signing bleiben separat zu entscheiden. Kein Build, kein APK-Test, kein Push, kein Deploy, keine DB-Mutation.
 - Im Repo vorhandene Ultreia-/Camino-Texte werden als aktueller repo-interner Stand dokumentiert, nicht als Fremdprojektkontext.
 
 ## 2. Aktueller technischer Stack

@@ -337,10 +337,10 @@ class HeartbeatService : Service() {
             if (existing == null) {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "Stepsmatch Service",
+                    "StepsMatch Service",
                     NotificationManager.IMPORTANCE_MIN
                 ).apply {
-                    description = "HÃ¤lt Stepsmatch im Hintergrund aktiv"
+                    description = "Hält StepsMatch im Hintergrund aktiv"
                     setShowBadge(false)
                     enableVibration(false)
                 }
@@ -361,8 +361,8 @@ class HeartbeatService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Stepsmatch lÃ¤uft â€“ Angebote aktiv")
-            .setContentText("Sorgt fÃ¼r regelmÃ¤ÃŸige Heartbeats im Hintergrund.")
+            .setContentTitle("StepsMatch läuft - Hinweise aktiv")
+            .setContentText("Sorgt f\u00fcr regelm\u00e4\u00dfige Heartbeats im Hintergrund.")
             .setSmallIcon(iconResId)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -371,3 +371,4 @@ class HeartbeatService : Service() {
             .build()
     }
 }
+
