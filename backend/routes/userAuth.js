@@ -14,6 +14,7 @@ const DEFAULT_PROVIDER_LOCATION = [15.4395, 47.0707]; // Graz fallback [lng, lat
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VERIFICATION_TTL_MINUTES = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES || 30);
 const RESEND_COOLDOWN_SECONDS = Number(process.env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS || 45);
+const ALPHA_MASTER_LOGIN_ENABLED = process.env.ALPHA_MASTER_LOGIN_ENABLED === 'true';
 
 const normalize = (value) => String(value || '').trim();
 const normalizeEmail = (value) => normalize(value).toLowerCase();
@@ -29,6 +30,29 @@ function generateVerificationCode() {
 
 function hashVerificationCode(code) {
   return crypto.createHash('sha256').update(String(code)).digest('hex');
+}
+
+function timingSafeStringEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''), 'utf8');
+  const rightBuffer = Buffer.from(String(right || ''), 'utf8');
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isAlphaMasterLogin({ email, password }) {
+  if (!ALPHA_MASTER_LOGIN_ENABLED) return false;
+
+  const alphaEmail = normalizeEmail(process.env.ALPHA_MASTER_EMAIL);
+  const alphaPassword = process.env.ALPHA_MASTER_PASSWORD || '';
+
+  if (!alphaEmail || !alphaPassword) return false;
+  if (normalizeEmail(email) !== alphaEmail) return false;
+
+  return timingSafeStringEqual(password, alphaPassword);
 }
 
 function buildDisplayName({ firstName, lastName, username, fallbackName, email }) {
@@ -344,6 +368,16 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const normalizedEmail = normalizeEmail(email);
+
+    if (isAlphaMasterLogin({ email: normalizedEmail, password })) {
+      const alphaUser = await User.findOne({ email: normalizedEmail });
+      if (!alphaUser) {
+        return res.status(401).json({ message: 'Falsche Anmeldedaten.' });
+      }
+
+      const token = issueToken(alphaUser._id);
+      return res.json({ token, user: sanitizeUser(alphaUser) });
+    }
 
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
