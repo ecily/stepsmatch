@@ -8,6 +8,8 @@ import { getPreferredSiteText } from "../content/siteContent";
 export default function ImpressumPage() {
   const text = React.useMemo(() => getPreferredSiteText(), []);
   const imprint = text.impressum;
+  const phone = String(imprint.phone || "").trim();
+  const showPhone = phone && phone.toLowerCase() !== "keine telefonnummer angegeben";
 
   return (
     <div className="sm-page">
@@ -30,7 +32,7 @@ export default function ImpressumPage() {
               <p className="mt-1 text-slate-700">{imprint.addressLine2}</p>
               <p className="mt-1 text-slate-700">{imprint.country}</p>
               <p className="mt-3 text-slate-700"><strong>E-Mail:</strong> {imprint.email}</p>
-              <p className="mt-1 text-slate-700"><strong>Telefon (optional):</strong> {imprint.phone}</p>
+              {showPhone ? <p className="mt-1 text-slate-700"><strong>Telefon (optional):</strong> {phone}</p> : null}
             </article>
 
             <article className="sm-card p-6 sm-rise sm-delay-1">

@@ -135,7 +135,7 @@ export default function LandingPage() {
               </p>
 
               <div className="mt-7 flex flex-wrap gap-2">
-                {["In der Nähe", "Passend zu dir", "Zur richtigen Zeit"].map((item) => (
+                {["Läuft im Hintergrund", "Meldet sich nur bei Relevanz", "Führt dich hin"].map((item) => (
                   <span key={item} className="rounded-md border border-white/25 bg-white/12 px-3 py-2 text-sm font-extrabold uppercase tracking-[0.08em] text-white backdrop-blur-sm">
                     {item}
                   </span>

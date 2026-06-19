@@ -19,7 +19,7 @@ const siteTextDe = {
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
     heroTitle: "Angebote finden dich",
     heroLead:
-      "StepsMatch zeigt dir passende Angebote in deiner Nähe – dann, wenn sie für dich relevant sind.",
+      "StepsMatch läuft ruhig im Hintergrund und meldet sich nur, wenn in deiner Nähe etwas zu dir passt.",
     heroQuickLine:
       "Mobile-App als Kern: Nähe, Interessen und aktive Angebote werden im Alltag geprüft.",
     quickTrustLine: "Der USP in wenigen Worten: Nähe + Interesse + aktives Angebot.",
@@ -60,8 +60,8 @@ const siteTextDe = {
     routeFocusTitle: "So funktioniert es",
     routeFocusSteps: [
       "1. Du bist unterwegs.",
-      "2. Ein passendes Angebot ist in deiner Nähe.",
-      "3. StepsMatch macht es sichtbar.",
+      "2. StepsMatch erkennt etwas Passendes in deiner Nähe.",
+      "3. Die App zeigt dir den Weg.",
     ],
 
     symbolsTitle: "Wofür StepsMatch steht",
@@ -77,7 +77,7 @@ const siteTextDe = {
 
     providerTitle: "Für Anbieter",
     providerLead:
-      "Angebote erreichen Menschen dort, wo sie gerade relevant werden – im Umfeld deines Geschäfts.",
+      "Angebote erreichen Menschen genau dann, wenn sie in der Nähe relevant werden.",
     providerPoints: [
       "Angebot erstellen und aktuell halten",
       "Radius, Laufzeit und Interessen als Relevanzfilter nutzen",
