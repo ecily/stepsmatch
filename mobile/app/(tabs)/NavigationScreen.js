@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import directionsFetch from '../../services/directions';
 import { useTheme } from '../../theme/ThemeProvider';
-import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 
@@ -301,11 +300,10 @@ export default function NavigationScreen() {
     <View style={{ flex: 1, backgroundColor: t.colors.background }}>
       <MapView
         ref={mapRef}
-        style={{ flex: 1 }}
+        style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion}
         mapType={mapType}
-        customMapStyle={mapType === 'standard' ? mapStyleStepsmatchLight : []}
         showsUserLocation
         showsMyLocationButton={false}
         rotateEnabled={false}
@@ -397,6 +395,9 @@ export default function NavigationScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
   backBtn: {
     marginTop: 12,
     borderWidth: 1,

@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
-import mapStyleStepsmatchLight from '../../theme/mapStyleDark';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
@@ -208,14 +207,13 @@ export default function NavigationMap() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
-      <View style={{ flex: 1 }}>
+      <View style={styles.mapRoot}>
         <MapView
           ref={mapRef}
-          style={{ flex: 1 }}
+          style={styles.map}
           provider={PROVIDER_GOOGLE}
           initialRegion={regionForRadius(userPos || FALLBACK_CENTER, VISIBLE_RADIUS_M)}
           mapType={mapType}
-          customMapStyle={mapType === 'standard' ? mapStyleStepsmatchLight : undefined}
           showsUserLocation
           showsMyLocationButton={false}
           zoomControlEnabled={false}
@@ -337,6 +335,14 @@ export default function NavigationMap() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  mapRoot: {
+    flex: 1,
+    minHeight: 1,
+    overflow: 'hidden',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
 
   topCard: {
     position: 'absolute',
