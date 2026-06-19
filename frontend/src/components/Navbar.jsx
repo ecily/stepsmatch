@@ -19,8 +19,8 @@ export default function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-1 lg:flex">
-          <Link to="/home" className="sm-nav-link">Für Pilger</Link>
-          <Link to="/why" className="sm-nav-link">Der Weg</Link>
+          <Link to="/home" className="sm-nav-link">Für Nutzer</Link>
+          <Link to="/why" className="sm-nav-link">Produktkern</Link>
           <Link to="/register" className="sm-nav-link">Für Anbieter</Link>
         </nav>
 

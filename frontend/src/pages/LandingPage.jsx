@@ -108,7 +108,7 @@ export default function LandingPage() {
           <div className="sm-card-soft p-6 sm:p-8 sm-rise sm-delay-1">
             <p className="sm-badge">StepsMatch</p>
             <p className="mt-4 text-lg font-bold leading-snug text-slate-900 sm:text-2xl">
-              StepsMatch verbindet passende Angebote mit echten Situationen.
+              StepsMatch testet lokale Relevanz in echten Alltagssituationen.
             </p>
             <p className="mt-3 max-w-5xl text-slate-700 sm:text-lg">{text.landing.founderMessage}</p>
             <p className="mt-4 max-w-5xl rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-slate-800 sm:text-base font-semibold">
@@ -150,13 +150,13 @@ export default function LandingPage() {
           </section>
 
           <section className="mt-4 sm-card p-6 sm:p-7 sm-rise sm-delay-1">
-            <p className="sm-badge">Alltags-Fokus</p>
+            <p className="sm-badge">Lokale Relevanz</p>
             <p className="mt-3 text-lg font-extrabold text-slate-900 sm:text-2xl">{text.landing.quickTrustLine}</p>
             <p className="mt-2 max-w-4xl text-slate-700 sm:text-lg">{text.landing.helpText}</p>
           </section>
         </header>
 
-        <section id="pilger" className="sm-shell pb-8 sm:pb-12">
+        <section id="nutzer" className="sm-shell pb-8 sm:pb-12">
           <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-1">
             <p className="sm-badge">Für Nutzer</p>
             <h2 className="sm-section-title mt-4">{text.landing.painTitle}</h2>
@@ -180,7 +180,7 @@ export default function LandingPage() {
 
         <section className="sm-shell pb-8 sm:pb-12">
           <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-1">
-            <p className="sm-badge">Ruhiger Flow</p>
+            <p className="sm-badge">Matching-Logik</p>
             <h2 className="sm-section-title mt-4">{text.landing.routeFocusTitle}</h2>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
               {text.landing.routeFocusSteps.map((step, index) => (
@@ -239,7 +239,7 @@ export default function LandingPage() {
         <section className="sm-shell pb-8 sm:pb-12">
           <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-2">
             <p className="sm-badge">
-              <Footprints size={14} /> Unterwegs
+              <Footprints size={14} /> Mobile-Core
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {text.landing.emotionalCards.map((item) => (
@@ -257,14 +257,14 @@ export default function LandingPage() {
             <p className="sm-chip">StepsMatch</p>
             <h3 className="mt-4 text-3xl font-extrabold sm:text-4xl">{text.landing.quote}</h3>
             <p className="mt-3 max-w-3xl text-sm text-blue-50 sm:text-lg">
-              StepsMatch hält den Informationslärm klein und zeigt passende Angebote im richtigen Moment.
+              StepsMatch hält den Informationslärm klein und testet passende Hinweise im richtigen Moment.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => setApkOpen(true)} className="sm-btn-secondary">
                 {text.brand.appCta}
               </button>
               <Link to="/why" className="sm-btn-ghost">
-                Mehr über StepsMatch
+                Mehr über den Produktkern
               </Link>
               <Link to="/register" className="sm-btn-ghost">
                 <MapPin size={14} className="mr-1" /> Für Anbieter

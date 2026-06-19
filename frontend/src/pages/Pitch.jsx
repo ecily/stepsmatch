@@ -7,26 +7,26 @@ import Navbar from "../components/Navbar";
 const blocks = [
   {
     icon: <Target className="h-5 w-5 text-blue-700" />,
-    title: "Problem",
-    text: "Lokale Werbung trifft den Kontext oft nicht und erzeugt hohen Streuverlust.",
+    title: "Produktproblem",
+    text: "Lokale Angebote sind oft vorhanden, aber nicht im richtigen Moment relevant sichtbar.",
   },
   {
     icon: <Gauge className="h-5 w-5 text-blue-700" />,
-    title: "Loesung",
-    text: "Realtime-Matching ueber Ort, Zeit und Interesse mit zuverlaessigem Push-Trigger.",
+    title: "Ansatz",
+    text: "Matching über Nähe, Interesse und aktive Angebote. Die Mobile-App prüft, ob Hinweise verlässlich ausgelöst werden.",
   },
   {
     icon: <Building2 className="h-5 w-5 text-blue-700" />,
-    title: "Business-Impact",
-    text: "Mehr relevante Kontakte fuer Anbieter, bessere Conversion und weniger Suchaufwand fuer Nutzer.",
+    title: "Anbieter-Nutzen",
+    text: "Anbieter erstellen Angebote, setzen Radius und Laufzeit und erreichen Menschen in Reichweite, wenn der Kontext passt.",
   },
 ];
 
 const investorSignals = [
-  "Technischer USP: Background-Matching mit Geofence + Heartbeat auch bei geschlossener App",
-  "Beidseitiger Netzwerkeffekt: mehr Anbieter erhoehen Nutzwert fuer User und umgekehrt",
-  "Klare Monetarisierung: lokale Sichtbarkeit als messbarer Performance-Channel",
-  "MVP-ready Operations: Anbieter-Dashboard, Radiussteuerung, Zeitfenster-Logik, Admin-Karte",
+  "Mobile-App als Produktkern: Background-Heartbeat, Push und Geofence werden auf echten Geräten getestet",
+  "Relevanzlogik: Nähe + Interesse + aktives Angebot statt Suche-first oder Branchenbuch",
+  "Anbieter-Werkzeug: Angebot erstellen, Radius und Zeitfenster pflegen, lokale Reichweite prüfen",
+  "Interne Alpha: Fokus auf Verlässlichkeit, klare Texte und saubere Konfiguration",
 ];
 
 const competitiveLens = [
@@ -55,15 +55,15 @@ export default function Pitch() {
 
         <section className="sm-shell py-10 sm:py-14">
           <div className="sm-card-soft p-7 sm:p-10 sm-rise">
-            <p className="sm-badge">Investor Summary</p>
+            <p className="sm-badge">Produktklarheit</p>
             <h1 className="mt-4 text-4xl font-extrabold leading-tight sm:text-5xl lg:text-6xl">
-              StepsMatch baut die Infrastruktur
+              StepsMatch testet den Kern
               <br />
-              fuer Zero-Search im Alltag.
+              für lokale Relevanz.
             </h1>
             <p className="sm-section-copy max-w-4xl">
-              Die Plattform monetarisiert Relevanz im Moment: statt Reichweite um jeden
-              Preis entsteht ein praeziser Match zwischen lokalen Angeboten und realem Bedarf.
+              Relevante lokale Angebote. Zur richtigen Zeit. Am richtigen Ort. Der Fokus liegt aktuell
+              auf interner Alpha, Mobile-Verlässlichkeit und verständlicher Anbietersteuerung.
             </p>
           </div>
         </section>
@@ -82,9 +82,9 @@ export default function Pitch() {
 
         <section className="sm-shell pb-12">
           <div className="sm-card p-6 sm:p-8 sm-rise sm-delay-1">
-            <h2 className="text-2xl font-extrabold sm:text-3xl">Competitive Lens</h2>
+            <h2 className="text-2xl font-extrabold sm:text-3xl">Abgrenzung</h2>
             <p className="mt-2 text-slate-700">
-              StepsMatch adressiert nicht "noch mehr Reichweite", sondern den praezisen Moment der Relevanz.
+              StepsMatch ist kein Branchenbuch, kein Dealportal und keine Social-Ad-Fläche. Entscheidend ist die lokale Passung.
             </p>
 
             <div className="mt-5 overflow-x-auto sm-table-wrap">
@@ -114,7 +114,7 @@ export default function Pitch() {
           <div className="grid gap-4 md:grid-cols-2">
             {investorSignals.map((item, idx) => (
               <article key={item} className={`sm-card-soft p-6 sm-rise sm-delay-${Math.min(idx + 1, 3)}`}>
-                <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-700">Signal {idx + 1}</p>
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-700">Fokus {idx + 1}</p>
                 <p className="mt-2 text-slate-800">{item}</p>
               </article>
             ))}
@@ -123,14 +123,14 @@ export default function Pitch() {
 
         <section className="sm-shell pb-16 sm:pb-20">
           <div className="sm-card-strong p-8 sm:p-10 sm-rise sm-delay-2">
-            <h3 className="text-3xl font-extrabold sm:text-4xl">Lokale Nachfrage in Echtzeit ist ein klarer Category-Fit</h3>
+            <h3 className="text-3xl font-extrabold sm:text-4xl">Der nächste Schritt ist Verlässlichkeit im echten Nutzungskontext</h3>
             <p className="mt-3 max-w-3xl text-blue-50 sm:text-lg">
-              StepsMatch verbindet Angebotsdichte, Laufwege und persoenliche Praeferenzen
-              zu einem Live-Marketplace mit hoher operativer Praezision.
+              Die Website erklärt den Produktweg. Die Mobile-App bleibt der eigentliche Core:
+              Nähe, Interesse, aktives Angebot und ein ruhiger Hinweis, wenn der Kontext passt.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="mailto:hello@stepsmatch.com" className="sm-btn-secondary gap-2">
-                Investor Kontakt <ArrowUpRight size={16} />
+                Kontakt aufnehmen <ArrowUpRight size={16} />
               </a>
               <Link to="/home" className="sm-btn-ghost">
                 Zur Landing

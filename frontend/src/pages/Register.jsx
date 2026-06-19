@@ -114,8 +114,8 @@ const Register = ({ onRegisterSuccess }) => {
           <section className="sm-card p-7 sm:p-8 sm-rise">
             <h1 className="text-3xl font-extrabold">Anbieter Registrierung</h1>
             <p className="mt-2 text-slate-600">
-              In wenigen Minuten live gehen und lokale Sichtbarkeit genau im richtigen
-              Moment erhalten.
+              Erstelle den Anbieterzugang f√ºr interne Tests und pflege danach Angebote mit
+              Radius, Laufzeit und Relevanz.
             </p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
@@ -211,22 +211,22 @@ const Register = ({ onRegisterSuccess }) => {
                 Schon registriert?
               </Link>
               <Link to="/home" className="text-slate-600 hover:text-slate-800">
-                Zur Landing
+                Zur Startseite
               </Link>
             </div>
           </section>
 
           <section className="sm-card-strong p-7 sm:p-9 sm-rise sm-delay-1">
-            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Go Live Setup</p>
-            <h2 className="mt-4 text-3xl font-extrabold">Von 0 auf lokales Matching</h2>
+            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">StepsMatch Setup</p>
+            <h2 className="mt-4 text-3xl font-extrabold">Von Stammdaten zu lokalem Matching</h2>
             <p className="mt-3 text-blue-50 sm:text-lg">
-              Nach der Registrierung kannst du direkt Angebote anlegen, Radius setzen
-              und Gueltigkeitsfenster definieren.
+              Nach der Registrierung kannst du Angebote klar strukturieren und f√ºr Menschen
+              in Reichweite sichtbar machen, wenn der Kontext passt.
             </p>
             <ul className="mt-6 grid gap-3 text-sm text-blue-50">
-              <li>ï Anbieter-Stammdaten mit Kartenposition</li>
-              <li>ï Angebotslogik mit Tagen, Uhrzeiten und Laufzeit</li>
-              <li>ï Dashboard fuer Pflege und Optimierung</li>
+              <li>- Anbieterprofil mit lokaler Position</li>
+              <li>- Angebotslogik mit Tagen, Uhrzeiten und Radius</li>
+              <li>- Dashboard f√ºr laufende Pflege in der internen Alpha</li>
             </ul>
           </section>
         </div>

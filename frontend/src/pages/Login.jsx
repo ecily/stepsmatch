@@ -101,20 +101,20 @@ const Login = () => {
       <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
         <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.95fr_1.05fr]">
           <section className="sm-card-strong p-7 sm:p-9 sm-rise">
-            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Provider Access</p>
-            <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Dein Anbieter-Dashboard in Sekunden</h1>
+            <p className="sm-chip !border-white/30 !bg-white/10 !text-white">StepsMatch Anbieterbereich</p>
+            <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Lokale Angebote gezielt pflegen</h1>
             <p className="mt-3 text-blue-50 sm:text-lg">
-              Verwalte Radius, Gueltigkeit und Inhalte deiner Angebote in einem klaren Flow.
+              Verwalte Radius, Zeitfenster und Inhalte deiner Angebote für das lokale Matching.
             </p>
             <div className="mt-6 flex items-center gap-2 text-sm text-blue-50">
               <LogIn className="h-4 w-4" />
-              Sicherer Login und direkte Weiterleitung in deine Live-Daten
+              Sicherer Login für interne Alpha- und Anbieterpflege
             </div>
           </section>
 
           <section className="sm-card p-7 sm:p-8 sm-rise sm-delay-1">
             <h2 className="text-2xl font-extrabold">Anbieter Login</h2>
-            <p className="mt-2 text-slate-600">Melde dich an, um Angebote zu erstellen, zu bearbeiten und zu steuern.</p>
+            <p className="mt-2 text-slate-600">Melde dich an, um Angebote für Nähe, Interesse und aktive Ausspielung zu pflegen.</p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
 
@@ -198,7 +198,7 @@ const Login = () => {
                 Noch kein Konto?
               </Link>
               <Link to="/home" className="text-slate-600 hover:text-slate-800">
-                Zur Landing
+                Zur Startseite
               </Link>
             </div>
           </section>
