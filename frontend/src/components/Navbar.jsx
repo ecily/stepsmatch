@@ -1,93 +1,38 @@
 ﻿import React from "react";
-import { Link, NavLink } from "react-router-dom";
-import { Menu, X } from "lucide-react";
-import brandLockup from "../assets/stepsmatch-logo-horizontal-dark.svg";
+import { Link } from "react-router-dom";
 
-const navItems = [
-  { to: "/home", label: "Home" },
-  { to: "/why", label: "Warum StepsMatch" },
-  { to: "/pitch", label: "Investor Pitch" },
-  { to: "/admin/offers", label: "Admin Demo" },
-];
+import { getPreferredSiteText } from "../content/siteContent";
 
 export default function Navbar() {
-  const [open, setOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth >= 1024) setOpen(false);
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const navClass = ({ isActive }) =>
-    `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`;
+  const text = React.useMemo(() => getPreferredSiteText(), []);
 
   return (
     <header className="sm-glass-nav">
-      <div className="sm-shell flex h-20 items-center justify-between gap-4 py-2">
+      <div className="sm-shell flex h-20 items-center justify-between gap-3 py-2">
         <Link to="/home" className="inline-flex items-center gap-3" aria-label="StepsMatch Startseite">
-          <img
-            src={brandLockup}
-            alt="StepsMatch"
-            className="h-10 w-auto sm:h-11 lg:h-12"
-            loading="eager"
-          />
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-900 text-sm font-extrabold text-white shadow-sm">
+            SM
+          </span>
+          <span className="text-2xl font-extrabold tracking-tight text-blue-900 sm:text-[1.9rem]">
+            {text.brand.name}
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-1 lg:flex">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className={navClass}>
-              {item.label}
-            </NavLink>
-          ))}
+          <Link to="/home" className="sm-nav-link">Für Pilger</Link>
+          <Link to="/why" className="sm-nav-link">Der Weg</Link>
+          <Link to="/register" className="sm-nav-link">Für Anbieter</Link>
         </nav>
 
-        <div className="hidden items-center gap-2 sm:flex">
-          <Link to="/login" className="sm-btn-secondary">
-            Login
-          </Link>
-          <Link to="/register" className="sm-btn-primary">
+        <div className="flex items-center gap-2">
+          <Link to="/register" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
             Anbieter starten
           </Link>
+          <Link to="/home?apk=1" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">
+            {text.brand.appCta}
+          </Link>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white/90 text-slate-700 lg:hidden"
-          aria-label={open ? "Navigation schließen" : "Navigation öffnen"}
-          aria-expanded={open}
-        >
-          {open ? <X size={18} /> : <Menu size={18} />}
-        </button>
       </div>
-
-      {open ? (
-        <div className="border-t border-slate-200/70 bg-white/95 px-4 pb-5 pt-3 shadow-xl lg:hidden">
-          <div className="sm-shell grid gap-2 px-0">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={navClass}
-                onClick={() => setOpen(false)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Link to="/login" className="sm-btn-secondary" onClick={() => setOpen(false)}>
-                Login
-              </Link>
-              <Link to="/register" className="sm-btn-primary" onClick={() => setOpen(false)}>
-                Anbieter starten
-              </Link>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </header>
   );
 }

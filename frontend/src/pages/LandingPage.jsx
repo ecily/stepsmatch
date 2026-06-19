@@ -2,14 +2,24 @@
 import { Link, useLocation } from "react-router-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
 import { QRCodeCanvas } from "qrcode.react";
-import { ArrowRight, CheckCircle2, Download, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BellRing,
+  Compass,
+  Footprints,
+  House,
+  MapPin,
+  Pill,
+  Sparkles,
+  Store,
+  UtensilsCrossed,
+} from "lucide-react";
 
 import Navbar from "../components/Navbar";
-import logoIcon from "../assets/stepsmatch-icon.svg";
-import heroCity from "../assets/hero-city-daylight.jpg";
-import previewImage from "../assets/navigation-preview.png";
+import SiteFooter from "../components/SiteFooter";
+import { getPreferredSiteText } from "../content/siteContent";
 
-function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
+function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
   if (!open) return null;
   const qrValue = `${apkUrl}${apkUrl.includes("?") ? "&" : "?"}src=qr`;
 
@@ -19,13 +29,10 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="sm-badge">
-              <Sparkles size={14} /> App-Test starten
+              <Sparkles size={14} /> App installieren
             </p>
-            <h3 className="mt-3 text-2xl font-extrabold">In unter 1 Minute live</h3>
-            <p className="mt-2 text-sm text-slate-600 sm:text-base">
-              QR-Code scannen oder APK direkt laden. Danach kannst du die komplette
-              StepsMatch-MVP-Strecke sofort testen.
-            </p>
+            <h3 className="mt-3 text-2xl font-extrabold">{text.brand.appModalTitle}</h3>
+            <p className="mt-2 text-sm text-slate-700 sm:text-base">{text.brand.appModalBody}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Schließen
@@ -37,11 +44,11 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
             <QRCodeCanvas value={qrValue} size={180} includeMargin level="M" />
           </div>
           <div>
-            <p className="text-sm text-slate-600">Option A: Kamera öffnen und QR scannen</p>
+            <p className="text-sm text-slate-700">Option A: Kamera öffnen und QR-Code scannen</p>
             <a href={apkUrl} className="sm-btn-primary mt-3 !w-full gap-2 sm:!w-auto" target="_blank" rel="noreferrer">
-              <Download size={16} /> APK direkt laden
+              {text.brand.appDownloadLabel}
             </a>
-            <p className="mt-3 text-xs text-slate-500">Android: Installation aus dieser Quelle einmal erlauben.</p>
+            <p className="mt-3 text-xs text-slate-600">Android: Installation aus dieser Quelle einmal erlauben.</p>
           </div>
         </div>
 
@@ -50,7 +57,7 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
             Nicht mehr anzeigen
           </button>
           <button type="button" onClick={onClose} className="sm-btn-secondary">
-            Weiter zur Landing
+            Weiter
           </button>
         </div>
       </div>
@@ -58,58 +65,15 @@ function ApkModal({ open, onClose, apkUrl, onDontShowAgain }) {
   );
 }
 
-const steps = [
-  {
-    title: "Anbieter veröffentlicht ein Angebot",
-    text: "Mit Radius, Kategorie und Zeitfenster für einen klaren Nutzungskontext.",
-  },
-  {
-    title: "User setzt Interessen",
-    text: "Nur relevante Themen aktivieren. Kein permanentes Suchen und kein Feed-Lärm.",
-  },
-  {
-    title: "Match im richtigen Moment",
-    text: "Wenn Ort, Zeit und Interesse passen, kommt der Push sofort auf das Gerät.",
-  },
-];
-
-const useCases = [
-  "Feierabend: Restegerichte in direkter Nähe ohne aktives Suchen.",
-  "Apotheke/Trafik: Erinnerung exakt beim Vorbeigehen.",
-  "Sales: Nur echte Angebote in deinem Interessenprofil.",
-  "Happy Hour: Hinweise dann, wenn du ohnehin unterwegs bist.",
-  "Neu in der Gegend: lokale Angebote ohne Rechercheaufwand.",
-  "Nebenstraßen-Läden: Sichtbarkeit im richtigen Radius.",
-  "Jobs in Gehweite: sofortige Hinweise bei passendem Profil.",
-  "Singles/Events: kontextbezogene Treffer statt Spam.",
-  "Pilger-/Routenfälle: relevante Stops entlang des Weges.",
-];
-
-const mvpPoints = [
-  "Hintergrundsuche läuft zuverlässig auch bei geschlossener App",
-  "Push-Auslösung exakt beim Eintritt in ein gültiges Angebot",
-  "Interessenfilter reduziert Rauschen auf wirklich passende Treffer",
-  "Anbieter-Dashboard mit Angebotsverwaltung und Radiussteuerung",
-];
-
 export default function LandingPage() {
+  const text = React.useMemo(() => getPreferredSiteText(), []);
   const location = useLocation();
-  const [heroOk, setHeroOk] = React.useState(true);
-  const [previewOk, setPreviewOk] = React.useState(true);
   const [apkOpen, setApkOpen] = React.useState(false);
-
-  const title = "StepsMatch | finden. nicht suchen.";
-  const description =
-    "Finden. Nicht suchen. StepsMatch zeigt dir passende Angebote genau dann, wenn du wirklich in der Naehe bist und macht den Weg dorthin sofort einfach.";
-  const url = "https://www.stepsmatch.com/";
-
-  const APK_REDIRECT_URL = "https://www.stepsmatch.com/StepsMatchV2.apk";
 
   React.useEffect(() => {
     try {
       const params = new URLSearchParams(location.search);
       const fromQuery = params.get("apk") === "1";
-      const ndaAcceptedAt = localStorage.getItem("ndaAcceptedAt");
       const modalSeen = localStorage.getItem("apkModalSeen") === "1";
 
       if (fromQuery) {
@@ -121,191 +85,195 @@ export default function LandingPage() {
         return;
       }
 
-      if (ndaAcceptedAt && !modalSeen) setApkOpen(true);
-    } catch (e) {
-      void e;
+      if (!modalSeen && params.get("openApk") === "1") setApkOpen(true);
+    } catch {
+      // ignore
     }
   }, [location.pathname, location.search, location.hash]);
+
+  const journeyIcons = [Pill, UtensilsCrossed, House, BellRing];
 
   return (
     <div className="sm-page">
       <Helmet>
-        <title>{title}</title>
-        <meta name="description" content={description} />
-        <link rel="canonical" href={url} />
+        <title>{text.landing.title}</title>
+        <meta name="description" content={text.landing.description} />
+        <link rel="canonical" href="https://www.stepsmatch.com/" />
       </Helmet>
 
       <div className="sm-stack">
         <Navbar />
 
-        <header className="sm-shell py-10 sm:py-14 lg:py-20">
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-            <section className="sm-rise">
-              <p className="sm-badge">
-                <img src={logoIcon} alt="StepsMatch Icon" className="h-4 w-4" />
-                MVP-Plattform für lokale Relevanz
-              </p>
+        <section className="sm-shell pt-4 sm:pt-6">
+          <div className="sm-card-soft p-6 sm:p-8 sm-rise sm-delay-1">
+            <p className="sm-badge">StepsMatch</p>
+            <p className="mt-4 text-lg font-bold leading-snug text-slate-900 sm:text-2xl">
+              StepsMatch verbindet passende Angebote mit echten Situationen.
+            </p>
+            <p className="mt-3 max-w-5xl text-slate-700 sm:text-lg">{text.landing.founderMessage}</p>
+            <p className="mt-4 max-w-5xl rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-slate-800 sm:text-base font-semibold">
+              {text.landing.founderIntent}
+            </p>
+            <p className="mt-3 max-w-5xl text-sm font-semibold text-slate-700 sm:text-base">
+              {text.landing.founderContact}
+            </p>
+          </div>
+        </section>
 
-              <h1 className="sm-hero-title mt-5">
-                finden.
-                <br />
-                nicht suchen.
+        <header className="sm-shell py-8 sm:py-10 lg:py-14">
+          <section className="relative overflow-hidden rounded-[2rem] border border-white/40 bg-gradient-to-br from-blue-950 via-blue-800 to-cyan-700 shadow-2xl sm-rise">
+            <div className="absolute inset-0 bg-gradient-to-r from-[#082956]/85 via-[#0b3f85]/65 to-[#0b3f85]/42" />
+
+            <div className="relative z-10 max-w-3xl p-6 text-white sm:p-10 lg:p-14">
+              <p className="sm-badge !border-white/30 !bg-white/20 !text-white">{text.landing.badge}</p>
+              <h1 className="sm-hero-title mt-5 whitespace-pre-line drop-shadow-[0_3px_10px_rgba(0,0,0,0.55)]">
+                {text.landing.heroTitle}
               </h1>
-
-              <p className="mt-5 max-w-2xl text-base text-slate-700 sm:text-xl">
-                Du musst nicht mehr suchen: StepsMatch sagt dir Bescheid, wenn in
-                deiner Naehe gerade etwas wirklich Passendes verfuegbar ist. Ein
-                Tipp, ein Klick, losgehen. So hilft die App im Alltag ganz konkret.
+              <p className="mt-5 max-w-2xl text-base font-semibold leading-relaxed text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-xl">
+                {text.landing.heroLead}
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
                 <button onClick={() => setApkOpen(true)} className="sm-btn-primary gap-2">
-                  App testen <ArrowRight size={16} />
+                  {text.landing.ctaPrimary} <ArrowRight size={16} />
                 </button>
-                <Link to="/register" className="sm-btn-secondary">
-                  Als Anbieter starten
+                <Link to="/why" className="sm-btn-secondary gap-2 !bg-white/90">
+                  <Compass size={16} />
+                  {text.landing.ctaSecondary}
                 </Link>
               </div>
 
-              <div className="mt-7 grid gap-3 sm:grid-cols-3">
-                {[
-                  ["Du sparst Zeit", "Keine Suche, nur passende Hinweise"],
-                  ["Du verpasst weniger", "Hinweise genau im richtigen Moment"],
-                  ["Du kommst direkt hin", "Angebot oeffnen und Route starten"],
-                ].map(([label, sub]) => (
-                  <div key={label} className="sm-card-soft p-4">
-                    <p className="text-lg font-bold">{label}</p>
-                    <p className="mt-1 text-sm text-slate-600">{sub}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
+              <p className="mt-5 inline-flex max-w-2xl rounded-2xl border border-white/35 bg-white/15 px-4 py-3 text-sm font-semibold leading-relaxed text-white/95 backdrop-blur-sm sm:text-base">
+                {text.landing.heroQuickLine}
+              </p>
+            </div>
+          </section>
 
-            <section className="sm-card overflow-hidden sm-rise sm-delay-1">
-              {heroOk ? (
-                <img
-                  src={heroCity}
-                  alt="Städtische Umgebung als StepsMatch-Nutzungsszenario"
-                  className="h-[420px] w-full object-cover sm:h-[500px]"
-                  onError={() => setHeroOk(false)}
-                />
-              ) : (
-                <div className="h-[420px] w-full bg-gradient-to-br from-blue-100 via-cyan-50 to-emerald-100 sm:h-[500px]" />
-              )}
-            </section>
-          </div>
+          <section className="mt-4 sm-card p-6 sm:p-7 sm-rise sm-delay-1">
+            <p className="sm-badge">Alltags-Fokus</p>
+            <p className="mt-3 text-lg font-extrabold text-slate-900 sm:text-2xl">{text.landing.quickTrustLine}</p>
+            <p className="mt-2 max-w-4xl text-slate-700 sm:text-lg">{text.landing.helpText}</p>
+          </section>
         </header>
 
-        <section className="sm-shell py-5 sm:py-8">
-          <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-1">
-            <h2 className="sm-section-title">Warum das im Alltag hilft</h2>
-            <p className="sm-section-copy">
-              Anbieter pflegen ihre Angebote einmal sauber ein. Du legst nur deine
-              Interessen fest. Danach arbeitet StepsMatch im Hintergrund und informiert
-              dich verlässlich dann, wenn ein Angebot wirklich zu deinem Weg passt.
-            </p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {mvpPoints.map((item) => (
-                <div key={item} className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white p-4">
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
-                  <span className="text-sm text-slate-700">{item}</span>
+        <section id="pilger" className="sm-shell pb-8 sm:pb-12">
+          <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-1">
+            <p className="sm-badge">Für Nutzer</p>
+            <h2 className="sm-section-title mt-4">{text.landing.painTitle}</h2>
+            <p className="sm-section-copy">{text.landing.painIntro}</p>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-2">
+              {text.landing.painCards.map((item, idx) => {
+                const Icon = journeyIcons[idx % journeyIcons.length];
+                return (
+                  <article key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="inline-flex items-center gap-2 text-sm font-bold text-blue-900">
+                      <Icon size={16} /> {item.title}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-700 sm:text-base">{item.text}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="sm-shell pb-8 sm:pb-12">
+          <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-1">
+            <p className="sm-badge">Ruhiger Flow</p>
+            <h2 className="sm-section-title mt-4">{text.landing.routeFocusTitle}</h2>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {text.landing.routeFocusSteps.map((step, index) => (
+                <div key={step} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-sm font-extrabold text-blue-800">
+                    {index + 1}
+                  </p>
+                  <p className="mt-3 text-sm text-slate-700 sm:text-base">{step}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="sm-shell py-5 sm:py-8">
-          <h2 className="sm-section-title sm-rise">So funktioniert der Flow</h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {steps.map((step, i) => (
-              <article key={step.title} className={`sm-card-soft p-6 sm-rise sm-delay-${Math.min(i + 1, 3)}`}>
-                <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-700">Schritt {i + 1}</p>
-                <h3 className="mt-2 text-xl font-bold">{step.title}</h3>
-                <p className="mt-2 text-slate-700">{step.text}</p>
-              </article>
-            ))}
+        <section className="sm-shell pb-8 sm:pb-12">
+          <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-2">
+            <p className="sm-badge">StepsMatch-Prinzipien</p>
+            <h2 className="sm-section-title mt-4">{text.landing.symbolsTitle}</h2>
+            <p className="sm-section-copy">{text.landing.symbolsIntro}</p>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {text.landing.symbolsFacts.map((fact) => (
+                <div key={fact} className="rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-700 sm:text-base">
+                  {fact}
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+              {text.landing.symbolsSourceLine}
+            </p>
           </div>
         </section>
 
-        <section className="sm-shell py-5 sm:py-8">
-          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-            <article className="sm-card p-6 sm:p-8 sm-rise">
-              <h2 className="sm-section-title">Alltagsszenarien mit echtem Nutzen</h2>
-              <p className="sm-section-copy">
-                Die Relevanz entsteht aus deinem Weg, nicht aus manuellem Suchen.
-              </p>
-
-              <div className="mt-6 grid gap-3 md:grid-cols-2">
-                {useCases.map((item) => (
-                  <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="sm-card-soft p-5 sm:p-6 sm-rise sm-delay-1">
-              <p className="sm-badge">Produktvorschau</p>
-              <h3 className="mt-3 text-2xl font-extrabold">Von der Info bis zum Ziel in einem Flow</h3>
-              <p className="mt-2 text-sm text-slate-600">
-                Du bekommst einen passenden Hinweis, oeffnest das Angebot und startest
-                direkt die Route. Einfach, schnell und ohne Umwege.
-              </p>
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                {previewOk ? (
-                  <img
-                    src={previewImage}
-                    alt="StepsMatch App Vorschau"
-                    className="h-[280px] w-full object-cover"
-                    onError={() => setPreviewOk(false)}
-                  />
-                ) : (
-                  <div className="h-[280px] w-full bg-gradient-to-br from-blue-100 to-emerald-100" />
-                )}
-              </div>
-            </article>
+        <section id="anbieter" className="sm-shell pb-8 sm:pb-12">
+          <div className="sm-card p-7 sm:p-9 sm-rise sm-delay-2">
+            <p className="sm-badge">
+              <Store size={14} /> Für Anbieter
+            </p>
+            <h2 className="sm-section-title mt-4">{text.landing.providerTitle}</h2>
+            <p className="sm-section-copy">{text.landing.providerLead}</p>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {text.landing.providerPoints.map((point) => (
+                <div key={point} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 sm:text-base">
+                  {point}
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link to="/register" className="sm-btn-primary gap-2">
+                {text.landing.providerCta} <ArrowRight size={16} />
+              </Link>
+              <Link to="/login" className="sm-btn-secondary">Anbieter Login</Link>
+            </div>
           </div>
         </section>
 
-        <section className="sm-shell pt-6 pb-16 sm:pt-8 sm:pb-20">
+        <section className="sm-shell pb-8 sm:pb-12">
+          <div className="sm-card-soft p-7 sm:p-9 sm-rise sm-delay-2">
+            <p className="sm-badge">
+              <Footprints size={14} /> Unterwegs
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {text.landing.emotionalCards.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-lg font-bold text-slate-900">{item.title}</p>
+                  <p className="mt-2 text-sm text-slate-700 sm:text-base">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="sm-shell pt-2 pb-16 sm:pt-4 sm:pb-20">
           <div className="sm-card-strong p-7 sm:p-10 sm-rise sm-delay-2">
-            <p className="sm-chip !border-white/35 !bg-white/10 !text-white">Release-ready Frontend</p>
-            <h3 className="mt-4 text-3xl font-extrabold sm:text-4xl">
-              Bereit für den Live-Rollout der MVP-Experience
-            </h3>
+            <p className="sm-chip">StepsMatch</p>
+            <h3 className="mt-4 text-3xl font-extrabold sm:text-4xl">{text.landing.quote}</h3>
             <p className="mt-3 max-w-3xl text-sm text-blue-50 sm:text-lg">
-              Für User: relevante Hinweise ohne Suchstress. Für Anbieter: Sichtbarkeit
-              exakt im passenden Moment. Genau dafür ist StepsMatch gebaut.
+              StepsMatch hält den Informationslärm klein und zeigt passende Angebote im richtigen Moment.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => setApkOpen(true)} className="sm-btn-secondary">
-                App jetzt testen
+                {text.brand.appCta}
               </button>
-              <Link to="/register" className="sm-btn-ghost">
-                Anbieter-Onboarding
-              </Link>
               <Link to="/why" className="sm-btn-ghost">
-                Warum StepsMatch
+                Mehr über StepsMatch
+              </Link>
+              <Link to="/register" className="sm-btn-ghost">
+                <MapPin size={14} className="mr-1" /> Für Anbieter
               </Link>
             </div>
           </div>
         </section>
 
-        <footer className="sm-divider bg-white/70">
-          <div className="sm-shell flex flex-col items-start justify-between gap-3 py-7 text-sm text-slate-600 md:flex-row md:items-center">
-            <div className="flex items-center gap-2 font-semibold text-slate-700">
-              <img src={logoIcon} alt="StepsMatch" className="h-5 w-5" />
-              © {new Date().getFullYear()} StepsMatch
-            </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <Link to="/home">Home</Link>
-              <Link to="/why">Warum neu</Link>
-              <Link to="/register">Registrieren</Link>
-              <Link to="/privacy">Datenschutz</Link>
-            </div>
-          </div>
-        </footer>
+        <SiteFooter />
       </div>
 
       <ApkModal
@@ -314,12 +282,13 @@ export default function LandingPage() {
         onDontShowAgain={() => {
           try {
             localStorage.setItem("apkModalSeen", "1");
-          } catch (e) {
-            void e;
+          } catch {
+            // ignore
           }
           setApkOpen(false);
         }}
-        apkUrl={APK_REDIRECT_URL}
+        text={text}
+        apkUrl={text.brand.appDownloadUrl}
       />
     </div>
   );
