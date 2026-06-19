@@ -135,7 +135,7 @@ export default function LandingPage() {
               </p>
 
               <div className="mt-7 flex flex-wrap gap-2">
-                {["Nähe", "Interesse", "aktives Angebot"].map((item) => (
+                {["In der Nähe", "Passend zu dir", "Zur richtigen Zeit"].map((item) => (
                   <span key={item} className="rounded-md border border-white/25 bg-white/12 px-3 py-2 text-sm font-extrabold uppercase tracking-[0.08em] text-white backdrop-blur-sm">
                     {item}
                   </span>
@@ -242,7 +242,7 @@ export default function LandingPage() {
                       <Icon size={18} />
                     </div>
                     <p className="mt-4 text-lg font-extrabold text-slate-950">{label}</p>
-                    <p className="mt-2 text-sm text-slate-700 sm:text-base">{description || step}</p>
+                    {description ? <p className="mt-2 text-sm text-slate-700 sm:text-base">{description}</p> : null}
                   </div>
                 );
               })}

@@ -16,10 +16,10 @@ const siteTextDe = {
     badge: "LOKALES MATCHING",
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
-      "Interner Teststand - der Matching-Kern wird gerade verlässlich gemacht.",
+      "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
     heroTitle: "Angebote finden dich",
     heroLead:
-      "StepsMatch prüft, welche Angebote in deiner Nähe gerade relevant sind - passend zu deinen Interessen.",
+      "StepsMatch zeigt dir passende Angebote in deiner Nähe – dann, wenn sie für dich relevant sind.",
     heroQuickLine:
       "Mobile-App als Kern: Nähe, Interessen und aktive Angebote werden im Alltag geprüft.",
     quickTrustLine: "Der USP in wenigen Worten: Nähe + Interesse + aktives Angebot.",
@@ -57,11 +57,11 @@ const siteTextDe = {
       },
     ],
 
-    routeFocusTitle: "Das Matching in drei Signalen",
+    routeFocusTitle: "So funktioniert es",
     routeFocusSteps: [
-      "Nähe: Die App erkennt, ob ein Angebot räumlich erreichbar ist.",
-      "Interesse: Nur passende Kategorien und Präferenzen zählen.",
-      "Aktives Angebot: Radius, Zeitraum und Verfügbarkeit müssen stimmen.",
+      "1. Du bist unterwegs.",
+      "2. Ein passendes Angebot ist in deiner Nähe.",
+      "3. StepsMatch macht es sichtbar.",
     ],
 
     symbolsTitle: "Wofür StepsMatch steht",
@@ -77,7 +77,7 @@ const siteTextDe = {
 
     providerTitle: "Für Anbieter",
     providerLead:
-      "Erstelle ein Angebot, setze Reichweite und Gültigkeit, und erreiche Menschen in deiner Umgebung, wenn der Kontext passt.",
+      "Angebote erreichen Menschen dort, wo sie gerade relevant werden – im Umfeld deines Geschäfts.",
     providerPoints: [
       "Angebot erstellen und aktuell halten",
       "Radius, Laufzeit und Interessen als Relevanzfilter nutzen",
