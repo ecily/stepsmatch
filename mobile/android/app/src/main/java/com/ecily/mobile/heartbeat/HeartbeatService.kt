@@ -185,6 +185,7 @@ class HeartbeatService : Service() {
                     }
 
                     startLocationUpdates()
+                    seedLastKnownLocation()
                     handler.post(heartbeatRunnable)
                     Log.i(TAG, "Heartbeat loop started")
                 }
@@ -219,6 +220,30 @@ class HeartbeatService : Service() {
             Log.i(TAG, "location updates requested")
         } catch (e: Exception) {
             Log.e(TAG, "startLocationUpdates failed: ${e.message}", e)
+        }
+    }
+
+    private fun seedLastKnownLocation() {
+        try {
+            fusedClient.lastLocation
+                .addOnSuccessListener { loc ->
+                    if (loc == null) {
+                        Log.i(TAG, "last known location unavailable on service start")
+                        return@addOnSuccessListener
+                    }
+                    lastLocation = loc
+                    Log.i(TAG, "last known location seeded on service start")
+                    if (lastHeartbeatAtMs == 0L) {
+                        sendHeartbeat(loc, reason = "native-start", force = true)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.w(TAG, "last known location failed: ${e.message}")
+                }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "last known location skipped: missing permission")
+        } catch (e: Exception) {
+            Log.w(TAG, "last known location skipped: ${e.message}")
         }
     }
 

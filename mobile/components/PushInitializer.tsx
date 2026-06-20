@@ -1459,6 +1459,10 @@ async function startAggressiveBgLocation() {
     return;
   }
 
+  if (Platform.OS === 'android') {
+    await syncNativeHeartbeatConfig('bg-location-start');
+  }
+
   await ensureBgLocMode('default');
 
   try {
@@ -1659,6 +1663,14 @@ function useAppStateWatchdog() {
     const sub = AppState.addEventListener('change', async (next) => {
       try {
         appStateRef.current = next;
+        if (Platform.OS === 'android' && (next === 'background' || next === 'inactive')) {
+          if (await isServiceActiveNow()) {
+            const permsOk = await hasLocationPermissions();
+            if (permsOk) {
+              await syncNativeHeartbeatConfig(`appstate-${next}`);
+            }
+          }
+        }
         if (next === 'active' && appState.current !== 'active') {
           if (!(await isServiceActiveNow())) {
             console.log('[WD] appstate skip (service inactive)');
