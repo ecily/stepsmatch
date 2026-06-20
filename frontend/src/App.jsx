@@ -20,6 +20,24 @@ const TesterGate = lazy(() => import('./pages/TesterGate'));
 const NDA = lazy(() => import('./pages/NDA'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 const ImpressumPage = lazy(() => import('./pages/ImpressumPage'));
+const MarketingInfoPage = lazy(() => import('./pages/MarketingInfoPage'));
+
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/home',
+  '/why',
+  '/pitch',
+  '/privacy',
+  '/impressum',
+  '/app',
+  '/anbieter',
+  '/so-funktionierts',
+  '/pre-alpha',
+  '/datenschutz-standort',
+  '/login',
+  '/register',
+  '/tester',
+]);
 
 function DeepLinkRestore() {
   const navigate = useNavigate();
@@ -63,20 +81,11 @@ function BootGuard() {
       const key = localStorage.getItem('stepsmatch_tester_key');
       const accepted = localStorage.getItem('stepsmatch_ndaa_accepted') === '1';
 
-      if (pathname === '/') {
-        if (accepted) {
-          navigate('/home', { replace: true });
-          return;
-        }
-        if (key) {
-          navigate('/nda', { replace: true });
-        }
-        return;
-      }
+      if (PUBLIC_PATHS.has(pathname)) return;
 
       if (pathname === '/nda') {
         if (!key) {
-          navigate('/', { replace: true });
+          navigate('/tester', { replace: true });
           return;
         }
         if (accepted) {
@@ -86,7 +95,7 @@ function BootGuard() {
       }
 
       if (!key) {
-        navigate('/', { replace: true });
+        navigate('/tester', { replace: true });
         return;
       }
 
@@ -131,7 +140,8 @@ const AppRoutes = () => {
       <ScrollToTop />
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<TesterGate />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/tester" element={<TesterGate />} />
           <Route path="/nda" element={<NDA />} />
 
           <Route path="/home" element={<LandingPage />} />
@@ -139,6 +149,7 @@ const AppRoutes = () => {
           <Route path="/pitch" element={<Pitch />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/impressum" element={<ImpressumPage />} />
+          <Route path="/:slug" element={<MarketingInfoPage />} />
 
           <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
           <Route path="/login" element={<Login onLoginSuccess={handleLogin} />} />

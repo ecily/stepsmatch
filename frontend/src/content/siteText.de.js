@@ -2,7 +2,7 @@ const siteTextDe = {
   locale: "de",
   brand: {
     name: "StepsMatch",
-    appCta: "Alpha ansehen",
+    appCta: "App testen",
     appModalTitle: "StepsMatch intern auf dem Handy prüfen",
     appModalBody:
       "Scanne den QR-Code oder lade die App direkt herunter. In der internen Alpha prüfen wir, wie zuverlässig lokale Hinweise auf echten Geräten funktionieren.",
@@ -10,10 +10,10 @@ const siteTextDe = {
     appDownloadUrl: "https://www.stepsmatch.com/apk",
   },
   landing: {
-    title: "StepsMatch | Angebote finden dich",
+    title: "StepsMatch | Angebote finden dich.",
     description:
       "StepsMatch testet standortbasiertes Angebots-Matching: Nähe, Interesse und aktive Angebote entscheiden, wann ein Hinweis relevant ist.",
-    badge: "LOKALES MATCHING",
+    badge: "PRE ALPHA · Raum Graz im Aufbau",
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
@@ -196,9 +196,12 @@ const siteTextDe = {
   footer: {
     legalLabel: "Rechtliches",
     links: [
-      { to: "/home", label: "Start" },
-      { to: "/why", label: "Warum StepsMatch" },
-      { to: "/register", label: "Anbieter" },
+      { to: "/", label: "Start" },
+      { to: "/app", label: "App" },
+      { to: "/so-funktionierts", label: "So funktioniert es" },
+      { to: "/pre-alpha", label: "PRE ALPHA" },
+      { to: "/anbieter", label: "Anbieter" },
+      { to: "/datenschutz-standort", label: "Standort & Datenschutz" },
       { to: "/privacy", label: "Datenschutz" },
       { to: "/impressum", label: "Impressum" },
     ],

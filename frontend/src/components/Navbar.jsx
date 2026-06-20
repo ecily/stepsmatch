@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 
 import { getPreferredSiteText } from "../content/siteContent";
 
@@ -9,7 +9,7 @@ export default function Navbar() {
   return (
     <header className="sm-glass-nav">
       <div className="sm-shell flex h-20 items-center justify-between gap-3 py-2">
-        <Link to="/home" className="inline-flex items-center gap-3" aria-label="StepsMatch Startseite">
+        <Link to="/" className="inline-flex items-center gap-3" aria-label="StepsMatch Startseite">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-900 text-sm font-extrabold text-white shadow-sm">
             SM
           </span>
@@ -19,17 +19,18 @@ export default function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-1 lg:flex">
-          <Link to="/home" className="sm-nav-link">Für Nutzer</Link>
-          <Link to="/why" className="sm-nav-link">Produktkern</Link>
-          <Link to="/register" className="sm-nav-link">Für Anbieter</Link>
+          <NavLink to="/app" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>App</NavLink>
+          <NavLink to="/so-funktionierts" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>So funktioniert es</NavLink>
+          <NavLink to="/pre-alpha" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>PRE ALPHA</NavLink>
+          <NavLink to="/anbieter" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>Anbieter</NavLink>
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link to="/register" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
-            Anbieter starten
+          <Link to="/anbieter" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
+            Anbieter werden
           </Link>
-          <Link to="/home?apk=1" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">
-            {text.brand.appCta}
+          <Link to="/?apk=1" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">
+            App testen
           </Link>
         </div>
       </div>
