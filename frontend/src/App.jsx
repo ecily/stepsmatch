@@ -149,7 +149,6 @@ const AppRoutes = () => {
           <Route path="/pitch" element={<Pitch />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/impressum" element={<ImpressumPage />} />
-          <Route path="/anbieter" element={<Register onRegisterSuccess={handleLogin} />} />
           <Route path="/:slug" element={<MarketingInfoPage />} />
 
           <Route path="/register" element={<Register onRegisterSuccess={handleLogin} />} />
