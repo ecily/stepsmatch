@@ -89,7 +89,6 @@ export default function NavigationScreen() {
   const [showArrivalCard, setShowArrivalCard] = useState(false);
   const [mapType, setMapType] = useState('standard');
   const [startDistance, setStartDistance] = useState(null);
-  const [mapReady, setMapReady] = useState(false);
 
   const mapRef = useRef(null);
   const posSub = useRef(null);
@@ -309,16 +308,6 @@ export default function NavigationScreen() {
         showsMyLocationButton={false}
         rotateEnabled={false}
         onPanDrag={() => setFollow(false)}
-        onMapReady={() => {
-          setMapReady(true);
-          console.log('[map] ready NavigationScreen');
-        }}
-        onMapLoaded={() => {
-          console.log('[map] loaded NavigationScreen');
-        }}
-        onRegionChangeComplete={() => {
-          console.log('[map] region NavigationScreen');
-        }}
       >
         {offerPos ? (
           <Marker coordinate={offerPos} title={offer?.name || 'Ziel'}>
@@ -345,11 +334,6 @@ export default function NavigationScreen() {
           </>
         ) : null}
       </MapView>
-
-      <View style={[styles.debugBadge, { top: insets.top + 8 }]}>
-        <Text style={styles.debugText}>Map debug: NavigationScreen mounted</Text>
-        <Text style={styles.debugText}>mapReady: {mapReady ? 'true' : 'false'}</Text>
-      </View>
 
       <View style={[styles.hudTop, { top: insets.top + 64, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
         <Text style={[styles.offerTitle, { color: t.colors.inkHigh }]} numberOfLines={1}>{offer?.name || 'Navigation'}</Text>
@@ -415,29 +399,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 420,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#2563eb',
   },
   map: {
     ...StyleSheet.absoluteFillObject,
-  },
-  debugBadge: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    borderWidth: 1,
-    borderColor: '#2563eb',
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    zIndex: 20,
-    elevation: 20,
-  },
-  debugText: {
-    color: '#0f172a',
-    fontSize: 12,
-    fontWeight: '800',
   },
   backBtn: {
     marginTop: 12,
