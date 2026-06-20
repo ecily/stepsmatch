@@ -2,11 +2,11 @@
 {
   "expo": {
     "name": "Stepsmatch",
-    "slug": "mobile",
+    "slug": "stepsmatch-mobile",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "mobile",
+    "scheme": "stepsmatch",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
@@ -20,7 +20,7 @@
         "backgroundColor": "#0B3B68"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ecily.mobile",
+      "package": "com.ecily.stepsmatch",
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {

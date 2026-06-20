@@ -29,11 +29,11 @@ if (!DIRECTIONS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist
 module.exports = {
   expo: {
     name: 'Stepsmatch',
-    slug: 'mobile',
+    slug: 'stepsmatch-mobile',
     version: '1.0.1',
     orientation: 'portrait',
     icon: './assets/icon.png',
-    scheme: 'mobile',
+    scheme: 'stepsmatch',
     userInterfaceStyle: 'automatic',
 
     splash: {
@@ -47,7 +47,7 @@ module.exports = {
     },
 
     android: {
-      package: 'com.ecily.mobile',
+      package: 'com.ecily.stepsmatch',
       edgeToEdgeEnabled: true,
 
       adaptiveIcon: {

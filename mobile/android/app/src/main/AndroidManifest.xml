@@ -42,8 +42,8 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="mobile"/>
-        <data android:scheme="exp+mobile"/>
+        <data android:scheme="stepsmatch"/>
+        <data android:scheme="exp+stepsmatch"/>
       </intent-filter>
     </activity>
     <receiver android:name=".heartbeat.BootReceiver" android:enabled="true" android:exported="false">
