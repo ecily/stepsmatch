@@ -26,7 +26,7 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link to="/anbieter" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
+          <Link to="/register" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
             Anbieter werden
           </Link>
           <Link to="/?apk=1" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">

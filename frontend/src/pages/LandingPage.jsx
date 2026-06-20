@@ -179,7 +179,7 @@ export default function LandingPage() {
                 <button onClick={() => setApkOpen(true)} className="sm-btn-primary gap-2">
                   App testen <ArrowRight size={16} />
                 </button>
-                <Link to="/anbieter" className="sm-btn-secondary gap-2">
+                <Link to="/register" className="sm-btn-secondary gap-2">
                   Anbieter werden <Store size={16} />
                 </Link>
                 <Link to="/so-funktionierts" className="sm-btn-ghost gap-2">

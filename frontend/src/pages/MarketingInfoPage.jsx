@@ -31,7 +31,11 @@ const pages = {
       "Vorschau prüfen und klar veröffentlichen",
     ],
     note: "StepsMatch verspricht keine Verkäufe und keine garantierten Besuche. Es geht um relevante Hinweise im passenden lokalen Moment.",
-    cta: { to: "/register", label: "Anbieter werden" },
+    cta: { to: "/register", label: "Anbieter registrieren" },
+    heroActions: [
+      { to: "/register", label: "Anbieter registrieren", variant: "primary" },
+      { to: "/login", label: "Anbieter einloggen", variant: "secondary" },
+    ],
   },
   "so-funktionierts": {
     badge: "So funktioniert StepsMatch",
@@ -95,6 +99,19 @@ export default function MarketingInfoPage() {
             </div>
             <h1 className="mt-5 max-w-4xl text-4xl font-extrabold leading-tight sm:text-5xl lg:text-6xl">{page.title}</h1>
             <p className="sm-section-copy max-w-4xl">{page.lead}</p>
+            {page.heroActions?.length ? (
+              <div className="mt-6 flex flex-wrap gap-3">
+                {page.heroActions.map((action) => (
+                  <Link
+                    key={action.to}
+                    to={action.to}
+                    className={`${action.variant === "primary" ? "sm-btn-primary" : "sm-btn-secondary"} gap-2`}
+                  >
+                    {action.label} <ArrowRight size={16} />
+                  </Link>
+                ))}
+              </div>
+            ) : null}
           </section>
 
           <section className="mt-6 grid gap-4 md:grid-cols-2">
