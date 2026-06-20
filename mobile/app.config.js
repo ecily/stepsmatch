@@ -29,7 +29,7 @@ if (!DIRECTIONS_KEY) console.warn('⚠️  EXPO_PUBLIC_GOOGLE_DIRECTIONS_KEY ist
 module.exports = {
   expo: {
     name: 'Stepsmatch',
-    slug: 'stepsmatch-mobile',
+    slug: 'mobile',
     version: '1.0.1',
     orientation: 'portrait',
     icon: './assets/icon.png',
