@@ -9,6 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 const mapContainerStyle = { width: "100%", height: "320px" };
 const MAX_IMAGES = 3;
+const OFFER_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const isValidLngLat = (lng, lat) =>
   Number.isFinite(lng) &&
@@ -46,7 +47,7 @@ export default function AddOfferForm() {
     subcategory: "",
     description: "",
     radius: 100,
-    validDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    validDays: [...OFFER_DAYS],
     validTimes: { start: "00:00", end: "23:59" },
     validDates: { from: today, to: today },
     contact: "",
@@ -133,6 +134,13 @@ export default function AddOfferForm() {
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
+  };
+
+  const toggleArrayItem = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: prev[field].includes(value) ? prev[field].filter((v) => v !== value) : [...prev[field], value],
+    }));
   };
 
   const handleImageChange = async (e) => {
@@ -330,6 +338,26 @@ export default function AddOfferForm() {
               <div>
                 <label className="sm-label" htmlFor="time-end">Endzeit</label>
                 <input id="time-end" type="time" name="validTimes.end" value={formData.validTimes.end} onChange={handleChange} className="sm-input" />
+              </div>
+            </div>
+
+            <div>
+              <label className="sm-label">Gültige Tage</label>
+              <div className="flex flex-wrap gap-2">
+                {OFFER_DAYS.map((day) => (
+                  <button
+                    type="button"
+                    key={day}
+                    onClick={() => toggleArrayItem("validDays", day)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                      formData.validDays.includes(day)
+                        ? "border-emerald-300 bg-emerald-100 text-emerald-800"
+                        : "border-slate-300 bg-white text-slate-600"
+                    }`}
+                  >
+                    {day.slice(0, 2)}
+                  </button>
+                ))}
               </div>
             </div>
 
