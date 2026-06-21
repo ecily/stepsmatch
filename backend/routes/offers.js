@@ -11,6 +11,7 @@ import cloudinary from '../utils/cloudinary.js';
 
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
 import { sendPushToNearbyTokensForOffer } from '../utils/geoPush.js';
+import { buildActiveDatesMatch } from '../utils/activeDatesPrefilter.js';
 
 const router = express.Router();
 
@@ -188,16 +189,6 @@ router.get('/', async (req, res) => {
       ors.push({ category: { $regex: safe, $options: 'i' } });
     }
     return ors.length ? { $or: ors } : null;
-  }
-
-  function buildActiveDatesMatch(now) {
-    // (validDates.from missing or <= now) AND (validDates.to missing or >= now)
-    return {
-      $and: [
-        { $or: [{ 'validDates.from': { $exists: false } }, { 'validDates.from': { $lte: now } }] },
-        { $or: [{ 'validDates.to': { $exists: false } }, { 'validDates.to': { $gte: now } }] },
-      ],
-    };
   }
 
   function buildPipeline({ hasGeo, lat, lng, maxDistanceM, interestsLC, projection, skip, limit, activeDatesPrefilter }) {
