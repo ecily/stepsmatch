@@ -13,7 +13,11 @@
 1. Build Command: `npm ci && npm run build`
 2. Output Directory: `dist`
 3. Working Directory: `frontend`
-4. Environment Variables:
+4. Static Site Custom Pages:
+   - Set `Catchall` to `index.html` so React Router deep links such as `/anbieter`, `/register`, and `/login` return HTTP 200.
+   - App Spec equivalent: `static_sites[].catchall_document: index.html`.
+   - Do not rely on `frontend/public/_redirects`; DigitalOcean App Platform does not use it as a Netlify-style rewrite rule.
+5. Environment Variables:
    - Use `frontend/.env.example` as template.
    - `VITE_API_BASE_URL` must point to backend `/api`.
 
