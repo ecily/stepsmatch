@@ -6,6 +6,12 @@ Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 
 - Dieses Projekt ist ausschliesslich StepsMatch.com.
 - Keine Vermischung mit Kaufklug oder anderen Projekten.
+- Strategieentscheidung vom 2026-06-21: StepsMatch.com bleibt das technische Labor fuer orts-, zeit- und interessenbasiertes Matching. Es wird nicht als echter Graz-Rollout, lokaler Anbieter-Marktplatz, Dealportal, Camino-App oder Pilgerprodukt positioniert. Zweck sind technische Validierung, Field-Tests, Logging und UX-Erkenntnisse.
+- Ultreia.app ist ein spaeteres, eigenstaendiges Produkt fuer Camino-Pilger mit eigenem Repo/Kontext, eigener Marke, eigenen Daten, eigener Produktlogik und eigenen Entscheidungen. StepsMatch darf nur bewaehrte technische Bausteine und Erkenntnisse liefern; keine Ultreia-spezifischen Commits, Deploys, Daten, Kategorien, Pilger-Sprache, Camino-Daten oder Branding-Aenderungen in StepsMatch.
+- Graz/Judendorf-Tests sind Pre-Beta-/Labor-Field-Tests mit wenigen Freunden, klar gekennzeichneten Demo-Angeboten/Testhinweisen und ohne falsche Anbieterclaims, ungekennzeichnete Fake-Angebote, fremde Logos/Bilder ohne Rechte, Verkaufsversprechen oder Partner-/Umsatzversprechen.
+- Labor-Erfolg bedeutet technische Stabilitaet, Push-Relevanz, nachvollziehbare Match-Entscheidungen, verstaendliche UX, keine Spam-Wahrnehmung und auswertbare Logs; nicht Anbieter-, Markt- oder Umsatznachweis.
+- Technische Laborprioritaeten: Logging der Match-/Push-Kette, Push-/Notification-Haertung, User/PushToken-Kopplung, NotificationLogs/Push-Receipts, Match-/Nicht-Match-Reasons, Demo-Content-Kennzeichnung, Push-Frequenzkontrolle/Anti-Spam, Feed-Retry/Fehlerdiagnose, Battery-/Heartbeat-Beobachtung und UX-Klarheit fuer Tester.
+- Fuer kommende Tests sollen Nutzer/Device pseudonymisiert, aktive Interessen, Standortkontext, Kandidaten im Radius, Match-/Nicht-Match-Grund, Entfernung, Zeitfenster, App-Zustand, Push/Local-Notification-Ausloesung oder Unterdrueckung, Duplicate Suppression, Rate Limiting, Offer-Oeffnung, Karte, Directions, Network Errors, Heartbeat-Zustand, PushToken-Zustand und Notification Receipts soweit verfuegbar nachvollziehbar sein.
 - Lokaler Pfad: `C:\coding\stepsmatch`
 - Repo/Remote: `origin https://github.com/ecily/stepsmatch.git`
 - Branch: `main` tracking `origin/main` ohne sichtbaren ahead/behind-Hinweis im Status.
