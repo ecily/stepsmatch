@@ -1,12 +1,13 @@
 # StepsMatch.com - Projektkontext
 
-Stand: 2026-06-17, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
+Stand: 2026-06-23, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
 
 ## 1. Projektgrenzen
 
 - Dieses Projekt ist ausschliesslich StepsMatch.com.
 - Keine Vermischung mit Kaufklug oder anderen Projekten.
 - Strategieentscheidung vom 2026-06-21: StepsMatch.com bleibt das technische Labor fuer orts-, zeit- und interessenbasiertes Matching. Es wird nicht als echter Graz-Rollout, lokaler Anbieter-Marktplatz, Dealportal, Camino-App oder Pilgerprodukt positioniert. Zweck sind technische Validierung, Field-Tests, Logging und UX-Erkenntnisse.
+- Consent-first Onboarding-Journey als erster Architektur-Schritt dokumentiert in `docs/STEPSMATCH_CONSENT_ONBOARDING.md`. StepsMatch bleibt neutral fuer lokale interessenbasierte Hinweise/Angebote in Graz und Umgebung. Standort, Background Location und Push duerfen erst nach klarer Erklaerung abgefragt werden; die Journey umfasst Willkommen, Interessen, Standort, Push, Hintergrundstandort und Statusscreen. Noch kein Code.
 - Ultreia.app ist ein spaeteres, eigenstaendiges Produkt fuer Camino-Pilger mit eigenem Repo/Kontext, eigener Marke, eigenen Daten, eigener Produktlogik und eigenen Entscheidungen. StepsMatch darf nur bewaehrte technische Bausteine und Erkenntnisse liefern; keine Ultreia-spezifischen Commits, Deploys, Daten, Kategorien, Pilger-Sprache, Camino-Daten oder Branding-Aenderungen in StepsMatch.
 - Graz/Judendorf-Tests sind Pre-Beta-/Labor-Field-Tests mit wenigen Freunden, klar gekennzeichneten Demo-Angeboten/Testhinweisen und ohne falsche Anbieterclaims, ungekennzeichnete Fake-Angebote, fremde Logos/Bilder ohne Rechte, Verkaufsversprechen oder Partner-/Umsatzversprechen.
 - Labor-Erfolg bedeutet technische Stabilitaet, Push-Relevanz, nachvollziehbare Match-Entscheidungen, verstaendliche UX, keine Spam-Wahrnehmung und auswertbare Logs; nicht Anbieter-, Markt- oder Umsatznachweis.
