@@ -46,6 +46,7 @@ const providerSchema = new Schema(
     subcategory: { type: String, trim: true },
 
     description: { type: String, trim: true },
+    radiusMeters: { type: Number, min: 1, default: 250 },
     contact: {
       phone: { type: String, trim: true },
       email: { type: String, trim: true },

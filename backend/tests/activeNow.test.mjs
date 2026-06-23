@@ -42,8 +42,27 @@ test('validTimes still restrict active offers', () => {
   assert.equal(isOfferActiveNow(offer({ validTimes: { from: '13:00', to: '14:00' } }), TZ, noonVienna), false);
 });
 
+test('activeTimeWindows alias restricts active offers', () => {
+  assert.equal(isOfferActiveNow(offer({ validTimes: undefined, activeTimeWindows: [{ from: '13:00', to: '14:00' }] }), TZ, noonVienna), false);
+});
+
 test('validDays still restrict active offers', () => {
   assert.equal(isOfferActiveNow(offer({ validDays: ['Monday'] }), TZ, noonVienna), false);
+});
+
+test('activeDays alias restricts active offers', () => {
+  assert.equal(isOfferActiveNow(offer({ validDays: undefined, activeDays: ['Monday'] }), TZ, noonVienna), false);
+});
+
+test('validFrom and validTo aliases restrict active offers', () => {
+  assert.equal(
+    isOfferActiveNow(
+      offer({ validDates: {}, validFrom: new Date('2026-06-20T00:00:00.000Z'), validTo: new Date('2026-06-20T00:00:00.000Z') }),
+      TZ,
+      noonVienna
+    ),
+    false
+  );
 });
 
 test('activeNow prefilter keeps date-only offers valid today', () => {

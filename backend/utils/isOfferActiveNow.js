@@ -72,7 +72,9 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   const { weekdayIdx, minutes } = getLocalNowParts(now);
   const dayList = Array.isArray(offer.validDays) && offer.validDays.length
     ? offer.validDays
-    : (Array.isArray(offer.weekdays) ? offer.weekdays : []);
+    : (Array.isArray(offer.activeDays) && offer.activeDays.length
+      ? offer.activeDays
+      : (Array.isArray(offer.weekdays) ? offer.weekdays : []));
 
   if (dayList.length > 0) {
     const toIdx = (x) => {
@@ -101,7 +103,10 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   }
 
   // 2) Uhrzeit inkl. Nachtfenster
-  const vtRaw = offer.validTimes || offer.times || {};
+  const firstActiveTimeWindow = Array.isArray(offer.activeTimeWindows)
+    ? offer.activeTimeWindows.find((w) => w && (w.from || w.to || w.start || w.end))
+    : null;
+  const vtRaw = offer.validTimes || firstActiveTimeWindow || offer.times || {};
   const fromStr = vtRaw.from ?? vtRaw.start ?? null;
   const toStr   = vtRaw.to   ?? vtRaw.end   ?? null;
 
@@ -123,8 +128,8 @@ export function isOfferActiveNow(offer, timeZone = 'Europe/Vienna', now = new Da
   // 3) Datumsfenster inkl. Einzeltag (inklusive Grenzen)
   const vd = (offer.validDates && typeof offer.validDates === 'object') ? offer.validDates : {};
   const single = vd.date ?? vd.on ?? offer.validOn ?? offer.date;
-  const fromRaw = vd.from ?? vd.start ?? (single ?? null);
-  const toRaw   = vd.to   ?? vd.end   ?? (single ?? null);
+  const fromRaw = offer.validFrom ?? vd.from ?? vd.start ?? (single ?? null);
+  const toRaw   = offer.validTo   ?? vd.to   ?? vd.end   ?? (single ?? null);
 
   if (fromRaw || toRaw) {
     const nowYMD  = getYMD(now);

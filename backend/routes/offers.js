@@ -12,6 +12,7 @@ import cloudinary from '../utils/cloudinary.js';
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
 import { sendPushToNearbyTokensForOffer } from '../utils/geoPush.js';
 import { buildActiveDatesMatch } from '../utils/activeDatesPrefilter.js';
+import { POLICY_FIELDS, buildVisibleOfferMatch, isOfferVisibleInApp } from '../utils/offerPolicy.js';
 
 const router = express.Router();
 
@@ -99,6 +100,38 @@ function isHHMM(s) {
 
 // Normalisiert eingehende Offer-Payload sanft (mutiert obj)
 function normalizeOfferPayload(obj = {}) {
+  if (obj.radiusMeters !== undefined && obj.radius === undefined) {
+    obj.radius = Number(obj.radiusMeters);
+  }
+  if (obj.validFrom !== undefined || obj.validTo !== undefined) {
+    obj.validDates = {
+      ...(obj.validDates || {}),
+      ...(obj.validFrom !== undefined ? { from: new Date(obj.validFrom) } : {}),
+      ...(obj.validTo !== undefined ? { to: new Date(obj.validTo) } : {}),
+    };
+  }
+  if (Array.isArray(obj.activeDays) && !Array.isArray(obj.validDays)) {
+    obj.validDays = obj.activeDays;
+  }
+  if (Array.isArray(obj.activeTimeWindows) && obj.activeTimeWindows.length && !obj.validTimes) {
+    const first = obj.activeTimeWindows.find((w) => w && (w.from || w.to || w.start || w.end));
+    if (first) {
+      obj.validTimes = {
+        from: first.from ?? first.start ?? null,
+        to: first.to ?? first.end ?? null,
+      };
+    }
+  }
+  if (Array.isArray(obj.activeTimeWindows)) {
+    obj.activeTimeWindows = obj.activeTimeWindows
+      .map((w) => ({
+        from: w?.from ?? w?.start ?? null,
+        to: w?.to ?? w?.end ?? null,
+      }))
+      .filter((w) => w.from || w.to);
+    if (obj.activeTimeWindows.length === 0) delete obj.activeTimeWindows;
+  }
+
   // validTimes: akzeptiere start/end → from/to
   const vt = obj.validTimes || obj.times || {};
   const from = vt.from ?? vt.start ?? null;
@@ -212,6 +245,16 @@ router.get('/', async (req, res) => {
       pipeline.push({ $match: activeDatesPrefilter });
     }
 
+    pipeline.push({ $match: buildVisibleOfferMatch() });
+    if (hasGeo) {
+      pipeline.push({
+        $match: {
+          radius: { $gt: 0 },
+          $expr: { $lte: ['$distance', '$radius'] },
+        },
+      });
+    }
+
     const interestsClause = buildInterestsOrClause(interestsLC);
     if (interestsClause) pipeline.push({ $match: interestsClause });
 
@@ -230,6 +273,7 @@ router.get('/', async (req, res) => {
       validDates: 1,
       provider: 1,
     };
+    for (const field of POLICY_FIELDS) baseProject[field] = 1;
 
     // distance nicht verlieren
     if (hasGeo) baseProject.distance = 1;
@@ -374,7 +418,9 @@ router.post('/nearby', async (req, res) => {
           spherical: true,
         },
       },
+      { $match: buildVisibleOfferMatch() },
       { $match: { radius: { $gt: 0 }, subcategory: { $exists: true, $ne: null } } },
+      { $match: { $expr: { $lte: ['$distanceMeters', '$radius'] } } },
       { $addFields: { sub_lc: { $toLower: '$subcategory' } } },
       { $match: { sub_lc: { $in: norm } } },
       {
@@ -387,6 +433,7 @@ router.post('/nearby', async (req, res) => {
       subcategoryId: 1,
           location: 1,
           radius: 1,
+          ...Object.fromEntries(POLICY_FIELDS.map((field) => [field, 1])),
           images: { $slice: ['$images', 3] },
           distanceMeters: { $round: ['$distanceMeters', 0] },
         },
@@ -422,7 +469,9 @@ router.post('/nearby-noauth', async (req, res) => {
           spherical: true,
         },
       },
+      { $match: buildVisibleOfferMatch() },
       { $match: { radius: { $gt: 0 } } },
+      { $match: { $expr: { $lte: ['$distanceMeters', '$radius'] } } },
       {
         $project: {
           name: 1,
@@ -433,6 +482,7 @@ router.post('/nearby-noauth', async (req, res) => {
       subcategoryId: 1,
           location: 1,
           radius: 1,
+          ...Object.fromEntries(POLICY_FIELDS.map((field) => [field, 1])),
           images: { $slice: ['$images', 3] },
           distanceMeters: { $round: ['$distanceMeters', 0] },
         },
@@ -473,6 +523,7 @@ router.get('/nearby-geofence', async (req, res) => {
             maxDistance: maxDistance,
           },
         },
+        { $match: buildVisibleOfferMatch() },
         {
           $project: {
             _id: 1,
@@ -480,6 +531,7 @@ router.get('/nearby-geofence', async (req, res) => {
             distanceMeters: 1,
             longitude: { $arrayElemAt: ['$location.coordinates', 0] },
             latitude: { $arrayElemAt: ['$location.coordinates', 1] },
+            ...Object.fromEntries(POLICY_FIELDS.map((field) => [field, 1])),
           },
         },
         {
@@ -505,7 +557,7 @@ router.get('/nearby-geofence', async (req, res) => {
     } catch (aggErr) {
       // 2) Fallback: Node.js Haversine
       console.warn('nearby-geofence: $geoNear nicht verfügbar, Fallback auf Node-Berechnung:', aggErr?.message);
-      const allOffers = await Offer.find({}, 'location radius').lean();
+      const allOffers = await Offer.find(buildVisibleOfferMatch(), `location radius ${POLICY_FIELDS.join(' ')}`).lean();
       const userLoc = { lat, lng };
 
       const filtered = allOffers
@@ -581,7 +633,7 @@ router.get('/provider/:providerId', async (req, res) => {
   try {
     const offers = await Offer.find(
       { provider: req.params.providerId },
-      'name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates images'
+      `name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates images ${POLICY_FIELDS.join(' ')}`
     )
       .populate('categoryId', 'name slug')
       .populate('subcategoryId', 'name slug category');
@@ -607,7 +659,7 @@ router.get('/:id', async (req, res) => {
 
     let q = Offer.findById(
       req.params.id,
-      'name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates provider images'
+      `name description category subcategory categoryId subcategoryId location radius validDays validTimes validDates provider images ${POLICY_FIELDS.join(' ')}`
     )
       .populate('categoryId', 'name slug')
       .populate('subcategoryId', 'name slug category');
@@ -618,6 +670,7 @@ router.get('/:id', async (req, res) => {
 
     const offer = await q.lean();
     if (!offer) return res.status(404).json({ error: 'Angebot nicht gefunden' });
+    if (!isOfferVisibleInApp(offer)) return res.status(404).json({ error: 'Angebot nicht gefunden' });
 
     res.json({
       ...offer,

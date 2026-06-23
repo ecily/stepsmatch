@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from './push.js'; // robust mit Receipts/Retry/Disable
-import { isOfferActiveNow } from './isOfferActiveNow.js';
+import { getOfferCooldownMs, isOfferMatchableForPush } from './offerPolicy.js';
 import {
   NEARBY_ATTENTION_CHANNEL_CONFIG,
   NEARBY_ATTENTION_CHANNEL_ID,
@@ -119,9 +119,10 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
     for (const delayMs of FRESH_RETRY_DELAYS_MS) {
       setTimeout(async () => {
         try {
-          const stillActive = isOfferActiveNow(offer, 'Europe/Vienna', new Date());
-          if (!stillActive) {
-            console.log('[geoPush.retry] offer no longer active -> skip', String(offer?._id || ''));
+          const retryNow = new Date();
+          const stillPushable = isOfferMatchableForPush(offer, { timeZone: 'Europe/Vienna', now: retryNow });
+          if (!stillPushable) {
+            console.log('[geoPush.retry] offer no longer pushable -> skip', String(offer?._id || ''));
             return;
           }
 
@@ -181,7 +182,8 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
           if (okTokens.length) {
             const okDocs = await PushToken.find({ token: { $in: okTokens } }, { _id: 1, token: 1 }).lean();
             const nowOk = new Date();
-            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowOk.getTime() + RENOTIFY_COOLDOWN_MS) : null;
+            const cooldownMs = getOfferCooldownMs(offer, RENOTIFY_COOLDOWN_MS);
+            const suppressUntil = cooldownMs > 0 ? new Date(nowOk.getTime() + cooldownMs) : null;
             const bulk = okDocs.map((d) => ({
               updateOne: {
                 filter: { offerId: offer._id, deviceToken: d._id },
@@ -247,10 +249,17 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       return { ok: false, reason: 'offer-has-no-radius' };
     }
 
-    const active = isOfferActiveNow(offer, 'Europe/Vienna', now);
-    if (!active) {
-      logDiag(offer, 'early-exit', { reason: 'offer-not-active', now: now.toISOString() });
-      return { ok: false, reason: 'offer-not-active' };
+    const pushable = isOfferMatchableForPush(offer, { timeZone: 'Europe/Vienna', now });
+    if (!pushable) {
+      logDiag(offer, 'early-exit', {
+        reason: 'offer-policy-blocked',
+        publicVisibility: offer?.publicVisibility ?? null,
+        pushEligibility: offer?.pushEligibility ?? null,
+        suggestedPushPriority: offer?.suggestedPushPriority ?? null,
+        geoValidity: offer?.geoValidity ?? null,
+        now: now.toISOString(),
+      });
+      return { ok: false, reason: 'offer-policy-blocked' };
     }
 
     // 1) Frische Tokens
@@ -479,7 +488,8 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       const sentDocs = await PushToken.find({ token: { $in: sentTokens } }, { _id: 1, token: 1 }).lean();
       const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
       const nowIso = new Date();
-      const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowIso.getTime() + RENOTIFY_COOLDOWN_MS) : null;
+      const cooldownMs = getOfferCooldownMs(offer, RENOTIFY_COOLDOWN_MS);
+      const suppressUntil = cooldownMs > 0 ? new Date(nowIso.getTime() + cooldownMs) : null;
       const bulk = sentTokens
         .map((tok) => {
           const deviceTokenId = byToken.get(tok);

@@ -4,7 +4,7 @@ import Offer from '../models/Offer.js';
 import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js'; // robuste Diagnose-Variante
-import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // TZ-sicher
+import { POLICY_FIELDS, buildPushEligibleOfferMatch, getOfferCooldownMs, isOfferMatchableForPush } from '../utils/offerPolicy.js';
 import {
   NEARBY_ATTENTION_CHANNEL_CONFIG,
   NEARBY_ATTENTION_CHANNEL_ID,
@@ -201,6 +201,7 @@ export function startOfferPoller() {
       // Kandidaten: nur Offers mit Geo & Radius > 0 und (neu/aktualisiert im Fenster oder im Datumsfenster gültig)
       const since = new Date(Date.now() - NEW_OFFER_WINDOW_MS);
       const candidateOffers = await Offer.find({
+        ...buildPushEligibleOfferMatch(),
         radius: { $gt: 0 },
         'location.coordinates.0': { $type: 'number' },
         'location.coordinates.1': { $type: 'number' },
@@ -215,10 +216,10 @@ export function startOfferPoller() {
           },
         ],
       })
-        .select('_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired updatedAt createdAt')
+        .select(`_id name location radiusMeters radius validDates validTimes validDays weekdays category subcategory interestsRequired updatedAt createdAt ${POLICY_FIELDS.join(' ')}`)
         .lean();
 
-      const activeOffers = candidateOffers.filter((o) => isOfferActiveNow(o, TZ, now));
+      const activeOffers = candidateOffers.filter((o) => isOfferMatchableForPush(o, { timeZone: TZ, now }));
 
       // Tokens mit frischer Location (ggf. Project-Scope)
       const freshSince = new Date(Date.now() - LAST_LOCATION_MAX_AGE_MS);
@@ -363,7 +364,8 @@ export function startOfferPoller() {
             const byToken = new Map(sentDocs.map((d) => [d.token, d._id]));
             const nowIso = new Date();
             const bulk = [];
-            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(nowIso.getTime() + RENOTIFY_COOLDOWN_MS) : null;
+            const cooldownMs = getOfferCooldownMs(offer, RENOTIFY_COOLDOWN_MS);
+            const suppressUntil = cooldownMs > 0 ? new Date(nowIso.getTime() + cooldownMs) : null;
             for (const tok of sentTokens) {
               const deviceTokenId = byToken.get(tok);
               if (!deviceTokenId) continue;

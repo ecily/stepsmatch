@@ -6,7 +6,14 @@ import PushToken from '../models/PushToken.js';
 import Offer from '../models/Offer.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js';
-import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
+import {
+  POLICY_FIELDS,
+  buildVisibleOfferMatch,
+  getOfferCooldownMs,
+  isOfferMatchableForPush,
+  isOfferMatchableInApp,
+  isOfferPushEligible,
+} from '../utils/offerPolicy.js';
 import {
   NEARBY_ATTENTION_CHANNEL_CONFIG,
   NEARBY_ATTENTION_CHANNEL_ID,
@@ -139,9 +146,9 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
       setTimeout(async () => {
         try {
           const now = new Date();
-          const stillActive = isOfferActiveNow(offer, TZ, now);
-          if (!stillActive) {
-            console.log('[hb-retry] offer not active anymore -> skip', String(offer?._id || ''));
+          const stillPushable = isOfferMatchableForPush(offer, { timeZone: TZ, now });
+          if (!stillPushable) {
+            console.log('[hb-retry] offer no longer pushable -> skip', String(offer?._id || ''));
             return;
           }
 
@@ -207,11 +214,12 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
           const ok = tickets.some(t => t?.status === 'ok');
 
           if (ok) {
+            const cooldownMs = getOfferCooldownMs(offer, RENOTIFY_COOLDOWN_MS);
             await OfferVisibility.updateOne(
               { offerId: offer._id, deviceToken: tokenDoc._id },
               {
                 $setOnInsert: { offerId: offer._id, deviceToken: tokenDoc._id, firstSeenAt: now },
-                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, ...(RENOTIFY_COOLDOWN_MS > 0 ? { suppressUntil: new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) } : { suppressUntil: null }) },
+                $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, ...(cooldownMs > 0 ? { suppressUntil: new Date(now.getTime() + cooldownMs) } : { suppressUntil: null }) },
               },
               { upsert: true }
             );
@@ -240,7 +248,7 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
   }
 }
 
-function shouldNotifyDoc(doc, now = new Date()) {
+function shouldNotifyDoc(doc, now = new Date(), cooldownMs = RENOTIFY_COOLDOWN_MS) {
   if (!doc) return true;
   if (doc.status === 'dismissed') return false;
   if (doc.status === 'snoozed') return !!doc.remindAt && doc.remindAt <= now;
@@ -262,7 +270,7 @@ function shouldNotifyDoc(doc, now = new Date()) {
     if (!doc.lastNotifiedAt) return false;
     const t = new Date(doc.lastNotifiedAt).getTime();
     if (!Number.isFinite(t)) return false;
-    if (now.getTime() - t >= RENOTIFY_COOLDOWN_MS) return true;
+    if (now.getTime() - t >= cooldownMs) return true;
     return canReenterOverride();
   }
 
@@ -378,17 +386,19 @@ router.post('/heartbeat', async (req, res) => {
               interestsRequired: 1,
               category: 1,
               subcategory: 1,
+              ...Object.fromEntries(POLICY_FIELDS.map((field) => [field, 1])),
               distanceMeters: 1
             }
           },
+          { $match: buildVisibleOfferMatch() },
           { $sort: { distanceMeters: 1 } },
           { $limit: 100 }
         ]);
       } catch (aggErr) {
         // fallback ohne $geoNear
         const all = await Offer.find(
-          {},
-          'name location radius validDays validTimes validDates interestsRequired category subcategory'
+          buildVisibleOfferMatch(),
+          `name location radius validDays validTimes validDates interestsRequired category subcategory ${POLICY_FIELDS.join(' ')}`
         ).lean();
         rows = all
           .filter(o => Array.isArray(o?.location?.coordinates) && o.location.coordinates.length === 2)
@@ -424,13 +434,13 @@ router.post('/heartbeat', async (req, res) => {
       if (insideDocs.length) {
         const insideOffers = await Offer.find(
           { _id: { $in: insideDocs.map(v => v.offerId) } },
-          'name location radius validDays validTimes validDates interestsRequired category subcategory'
+          `name location radius validDays validTimes validDates interestsRequired category subcategory ${POLICY_FIELDS.join(' ')}`
         ).lean();
         const insideMap = new Map(insideOffers.map(o => [String(o._id), o]));
         for (const doc of insideDocs) {
           const o = insideMap.get(String(doc.offerId));
           if (!o) continue;
-          if (!isOfferActiveNow(o, TZ, now)) {
+          if (!isOfferMatchableInApp(o, { timeZone: TZ, now })) {
             bulk.push({
               updateOne: {
                 filter: { offerId: o._id, deviceToken: pushTokenDoc._id },
@@ -461,7 +471,7 @@ router.post('/heartbeat', async (req, res) => {
 
       for (const o of rows) {
         try {
-          if (!isOfferActiveNow(o, TZ, now)) continue;
+          if (!isOfferMatchableInApp(o, { timeZone: TZ, now })) continue;
           const coords = o?.location?.coordinates || [];
           const [olng, olat] = coords;
           if (!isValidNumber(olng) || !isValidNumber(olat)) continue;
@@ -525,7 +535,9 @@ router.post('/heartbeat', async (req, res) => {
       if (enterCandidates.length) {
         for (const x of enterCandidates) {
           const vis = x.vis || null;
-          if (!shouldNotifyDoc(vis, now)) continue;
+          if (!isOfferPushEligible(x.offer)) continue;
+          const cooldownMs = getOfferCooldownMs(x.offer, RENOTIFY_COOLDOWN_MS);
+          if (!shouldNotifyDoc(vis, now, cooldownMs)) continue;
 
           const title = x.offer.name || 'Angebot in deiner Nähe';
           const body = 'Tippe, um Details zu sehen.';
@@ -557,7 +569,7 @@ router.post('/heartbeat', async (req, res) => {
           const okFirst = tickets.some(t => t?.status === 'ok');
 
           if (okFirst) {
-            const suppressUntil = RENOTIFY_COOLDOWN_MS > 0 ? new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) : null;
+            const suppressUntil = cooldownMs > 0 ? new Date(now.getTime() + cooldownMs) : null;
             await OfferVisibility.updateOne(
               { offerId: x.offer._id, deviceToken: pushTokenDoc._id },
               {
@@ -675,9 +687,9 @@ router.post('/geofence-enter', async (req, res) => {
     if (!offer) return res.status(404).json({ ok: 0, error: 'offer_not_found' });
 
     const now = new Date();
-    if (!isOfferActiveNow(offer, TZ, now)) {
-      console.log('[geofence-enter] offer not active now, record only', offerId);
-      return res.json({ ok: 1, pushed: 0, recorded: 1, reason: 'offer_not_active' });
+    if (!isOfferMatchableInApp(offer, { timeZone: TZ, now })) {
+      console.log('[geofence-enter] offer not matchable now, record only', offerId);
+      return res.json({ ok: 1, pushed: 0, recorded: 0, reason: 'offer_not_matchable' });
     }
 
     // Ziel-Token bestimmen (jüngster aktiver Token je deviceId / Fallback: rawToken)
@@ -707,11 +719,12 @@ router.post('/geofence-enter', async (req, res) => {
 
     // Sichtbarkeit / Duplikatschutz markieren (ohne Remote-Push)
     if (targetDoc?._id) {
+      const cooldownMs = getOfferCooldownMs(offer, RENOTIFY_COOLDOWN_MS);
       await OfferVisibility.updateOne(
         { offerId: offer._id, deviceToken: targetDoc._id },
         {
           $setOnInsert: { offerId: offer._id, deviceToken: targetDoc._id, firstSeenAt: now },
-          $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, lastEnterAt: now, lastReason: 'geofence-enter', ...(RENOTIFY_COOLDOWN_MS > 0 ? { suppressUntil: new Date(now.getTime() + RENOTIFY_COOLDOWN_MS) } : { suppressUntil: null }) },
+          $set: { status: 'notified', lastNotifiedAt: now, updatedAt: now, remindAt: null, inside: true, lastEnterAt: now, lastReason: 'geofence-enter', ...(cooldownMs > 0 ? { suppressUntil: new Date(now.getTime() + cooldownMs) } : { suppressUntil: null }) },
         },
         { upsert: true }
       );
