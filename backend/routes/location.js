@@ -7,6 +7,11 @@ import Offer from '../models/Offer.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js';
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js';
+import {
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+} from '../utils/notificationChannels.js';
 
 const router = Router();
 
@@ -116,10 +121,7 @@ const SERVER_TOLERANCE_M = Number(process.env.SERVER_TOLERANCE_M ?? 5);
 const EXIT_BUFFER_M = Number(process.env.EXIT_BUFFER_M ?? 30);
 const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
 const REENTRY_MIN_GAP_MS = envMs('REENTRY_MIN_GAP_MS', 5 * 60 * 1000);
-const PUSH_CHANNEL_ID =
-  process.env.EXPO_PUSH_CHANNEL_ID ||
-  process.env.PUSH_CHANNEL_ID ||
-  'offers-v2';
+const PUSH_CHANNEL_ID = NEARBY_ATTENTION_CHANNEL_ID;
 const PUSH_CATEGORY_ID = process.env.PUSH_CATEGORY_ID || 'offer-go-v2';
 
 // Fresh-Token Retry Delays (ms), default: 90s, 5min
@@ -184,6 +186,9 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
             offerId: String(offer._id),
             route: `/offers/${offer._id}`,
             source: 'heartbeat-retry',
+            channelId: PUSH_CHANNEL_ID,
+            channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+            channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
             deviceId: tokenDoc?.deviceId || null,
             tokenId: String(tokenDoc?._id),
           };
@@ -218,6 +223,10 @@ function scheduleHeartbeatRetries({ offer, pushTokenId, tokenString }) {
           }
 
           const summary = diagRetry?.receipts?.summary || {};
+          console.log(
+            `[notify] strongNearby channel=${PUSH_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+              `source=heartbeat-retry reason=retry offer=${offer._id}`
+          );
           console.log(
             `[hb-retry] offer=${offer._id} token=${String(tokenDoc.token).slice(0,22)}… ok=${ok ? 1 : 0} receipts=${JSON.stringify(summary)}`
           );
@@ -525,6 +534,9 @@ router.post('/heartbeat', async (req, res) => {
             offerId: String(x.offer._id),
             route: `/offers/${x.offer._id}`,
             source: 'heartbeat',
+            channelId: PUSH_CHANNEL_ID,
+            channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+            channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
             deviceId: pushTokenDoc.deviceId || null,
             tokenId: String(pushTokenDoc._id),
           };
@@ -573,6 +585,10 @@ router.post('/heartbeat', async (req, res) => {
           }
 
           const summary = diag?.receipts?.summary || {};
+          console.log(
+            `[notify] strongNearby channel=${PUSH_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+              `source=heartbeat reason=enter offer=${x.offer._id}`
+          );
           console.log(
             `[hb-geofence] offer=${x.offer._id} tried=1 sentOk=${okFirst ? 1 : 0} receipts=${JSON.stringify(summary)}`
           );

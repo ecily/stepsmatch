@@ -5,6 +5,11 @@ import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js'; // robuste Diagnose-Variante
 import { isOfferActiveNow } from '../utils/isOfferActiveNow.js'; // TZ-sicher
+import {
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+} from '../utils/notificationChannels.js';
 
 /* ───────── Helpers ───────── */
 function envMs(name, def) {
@@ -68,10 +73,7 @@ const SEARCH_BUFFER = Math.max(ACCURACY_BUFFER_MAX, ACCURACY_TOKEN_CAP);
 const TZ = 'Europe/Vienna';
 
 // Push-Defaults (müssen zur App passen)
-const PUSH_CHANNEL_ID =
-  process.env.EXPO_PUSH_CHANNEL_ID ||
-  process.env.PUSH_CHANNEL_ID ||
-  'offers-v2';
+const PUSH_CHANNEL_ID = NEARBY_ATTENTION_CHANNEL_ID;
 const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
 const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
 const RENOTIFY_COOLDOWN_MS = envMs('GEOFENCE_RENOTIFY_COOLDOWN_MS', 2 * 60 * 60 * 1000);
@@ -323,6 +325,9 @@ export function startOfferPoller() {
             offerId: String(offer._id),
             route: `/offers/${offer._id}`,
             source: 'poller',
+            channelId: PUSH_CHANNEL_ID,
+            channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+            channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
           };
 
           const diag = await sendPushAndCheckReceipts({
@@ -384,6 +389,10 @@ export function startOfferPoller() {
 
           // Logging
           const summary = diag?.receipts?.summary || {};
+          console.log(
+            `[notify] strongNearby channel=${PUSH_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+              `source=offerPoller reason=poller offer=${offer._id}`
+          );
           console.log(
             `[offerPoller][batch] offer=${offer._id} tried=${tokens.length} sentOk=${sentTokens.length} ` +
               `disabled=${disabledCount} invalid=${(diag?.invalid || []).length} ` +

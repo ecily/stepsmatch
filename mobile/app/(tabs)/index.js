@@ -26,6 +26,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
+import { NEARBY_ATTENTION_CHANNEL_ID } from '../../components/push/push-constants';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
@@ -498,7 +499,7 @@ export default function HomeTab() {
                   token: expoToken,
                   platform: Platform.OS === 'ios' ? 'ios' : 'android',
                   eventType: 'enter',
-                  channelId: 'offers',
+                  channelId: NEARBY_ATTENTION_CHANNEL_ID,
                 }).catch(() => {});
 
                 postsThisReload += 1;

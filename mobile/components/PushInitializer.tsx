@@ -12,6 +12,12 @@ import Constants from 'expo-constants';
 import { isOfferActiveNow as _isOfferActiveNow } from '../utils/isOfferActiveNow';
 import { csvToSet, matchesInterests as _matchesInterests } from '../utils/interests';
 import { getServiceState, isServiceActive, isServiceActiveNow, isStoppedUntilRestartNow } from './push/service-control';
+import {
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+  STRONG_PATTERN,
+} from './push/push-constants';
 
 // ────────────────────────────────────────────────────────────
 // Notification handler
@@ -66,8 +72,7 @@ const RAW_FG_CHANNEL_ID: string =
   EXTRA?.fgChannelId || 'com.ecily.mobile:stepsmatch-bg-location-task';
 const FG_CHANNEL_ID: string = sanitizeChannelId(RAW_FG_CHANNEL_ID, 'stepsmatch-bg-location-task');
 
-const OFFER_CHANNEL_ID: string =
-  EXTRA?.offerChannelId || 'offers-v2';
+const OFFER_CHANNEL_ID: string = NEARBY_ATTENTION_CHANNEL_ID;
 const BG_LOCATION_TASK: string =
   EXTRA?.bgLocationTask || 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK: string =
@@ -134,7 +139,6 @@ const RESOLVED_PROJECT_ID =
 
 // UI / Channels
 const BRAND_BLUE = '#0d4ea6';
-const STRONG_PATTERN = [0, 450, 180, 900, 300, 1200];
 
 // FGS-Text exakt wie im Manifest (für ADB-Grep & MIUI)
 const FGS_NOTIFICATION_TITLE = 'StepsMatch ist aktiv';
@@ -485,16 +489,16 @@ async function ensureChannels() {
 
     // Offers (primary)
     await Notifications.setNotificationChannelAsync(OFFER_CHANNEL_ID, {
-      name: 'Offers',
+      name: 'Nearby matches',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'arrival' as any,
+      sound: 'default' as any,
       vibrationPattern: STRONG_PATTERN,
       enableVibrate: true as any,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableLights: true as any,
       lightColor: BRAND_BLUE as any,
       showBadge: true,
-      description: 'Sofort-Push bei passenden Angeboten in deiner Nähe',
+      description: 'Starker Hinweis bei passenden Angeboten in deiner Naehe',
     } as any);
 
     // Optionaler Legacy-Alias
@@ -841,11 +845,22 @@ async function presentLocalOfferNotification(
     await safePresentNotification({
       title: header[0],
       body,
-      data: { offerId, source, t: now } as any,
+      data: {
+        offerId,
+        source,
+        channelId: OFFER_CHANNEL_ID,
+        channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+        channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+        t: now,
+      } as any,
       sound: true as any,
       categoryIdentifier: 'offer-go-v2',
       channelId: OFFER_CHANNEL_ID,
-    });
+    } as any);
+    console.log(
+      `[notify] strongNearby channel=${OFFER_CHANNEL_ID} ` +
+        `version=${NEARBY_ATTENTION_CHANNEL_VERSION} source=${source} appState=${AppState.currentState || 'unknown'} reason=local-offer`
+    );
 
     await setGroupState(groupId, { lastPushedAt: underCooldown ? gs.lastPushedAt : now, events: pruned });
 
@@ -854,7 +869,13 @@ async function presentLocalOfferNotification(
       await safePresentNotification({
         title: titleG,
         body: 'Tippe, um alle zu sehen.',
-        data: { groupId, kind: 'group-summary' } as any,
+        data: {
+          groupId,
+          kind: 'group-summary',
+          channelId: OFFER_CHANNEL_ID,
+          channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+          channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+        } as any,
         channelId: OFFER_CHANNEL_ID,
       } as any);
     }
@@ -1249,7 +1270,15 @@ async function markAlreadyInsideQuietly() {
             const pushed = await pushOfferOnce(offerId, meta, 'synthetic-enter');
             if (pushed) {
               reportEnterToBackend({ offerId, lat: here.lat, lng: here.lng, accuracy: rawAcc }).catch(() => {});
-              console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({ offerId, d: Math.round(d) + 'm', source: 'INSTANT_AFTER_SYNC' }));
+              console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({
+                offerId,
+                d: Math.round(d) + 'm',
+                source: 'INSTANT_AFTER_SYNC',
+                channelId: OFFER_CHANNEL_ID,
+                channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+                channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+                appState: AppState.currentState || 'unknown',
+              }));
             } else {
               console.log('[GEOFENCE] QUIET-INSIDE (no push after dedupe)', r.identifier, {
                 d: Math.round(d), effective: Math.round(effective), accAdj,
@@ -1301,7 +1330,11 @@ async function evaluateProximityForFallback(lat: number, lng: number, accuracy?:
             reportEnterToBackend({ offerId, lat, lng, accuracy: rawAcc }).catch(() => {});
             console.log('[LOCAL_PUSH_SHOWN:ENTER]', JSON.stringify({
               offerId, d: Math.round(d), effective: Math.round(effective), accRaw: rawAcc, accAdj: Math.round(accAdj),
-              regionRadius: r.radius, fallback: true
+              regionRadius: r.radius, fallback: true,
+              channelId: OFFER_CHANNEL_ID,
+              channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+              channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+              appState: AppState.currentState || 'unknown',
             }));
           }
         }
@@ -1930,6 +1963,10 @@ if (!TaskManager.isTaskDefined(GEOFENCE_TASK)) {
           accAdj: Math.round(accAdj),
           speed: typeof speed === 'number' ? +Number(speed).toFixed(2) : null,
           regionRadius: region?.radius,
+          channelId: OFFER_CHANNEL_ID,
+          channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+          channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+          appState: AppState.currentState || 'unknown',
         }));
       }
     }
@@ -1975,8 +2012,8 @@ export async function roundtripTest(offerId: string) {
       title: 'StepsMatch – Roundtrip',
       body: ok ? 'Backend-Push ausgelöst.' : `Backend nicht erreichbar (status=${lastStatus}).`,
       data: { kind: 'roundtrip', ok } as any,
-      channelId: OFFER_CHANNEL_ID,
-    });
+      channelId: 'stepsmatch-default-v2',
+    } as any);
     console.log('[diag] roundtrip', ok ? 'ok' : `failed status=${lastStatus}`);
   } catch (e: any) {
     logErr('diag:roundtrip', e);

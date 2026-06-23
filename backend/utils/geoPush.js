@@ -4,6 +4,11 @@ import PushToken from '../models/PushToken.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from './push.js'; // robust mit Receipts/Retry/Disable
 import { isOfferActiveNow } from './isOfferActiveNow.js';
+import {
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+} from './notificationChannels.js';
 
 /* ────────────────────────────────────────────────────────────
    ENV / Defaults
@@ -13,12 +18,6 @@ const PROJECT_ID =
   process.env.EXPO_PROJECT ||
   process.env.PROJECT_ID ||
   null;
-
-// ⚠️ Wichtig: Standard-Kanal jetzt 'offers-v2' und Expo-kompatible ENV bevorzugen
-const PUSH_CHANNEL_ID =
-  process.env.EXPO_PUSH_CHANNEL_ID ||  // primär: neue ENV, z. B. EXPO_PUSH_CHANNEL_ID=offers-v2
-  process.env.PUSH_CHANNEL_ID ||       // fallback: alte ENV
-  'offers-v2';                         // letzte Instanz: harter Default passend zur App
 
 const PUSH_PRIORITY   = process.env.PUSH_PRIORITY   || 'high';
 const PUSH_SOUND      = process.env.PUSH_SOUND      || 'default';
@@ -162,8 +161,11 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
               offerId: String(offer._id),
               route: `/offers/${offer._id}`,
               source: 'offer-update-retry',
+              channelId: NEARBY_ATTENTION_CHANNEL_ID,
+              channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+              channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
             },
-            channelId: PUSH_CHANNEL_ID,
+            channelId: NEARBY_ATTENTION_CHANNEL_ID,
       categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
             priority: PUSH_PRIORITY,
             sound: PUSH_SOUND,
@@ -204,6 +206,10 @@ async function scheduleFreshTokenRetries({ offer, tokens, now }) {
           }
 
           const summary = diagRetry?.receipts?.summary || {};
+          console.log(
+            `[notify] strongNearby channel=${NEARBY_ATTENTION_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+              `source=geoPush.retry reason=offer-update-retry offer=${offer._id}`
+          );
           console.log(
             `[geoPush.retry] offer=${offer._id} after=${delayMs}ms tried=${retryTokens.length} ` +
             `ok=${okTokens.length} receipts=${JSON.stringify(summary)}`
@@ -434,11 +440,14 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       offerId: String(offer._id),
       route: `/offers/${offer._id}`,
       source: 'offer-update',
+      channelId: NEARBY_ATTENTION_CHANNEL_ID,
+      channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+      channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
     };
 
     logDiag(offer, 'push-send', {
       tried: tokens.length,
-      channelId: PUSH_CHANNEL_ID,
+      channelId: NEARBY_ATTENTION_CHANNEL_ID,
       categoryId: process.env.PUSH_CATEGORY_ID || 'offer-go-v2',
       priority: PUSH_PRIORITY,
       sound: PUSH_SOUND,
@@ -449,7 +458,7 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
       title,
       body,
       data,
-      channelId: PUSH_CHANNEL_ID, // ← jetzt konsistent 'offers-v2' (oder ENV)
+      channelId: NEARBY_ATTENTION_CHANNEL_ID,
       priority: PUSH_PRIORITY,
       sound: PUSH_SOUND,
       delayMs: 2500,
@@ -503,6 +512,10 @@ export async function sendPushToNearbyTokensForOffer(offer, { now = new Date() }
     }
 
     const summary = diag?.receipts?.summary || {};
+    console.log(
+      `[notify] strongNearby channel=${NEARBY_ATTENTION_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+        `source=geoPush reason=offer-update offer=${offer._id}`
+    );
     console.log(
       `[geoPush] offer=${offer._id} fresh=${freshTokens.length} near=${nearDocs.length} ` +
       `matched=${matched.length} tried=${tokens.length} sentOk=${sentTokens.length} ` +

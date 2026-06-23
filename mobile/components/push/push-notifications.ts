@@ -12,6 +12,9 @@ import {
 } from '../push/notifyUI';
 import {
   GROUP_COOLDOWN_MS,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
   SUMMARY_WINDOW_MS,
   STRONG_PATTERN,
 } from './push-constants';
@@ -31,8 +34,8 @@ const OFFER_THROTTLE_MS = 120_000;
 const GLOBAL_THROTTLE_MS = 20_000;
 const SYNTHETIC_ENTER_COOLDOWN_MS = 15_000;
 
-/** Bevorzugter Android-Kanalname für Offers – muss mit Backend-ENV korrespondieren */
-const PREFERRED_OFFERS_CHANNEL = 'offers-v2';
+/** Bevorzugter Android-Kanalname für echte Nearby-/Match-Hinweise. */
+const PREFERRED_OFFERS_CHANNEL = NEARBY_ATTENTION_CHANNEL_ID;
 
 /* ────────────────────────────────────────────────────────────
    Helpers
@@ -47,7 +50,8 @@ function isOfferNotification(c: any) {
   // Alle bekannten Offer-Kanäle akzeptieren (alt + neu)
   const knownOfferChannels = new Set<string>(
     [
-      PREFERRED_OFFERS_CHANNEL,          // 'offers-v2'
+      PREFERRED_OFFERS_CHANNEL,
+      CHANNELS?.nearbyAttention,
       CHANNELS?.offers,                  // was auch immer hier aktuell konfiguriert ist
       CHANNELS?.offersLegacy,            // Legacy
       'offers',                          // ganz alte Legacy-ID
@@ -138,9 +142,21 @@ Notifications.setNotificationHandler({
         console.log('[FG-SUPPRESS] notification suppressed in foreground');
       }
       // App im Vordergrund: keine System-Notification anzeigen
-      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+      return {
+        shouldShowAlert: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      };
     }
-    return { shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false };
+    return {
+      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    };
   },
 });
 
@@ -185,22 +201,22 @@ export async function ensureChannels() {
       description: 'Allgemeine Benachrichtigungen von StepsMatch',
     });
 
-    // Bevorzugter Offer-Kanal 'offers-v2' – MUSS existieren, sonst zeigt Android nichts
+    // Versionierter Attention-Kanal fuer echte Nearby-/Match-Hinweise.
     await Notifications.setNotificationChannelAsync(PREFERRED_OFFERS_CHANNEL, {
-      name: 'Offers (v2)',
+      name: 'Nearby matches',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'arrival',
+      sound: 'default',
       vibrationPattern: STRONG_PATTERN,
       enableVibrate: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableLights: true,
       lightColor: BRAND_BLUE as any,
       bypassDnd: false, showBadge: true,
-      description: 'Sofort-Push bei passenden Angeboten in deiner Nähe (v2)',
+      description: 'Starker Hinweis bei passenden Angeboten in deiner Naehe',
     });
 
     // Zusätzlich (Abwärtskompat.) den in CHANNELS.offers hinterlegten Kanal anlegen
-    if (CHANNELS?.offers && CHANNELS.offers !== PREFERRED_OFFERS_CHANNEL) {
+    if (CHANNELS?.offers && String(CHANNELS.offers) !== PREFERRED_OFFERS_CHANNEL) {
       await Notifications.setNotificationChannelAsync(CHANNELS.offers, {
         name: 'Offers',
         importance: Notifications.AndroidImportance.MAX,
@@ -337,8 +353,18 @@ export async function presentLocalOfferNotification(
   if (Platform.OS === 'android') {
     (content as any).android = { ...(content as any).android, channelId: PREFERRED_OFFERS_CHANNEL };
   }
+  (content as any).data = {
+    ...((content as any).data || {}),
+    channelId: PREFERRED_OFFERS_CHANNEL,
+    channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+    channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+  };
 
   await Notifications.scheduleNotificationAsync({ content, trigger });
+  console.log(
+    `[notify] strongNearby channel=${PREFERRED_OFFERS_CHANNEL} ` +
+      `version=${NEARBY_ATTENTION_CHANNEL_VERSION} source=${source} appState=${AppState.currentState || 'unknown'} reason=local-offer`
+  );
 
   await setOfferPushState(offerId, {
     lastLocalNotifiedAt: now,

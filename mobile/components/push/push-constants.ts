@@ -12,12 +12,19 @@ export const GEOFENCE_TASK    = 'stepsmatch-geofence-task';
 /** ───── Notification Channels & Categories ─────
  * Bestehende Channel-IDs aus eurem Setup:
  *  - offers-v2
+ *  - stepsmatch-nearby-attention-v1
  *  - stepsmatch-default-v2
  *  - com.ecily.mobile:stepsmatch-bg-location-task
  */
+export const NEARBY_ATTENTION_CHANNEL_ID = 'stepsmatch-nearby-attention-v1';
+export const NEARBY_ATTENTION_CHANNEL_VERSION = 'v1';
+export const NEARBY_ATTENTION_CHANNEL_CONFIG = 'strongNearby';
+export const STRONG_PATTERN = [0, 500, 180, 500, 180, 900];
+
 export const CHANNELS = {
   default: 'stepsmatch-default-v2',
   offers: 'offers-v2',
+  nearbyAttention: NEARBY_ATTENTION_CHANNEL_ID,
   offersLegacy: 'offers-legacy',
   bg: 'com.ecily.mobile:stepsmatch-bg-location-task',
 } as const;

@@ -1,4 +1,12 @@
 // stepsmatch/mobile/components/push/notifyUI.ts
+import {
+  BRAND_BLUE,
+  CHANNELS,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+} from './push-constants';
+
 /**
  * Zweck:
  * - Zentrale, wiederverwendbare Builder für Notification-UI (Titel, Body, Actions, Channel).
@@ -6,14 +14,13 @@
  * - Wird im nächsten Schritt in PushInitializer.tsx verwendet.
  */
 
-export const BRAND_BLUE = '#0d4ea6' as const;
-
-export const CHANNELS = {
-  offers: 'offers-v2',
-  offersLegacy: 'offers',
-  default: 'stepsmatch-default-v2',
-  bg: 'com.ecily.mobile:stepsmatch-bg-location-task',
-} as const;
+export {
+  BRAND_BLUE,
+  CHANNELS,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+};
 
 export const CATEGORIES = {
   offerGo: 'offer-go-v2',
@@ -73,7 +80,7 @@ export function buildOfferBody({
  * Rein UI/Branding. Route/offerId werden in data abgelegt.
  *
  * Default-Titel: „Angebot in deiner Nähe“
- * channelId: 'offers-v2'
+ * channelId: 'stepsmatch-nearby-attention-v1'
  * categoryIdentifier: 'offer-go-v2'
  * Farbe: #0d4ea6
  */
@@ -103,6 +110,9 @@ export function buildOfferNotificationContent({
       data: {
         offerId,
         source,
+        channelId: NEARBY_ATTENTION_CHANNEL_ID,
+        channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+        channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
         t: now,
         route,
         ...(extraData || {}),
@@ -110,14 +120,14 @@ export function buildOfferNotificationContent({
       sound: true,
       categoryIdentifier: CATEGORIES.offerGo,
       android: {
-        channelId: CHANNELS.offers,
+        channelId: CHANNELS.nearbyAttention,
         color: BRAND_BLUE,
         link: `mobile://offers/${offerId}`,
         groupId,
         groupSummary: false,
       },
     },
-    trigger: null as const,
+    trigger: null,
   };
 }
 
@@ -146,16 +156,24 @@ export function buildGroupSummaryContent({
     content: {
       title,
       body: 'Tippe, um alle zu sehen.',
-      data: { kind: 'group-summary', groupId, count, t: Date.now() },
+      data: {
+        kind: 'group-summary',
+        groupId,
+        count,
+        channelId: NEARBY_ATTENTION_CHANNEL_ID,
+        channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+        channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+        t: Date.now(),
+      },
       sound: true,
       android: {
-        channelId: CHANNELS.offers,
+        channelId: CHANNELS.nearbyAttention,
         color: BRAND_BLUE,
         link: `mobile://offers?group=${encodeURIComponent(groupId)}`,
         groupId,
         groupSummary: true,
       },
     },
-    trigger: null as const,
+    trigger: null,
   };
 }

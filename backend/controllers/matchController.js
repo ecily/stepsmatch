@@ -3,6 +3,11 @@ import User from '../models/User.js';
 import Offer from '../models/Offer.js';
 import NotificationLog from '../models/NotificationLog.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
+import {
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+} from '../utils/notificationChannels.js';
 import moment from 'moment';
 
 export const checkForMatchingOffers = async (req, res) => {
@@ -65,13 +70,22 @@ export const checkForMatchingOffers = async (req, res) => {
       const payload = {
         title: `🎯 ${offer.name}`,
         body: offer.description || 'Jetzt in deiner Nähe aktiv!',
+        channelId: NEARBY_ATTENTION_CHANNEL_ID,
+        sound: 'default',
+        priority: 'high',
         data: {
           screen: 'OfferDetails',
-          offerId: offer._id.toString()
+          offerId: offer._id.toString(),
+          channelId: NEARBY_ATTENTION_CHANNEL_ID,
+          channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+          channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG
         }
       };
 
-      console.log('📦 Push Payload:', payload);
+      console.log(
+        `[notify] strongNearby channel=${NEARBY_ATTENTION_CHANNEL_ID} version=${NEARBY_ATTENTION_CHANNEL_VERSION} ` +
+          `source=matchController reason=matching-offer offer=${offer._id}`
+      );
 
       const result = await sendPushNotification(user.expoPushToken, payload);
       console.log('📲 Push-Ergebnis:', result);
@@ -82,7 +96,7 @@ export const checkForMatchingOffers = async (req, res) => {
         date: new Date()
       });
 
-      console.log(`✅ Push gesendet: ${offer.name} an ${user.email}`);
+      console.log(`✅ Push gesendet: ${offer.name} an userId=${userId}`);
       sent++;
 
       // Nur **eine** Notification pro Durchlauf

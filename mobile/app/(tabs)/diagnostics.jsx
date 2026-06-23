@@ -10,6 +10,13 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
+import {
+  BRAND_BLUE,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+  STRONG_PATTERN,
+} from '../../components/push/push-constants';
 
 // ✅ KORREKT: Exports aus PushInitializer
 import {
@@ -25,7 +32,7 @@ import {
 // =========================
 const MAX_LOG_LINES = 1500;
 // erweitert: auch LOCAL_PUSH, CHANNELS, WD
-const TAG_RE = /\[(push|BGLOC|HEARTBEAT|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN|LOCAL_PUSH|CHANNELS|WD)\]/i;
+const TAG_RE = /\[(push|notify|BGLOC|HEARTBEAT|GEOFENCE|RECONCILE|LOCAL_PUSH_SHOWN|LOCAL_PUSH|CHANNELS|WD)\]/i;
 
 const TOKEN_KEY = 'expoPushToken.v2';
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
@@ -33,6 +40,7 @@ const GLOBAL_STATE_KEY = 'offerPushState.__global';
 
 // ⚠️ Muss exakt der FG_CHANNEL_ID aus PushInitializer + app.config.js entsprechen:
 const OFFERS_CHANNEL_ID = 'offers-v2';
+const STRONG_NEARBY_CHANNEL_ID = NEARBY_ATTENTION_CHANNEL_ID;
 const BG_CHANNEL_IDS = ['stepsmatch-bg-location-task', 'com.ecily.mobile:stepsmatch-bg-location-task'];
 const HEARTBEAT_FETCH_TASK = 'stepsmatch-heartbeat-fetch';
 
@@ -336,6 +344,51 @@ export default function Diagnostics() {
     }
   };
 
+  const strongNearbyNow = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync(STRONG_NEARBY_CHANNEL_ID, {
+          name: 'Nearby matches',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: STRONG_PATTERN,
+          enableVibrate: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          enableLights: true,
+          lightColor: BRAND_BLUE,
+          bypassDnd: false,
+          showBadge: true,
+          description: 'Starker Hinweis bei passenden Angeboten in deiner Naehe',
+        });
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'StepsMatch Naehe-Test',
+          body: 'Diese Notification nutzt den starken Nearby-Channel.',
+          data: {
+            kind: 'diag-strong-nearby',
+            source: 'diagnostics',
+            channelId: STRONG_NEARBY_CHANNEL_ID,
+            channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+            channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+          },
+          sound: true,
+          channelId: STRONG_NEARBY_CHANNEL_ID,
+          categoryIdentifier: 'offer-go-v2',
+        },
+        trigger: null,
+      });
+      console.log(
+        `[notify] strongNearby channel=${STRONG_NEARBY_CHANNEL_ID} ` +
+          `version=${NEARBY_ATTENTION_CHANNEL_VERSION} source=diagnostics appState=${appState} reason=manual-test`
+      );
+      await snapshot();
+    } catch (e) {
+      console.log('[diag] strong nearby notification error', String(e));
+    }
+  };
+
   const roundtrip = async () => {
     try {
       await roundtripTest('ROUNDTRIP_TEST');
@@ -426,12 +479,12 @@ export default function Diagnostics() {
     return map;
   }, [channels]);
 
-  const chOffers = chById[OFFERS_CHANNEL_ID];
+  const chStrongNearby = chById[STRONG_NEARBY_CHANNEL_ID];
   const chBg     = BG_CHANNEL_IDS.map((id) => chById[id]).find(Boolean);
 
   // importance: 1=NONE 2=MIN 3=LOW 4=DEFAULT 5=HIGH 6=MAX (Expo)
-  const offersIsMax = !!chOffers && Number(chOffers.importance) >= 6;
-  const offersHasSound = !!chOffers && !!chOffers.sound; // "arrival" erwartet
+  const offersIsMax = !!chStrongNearby && Number(chStrongNearby.importance) >= 6;
+  const offersHasSound = !!chStrongNearby && !!chStrongNearby.sound;
   const bgIsPresent = !!chBg;
   const channelTuningOk = offersIsMax && offersHasSound && bgIsPresent;
 
@@ -484,6 +537,9 @@ export default function Diagnostics() {
           </TouchableOpacity>
           <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={localNow}>
             <Text style={s.bt}>Lokale Notification (sofort)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={strongNearbyNow}>
+            <Text style={s.bt}>Test strong nearby notification</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.btnFull, s.bBlue]} onPress={roundtrip}>
             <Text style={s.bt}>Roundtrip an Backend</Text>
@@ -571,7 +627,7 @@ export default function Diagnostics() {
                 ))
               )}
               <Text style={s.hintSmall}>
-                Erwartet: [{BG_CHANNEL_IDS.join(' | ')}] present; {OFFERS_CHANNEL_ID} importance=MAX &amp; sound≠none
+                Erwartet: [{BG_CHANNEL_IDS.join(' | ')}] present; {STRONG_NEARBY_CHANNEL_ID} importance=MAX &amp; sound≠none
               </Text>
             </Card>
           )}
@@ -648,7 +704,7 @@ export default function Diagnostics() {
         </View>
 
         <Text style={s.hint}>
-          Gefilterte Tags: [push], [BGLOC], [HEARTBEAT], [GEOFENCE], [RECONCILE], [LOCAL_PUSH], [LOCAL_PUSH_SHOWN], [CHANNELS], [WD]. Umschalten über „Nur Tags/Alle Logs“.
+          Gefilterte Tags: [push], [notify], [BGLOC], [HEARTBEAT], [GEOFENCE], [RECONCILE], [LOCAL_PUSH], [LOCAL_PUSH_SHOWN], [CHANNELS], [WD]. Umschalten über „Nur Tags/Alle Logs“.
         </Text>
       </ScrollView>
     </View>

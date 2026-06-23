@@ -18,7 +18,7 @@ const API_BASE =
 // Zentrale IDs/Konstanten (werden auch in der App verwendet)
 // ⚠️ FGS-Channel ohne Doppelpunkt/Prefix
 const FG_CHANNEL_ID = 'stepsmatch-bg-location-task';
-const OFFER_CHANNEL_ID = 'offers-v2';
+const OFFER_CHANNEL_ID = 'stepsmatch-nearby-attention-v1';
 const BG_LOCATION_TASK = 'stepsmatch-bg-location-task';
 const GEOFENCE_TASK = 'stepsmatch-geofence-task';
 const HEARTBEAT_FETCH_TASK = 'stepsmatch-heartbeat-fetch';

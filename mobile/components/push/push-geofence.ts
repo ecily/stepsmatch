@@ -12,6 +12,9 @@ import {
   GEOFENCE_SYNC_INTERVAL_MS,
   GEOFENCE_TASK,
   MAX_GEOFENCES,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
   OUTSIDE_TOLERANCE_M,
 } from './push-constants';
 import {
@@ -301,7 +304,12 @@ export async function refreshGeofencesAroundUser(forceOrOptions: RefreshOptions 
             await presentLocalOfferNotification(offerId, meta, 'synthetic-enter', distanceBadge || null);
 
             console.log('[LOCAL_PUSH_SHOWN:INSTANT_NEW_OFFER]', JSON.stringify({
-              offerId, d: Math.round(d) + 'm', source: 'INSTANT_AFTER_SYNC'
+              offerId,
+              d: Math.round(d) + 'm',
+              source: 'INSTANT_AFTER_SYNC',
+              channelId: NEARBY_ATTENTION_CHANNEL_ID,
+              channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+              channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
             }));
 
             const ts = nowMs();
@@ -469,6 +477,9 @@ export async function markAlreadyInsideQuietly({ allowFirstEverPush = true }: { 
                 d: typeof enteredDistanceM === 'number' ? `${enteredDistanceM}m` : null,
                 acc: pos?.coords?.accuracy != null ? Math.round(pos.coords.accuracy as number) : null,
                 source: 'SYNTH_ENTER',
+                channelId: NEARBY_ATTENTION_CHANNEL_ID,
+                channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+                channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
               }));
 
               await setOfferPushState(offerId, { inside: true, lastPushedAt: now });
