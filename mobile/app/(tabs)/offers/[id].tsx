@@ -22,9 +22,10 @@ import { isOfferActiveNow } from '../../../utils/isOfferActiveNow';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { API_BASE_URL } from '../../../lib/runtimeConfig';
+import { buildMatchReasonLines, getPartnerDisclaimer, getPitchBadges } from '../../../utils/pitchContent';
 
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
-const api = axios.create({ baseURL: API_URL, timeout: 12000 });
+const api = axios.create({ baseURL: API_BASE_URL, timeout: 12000 });
 const OID24 = /^[0-9a-fA-F]{24}$/;
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -190,6 +191,12 @@ export default function OfferDetailsScreen() {
   }, [offer]);
 
   const images = useMemo(() => (Array.isArray(offer?.images) ? offer.images.filter(Boolean) : []), [offer]);
+  const pitchBadges = useMemo(() => (offer ? getPitchBadges(offer) : []), [offer]);
+  const matchReasonLines = useMemo(
+    () => (offer ? buildMatchReasonLines(offer, { distanceMeters, isActiveNow: isActive }) : []),
+    [offer, distanceMeters, isActive]
+  );
+  const partnerDisclaimer = useMemo(() => (offer ? getPartnerDisclaimer(offer) : ''), [offer]);
 
   const mapRegion = useMemo(() => {
     const p = userPos || geo;
@@ -255,6 +262,9 @@ export default function OfferDetailsScreen() {
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 16 + insets.bottom + 160 }]}>
           <View style={[styles.heroBlock, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
             <View style={styles.badgesRow}>
+              {pitchBadges.map((label) => (
+                <Badge key={label} label={label} tone="info" style={styles.badgeGap} />
+              ))}
               {isActive ? <Badge label="Jetzt gueltig" tone="success" style={styles.badgeGap} /> : <Badge label="Pruefen" tone="warning" style={styles.badgeGap} />}
               {remainingLabel ? <Badge label={remainingLabel} tone="info" style={styles.badgeGap} /> : null}
               {distanceMeters != null ? (
@@ -278,6 +288,9 @@ export default function OfferDetailsScreen() {
             </Animated.Text>
 
             {!!offer.description && <Text style={[styles.desc, { color: t.colors.ink }]}>{offer.description}</Text>}
+            {!!partnerDisclaimer && (
+              <Text style={[styles.disclaimer, { color: t.colors.inkLow }]}>{partnerDisclaimer}</Text>
+            )}
 
             <View style={styles.imagePanel}>
               {images.length > 0 ? (
@@ -299,6 +312,15 @@ export default function OfferDetailsScreen() {
               )}
             </View>
           </View>
+
+          {matchReasonLines.length > 0 && (
+            <View style={[styles.infoBox, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+              <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Warum sehe ich das?</Text>
+              {matchReasonLines.map((line) => (
+                <Text key={line} style={[styles.reasonText, { color: t.colors.ink }]}>{line}</Text>
+              ))}
+            </View>
+          )}
 
           <View style={[styles.infoBox, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
             <Text style={[styles.infoTitle, { color: t.colors.inkHigh }]}>Ort</Text>
@@ -365,6 +387,7 @@ const styles = StyleSheet.create({
   badgeGap: { marginRight: 6, marginBottom: 6 },
   title: { fontSize: 24, lineHeight: 30, fontWeight: '900' },
   desc: { marginTop: 8, fontSize: 14, lineHeight: 20 },
+  disclaimer: { marginTop: 8, fontSize: 12, lineHeight: 17 },
 
   imagePanel: { marginTop: 12 },
   emptyImage: { height: 196, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -378,6 +401,7 @@ const styles = StyleSheet.create({
   infoTitle: { fontSize: 14, fontWeight: '800' },
   infoText: { marginTop: 4, fontSize: 15, fontWeight: '600' },
   infoSub: { marginTop: 4, fontSize: 13, lineHeight: 18 },
+  reasonText: { marginTop: 6, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 
   mapWrap: { height: 190, borderRadius: 12, overflow: 'hidden' },
 

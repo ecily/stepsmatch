@@ -1,5 +1,6 @@
 // stepsmatch/mobile/components/LocationPermissionPrompt.tsx
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

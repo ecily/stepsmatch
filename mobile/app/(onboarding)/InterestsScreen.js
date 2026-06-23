@@ -6,8 +6,7 @@ import axios from 'axios';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
-
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
 export default function InterestsScreen() {
   const router = useRouter();
@@ -21,7 +20,7 @@ export default function InterestsScreen() {
     (async () => {
       try {
         const [res, stored] = await Promise.all([
-          axios.get(`${API_URL}/categories`),
+          axios.get(`${API_BASE_URL}/categories`),
           AsyncStorage.getItem('userInterests'),
         ]);
         if (!mounted) return;

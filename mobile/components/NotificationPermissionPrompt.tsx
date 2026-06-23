@@ -96,8 +96,8 @@ export default function NotificationPermissionPrompt({ remindAfterMs = 6 * 60 * 
       return {
         title: 'Benachrichtigungen aktivieren',
         body:
-          'Damit du Angebote sofort siehst, wenn du in der Nähe bist, bitte in den Geräteeinstellungen die Benachrichtigungen für StepsMatch erlauben.',
-        primary: 'Einstellungen öffnen',
+          'Damit du passende Hinweise siehst, wenn Interesse, Naehe und Zeit zusammenpassen, bitte in den Geraeteeinstellungen Push fuer StepsMatch erlauben.',
+        primary: 'Einstellungen oeffnen',
         secondary: 'Ich habe es erlaubt',
         tertiary: 'Später',
       };
@@ -105,9 +105,8 @@ export default function NotificationPermissionPrompt({ remindAfterMs = 6 * 60 * 
     return {
       title: 'Warum Benachrichtigungen erlauben?',
       body:
-        '• Damit du neue Angebote sofort siehst, wenn du in der Nähe bist.\n' +
-        '• Töne/Vibration kannst du jederzeit in den Einstellungen ändern.\n\n' +
-        'Du kannst das jederzeit in den App-/Systemeinstellungen anpassen.',
+        'StepsMatch funktioniert nur gut, wenn Naehe, Zeit und Interesse zusammenpassen.\n\n' +
+        'Push hilft, passende Hinweise nicht zu verpassen. Ohne Push bleiben Hinweise nur in der App. Du kannst das jederzeit in den Systemeinstellungen widerrufen.',
       primary: 'Jetzt erlauben',
       tertiary: 'Später',
     };

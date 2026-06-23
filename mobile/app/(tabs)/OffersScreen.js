@@ -20,11 +20,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@react-navigation/native';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import OfferDistanceBadge from '../../components/DistanceBadge';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
 import colors from '../../theme/colors';
-
-const API_BASE_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 
 const SCREEN_W = Dimensions.get('window').width;
 

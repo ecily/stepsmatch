@@ -7,8 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { persistAuthSession } from '../../utils/authSession';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const API_URL = API_BASE_URL;
 
 const normalize = (value) => String(value || '').trim();
 

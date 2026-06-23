@@ -27,6 +27,8 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import { NEARBY_ATTENTION_CHANNEL_ID } from '../../components/push/push-constants';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
+import { buildMatchReasonLines, getPartnerDisclaimer, getPitchBadges } from '../../utils/pitchContent';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
@@ -36,8 +38,6 @@ import { DistanceBadge } from '../../components/DistanceBadge';
 
 import { csvToSet, matchesInterests } from '../../utils/interests';
 
-
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
 const FALLBACK_NEARBY_RADIUS_M = 5000;
 
 /* ───────────── Helpers ───────────── */
@@ -53,7 +53,7 @@ function withTimeout(promise, ms, label = 'operation') {
 // Netzwerk robuster: höheres Timeout + gezielter Retry bei Timeout
 const AXIOS_BASE_TIMEOUT_MS = 20000;
 const AXIOS_RETRY_TIMEOUT_MS = 35000;
-const api = axios.create({ baseURL: API_URL, timeout: AXIOS_BASE_TIMEOUT_MS });
+const api = axios.create({ baseURL: API_BASE_URL, timeout: AXIOS_BASE_TIMEOUT_MS });
 
 function groupByCategory(list) {
   const m = {};
@@ -437,7 +437,7 @@ export default function HomeTab() {
           const isTimeout = _e?.code === 'ECONNABORTED' || String(_e?.message || '').toLowerCase().includes('timeout');
           const isAborted = String(_e?.message || '').toLowerCase().includes('aborted');
           if (isTimeout || isAborted) {
-            const apiRetry = axios.create({ baseURL: API_URL, timeout: AXIOS_RETRY_TIMEOUT_MS });
+            const apiRetry = axios.create({ baseURL: API_BASE_URL, timeout: AXIOS_RETRY_TIMEOUT_MS });
             res = await apiRetry.get('/offers', { params }); // ohne signal (um Race zu vermeiden)
           } else {
             throw _e;
@@ -710,9 +710,9 @@ export default function HomeTab() {
     }
     return Number.isFinite(best) ? best : null;
   })();
-  const heroTitle = offersCount > 0 ? `${offersCount} aktive Angebote fuer deinen Tag` : 'Neue Wege warten schon auf dich';
+  const heroTitle = offersCount > 0 ? `${offersCount} passende Hinweise fuer deinen Tag` : 'Neue Wege warten schon auf dich';
   const heroSubtitle = nearestDistance != null
-    ? `Das naechste Angebot ist nur ${Math.round(nearestDistance)} m entfernt. Starte entspannt und sammle Schritte mit Sinn.`
+    ? `Der naechste Hinweis ist nur ${Math.round(nearestDistance)} m entfernt. Starte entspannt und sammle Schritte mit Sinn.`
     : 'Sobald in deiner Umgebung etwas Spannendes aktiv ist, findest du es hier sofort.';
 
   return (
@@ -727,11 +727,11 @@ export default function HomeTab() {
             <View style={styles.heroGlowB} />
             <View style={styles.heroTopRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.heroEyebrow, { color: 'rgba(255,255,255,0.76)' }]}>Heute fuer dich</Text>
+                <Text style={[styles.heroEyebrow, { color: 'rgba(255,255,255,0.76)' }]}>Pre-Alpha lokal</Text>
                 <Text style={[styles.heroTitle, { color: '#ffffff' }]}>{heroTitle}</Text>
                 <Text style={[styles.heroSubtitle, { color: 'rgba(255,255,255,0.92)' }]}>{heroSubtitle}</Text>
               </View>
-              <Badge label="Live" tone="success" />
+              <Badge label="Demo" tone="success" />
             </View>
             <View style={styles.heroActionRow}>
               <View style={{ flex: 1 }}>
@@ -762,7 +762,7 @@ export default function HomeTab() {
                   Heute passt besonders gut zu dir
                 </Text>
                 <Text style={[styles.feedSummarySub, { color: t.colors.inkLow }]}>
-                  {nearestDistance != null ? `Dein naechstes Angebot ist nur ${Math.round(nearestDistance)} m entfernt.` : 'Waehle unten ein Angebot und starte direkt mit deiner Route zu Fuss.'}
+                  {nearestDistance != null ? `Dein naechster Hinweis ist nur ${Math.round(nearestDistance)} m entfernt.` : 'Waehle unten einen Hinweis und starte direkt mit deiner Route zu Fuss.'}
                 </Text>
               </View>
               <View style={{ width: 120 }}>
@@ -773,7 +773,7 @@ export default function HomeTab() {
 
           {groupedEntries.length === 0 ? (
             <EmptyState
-              title="Keine Angebote in deiner Nähe"
+              title="Keine Hinweise in deiner Naehe"
               subtitle="Passe deine Interessen an oder versuche es später erneut."
               icon="📍"
             />
@@ -890,6 +890,9 @@ function AnimatedOfferCard({ item, index, onPress, onNavigate, userLoc, theme })
   const remainingMs = getRemainingMs(item);
   const remainingNice = formatRemainingFriendly(remainingMs);
   const etaNice = etaFromDistanceM(distanceMeters);
+  const pitchBadges = getPitchBadges(item);
+  const reasonLines = buildMatchReasonLines(item, { distanceMeters, isActiveNow: isActiveNowFlag });
+  const disclaimer = getPartnerDisclaimer(item);
 
   // Bild (Hero)
   const hero = Array.isArray(item.images) && item.images.length > 0 ? item.images[0] : null;
@@ -913,6 +916,9 @@ function AnimatedOfferCard({ item, index, onPress, onNavigate, userLoc, theme })
         <Pressable onPressIn={onPressIn} onPressOut={onPressOut} onPress={onPress}>
           {/* BADGE-ROW (oben, außerhalb des Bildes) */}
           <View style={styles.badgeRowTop}>
+            {pitchBadges.map((label) => (
+              <Badge key={label} label={label} tone="info" style={[styles.badgeSpacing, styles.badgeUniform]} />
+            ))}
             {isActiveNowFlag && <Badge label="Jetzt gültig" tone="info" style={[styles.badgeSpacing, styles.badgeUniform]} />}
             {remainingNice && <Badge label={remainingNice} tone="warning" style={[styles.badgeSpacing, styles.badgeUniform]} />}
             <DistanceBadge meters={distanceMeters} style={[styles.badgeSpacing, styles.badgeUniform]} />
@@ -961,6 +967,22 @@ function AnimatedOfferCard({ item, index, onPress, onNavigate, userLoc, theme })
                 Schnell erreichbar: {etaNice}
               </Text>
             )}
+
+            {reasonLines.length > 0 && (
+              <View style={[styles.reasonBox, { backgroundColor: t.colors.elevated, borderColor: t.colors.divider }]}>
+                {reasonLines.slice(0, 3).map((line) => (
+                  <Text key={line} style={[styles.reasonText, { color: t.colors.ink }]} numberOfLines={2}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {!!disclaimer && (
+              <Text style={[styles.disclaimer, { color: t.colors.inkLow }]} numberOfLines={2}>
+                {disclaimer}
+              </Text>
+            )}
           </View>
 
         </Pressable>
@@ -968,7 +990,7 @@ function AnimatedOfferCard({ item, index, onPress, onNavigate, userLoc, theme })
         {/* CTA */}
         <View style={styles.ctaRow}>
           <View style={styles.ctaSplit}>
-            <Button title="Jetzt Angebot ansehen" variant="secondary" size="sm" onPress={onPress} />
+            <Button title="Hinweis ansehen" variant="secondary" size="sm" onPress={onPress} />
           </View>
           <View style={styles.ctaSplit}>
             <Button title="Bring mich hin" variant="primary" size="sm" onPress={onNavigate} />
@@ -1128,6 +1150,16 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, marginBottom: 6 },
   desc: { fontSize: 14, lineHeight: 20 },
   quickBenefit: { fontSize: 12, fontWeight: '700', marginTop: 8 },
+  reasonBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+    gap: 4,
+  },
+  reasonText: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  disclaimer: { fontSize: 11, lineHeight: 15, marginTop: 8 },
 
   ctaRow: {
     flexDirection: 'row',

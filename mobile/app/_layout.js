@@ -6,7 +6,6 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 
 import ThemeProvider from '../theme/ThemeProvider';
 
@@ -26,10 +25,9 @@ import {
   NEARBY_ATTENTION_CHANNEL_VERSION,
   STRONG_PATTERN,
 } from '../components/push/push-constants';
+import { API_BASE_URL } from '../lib/runtimeConfig';
 
-const API_BASE =
-  (Constants?.expoConfig?.extra?.apiBase || Constants?.manifest?.extra?.apiBase) ??
-  'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const API_BASE = API_BASE_URL;
 
 async function postNotifAction(action, data = {}, minutes) {
   try {

@@ -7,10 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
-const API_BASE_URL = (Constants.expoConfig?.extra?.apiBase || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const FALLBACK_CENTER = { latitude: 47.0707, longitude: 15.4395 };
 const VISIBLE_RADIUS_M = 900;
 const WALKING_SPEED_MPS = 1.33;

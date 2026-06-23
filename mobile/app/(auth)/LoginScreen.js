@@ -6,8 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { persistAuthSession } from '../../utils/authSession';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
-const API_URL = 'https://lobster-app-ie9a5.ondigitalocean.app/api';
+const API_URL = API_BASE_URL;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -51,7 +52,7 @@ export default function LoginScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.wrap}>
         <Text style={[styles.title, { color: t.colors.inkHigh }]}>Willkommen zurueck</Text>
-        <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>Melde dich an und entdecke passende Angebote in deiner Naehe.</Text>
+        <Text style={[styles.subtitle, { color: t.colors.inkLow }]}>Melde dich an und entdecke passende Hinweise in deiner Naehe.</Text>
 
         <View style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
           <TextInput

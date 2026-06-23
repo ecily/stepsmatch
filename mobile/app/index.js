@@ -40,16 +40,31 @@ export default function IndexGate() {
     } catch {}
   }, []);
 
-  const checkAndRequestPermissions = useCallback(async () => {
-    // ---- Standort (erforderlich) ----
+  const checkPermissions = useCallback(async () => {
+    // ---- Standort (erforderlich, hier nur pruefen) ----
     let loc = await Location.getForegroundPermissionsAsync();
-    if (!loc.granted) {
+
+    // ---- Push (optional, hier nur pruefen) ----
+    let push = await Notifications.getPermissionsAsync();
+
+    setPermState({
+      location: loc.granted ? 'granted' : (loc.canAskAgain ? 'denied' : 'blocked'),
+      push: push.granted ? 'granted' : (push.canAskAgain ? 'denied' : 'blocked'),
+    });
+
+    // Standort ist Pflicht → Gate nur öffnen, wenn granted
+    const locationOk = !!loc.granted;
+    return locationOk;
+  }, []);
+
+  const requestMissingPermissions = useCallback(async () => {
+    let loc = await Location.getForegroundPermissionsAsync();
+    if (!loc.granted && loc.canAskAgain) {
       loc = await Location.requestForegroundPermissionsAsync();
     }
 
-    // ---- Push (optional) ----
     let push = await Notifications.getPermissionsAsync();
-    if (!push.granted && !push.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
+    if (!push.granted && push.canAskAgain) {
       try {
         push = await Notifications.requestPermissionsAsync({
           ios: { allowAlert: true, allowBadge: true, allowSound: true, allowAnnouncements: false },
@@ -62,9 +77,7 @@ export default function IndexGate() {
       push: push.granted ? 'granted' : (push.canAskAgain ? 'denied' : 'blocked'),
     });
 
-    // Standort ist Pflicht → Gate nur öffnen, wenn granted
-    const locationOk = !!loc.granted;
-    return locationOk;
+    return !!loc.granted;
   }, []);
 
   useEffect(() => {
@@ -110,7 +123,7 @@ export default function IndexGate() {
         if (!mounted) return;
 
         // 3) Permissions-Gate
-        const ok = await checkAndRequestPermissions();
+        const ok = await checkPermissions();
         if (!mounted) return;
 
         if (!ok) {
@@ -142,11 +155,11 @@ export default function IndexGate() {
     })();
 
     return () => { mounted = false; };
-  }, [router, checkAndRequestPermissions]);
+  }, [router, checkPermissions]);
 
   const retry = useCallback(async () => {
     setBootstrapping(true);
-    const ok = await checkAndRequestPermissions();
+    const ok = await requestMissingPermissions();
     setBootstrapping(false);
     if (ok) {
       // Wenn Permissions jetzt ok sind, erneut Onboarding-Gate prüfen und weiter
@@ -171,7 +184,7 @@ export default function IndexGate() {
     } else {
       setNeedsPerms(true);
     }
-  }, [checkAndRequestPermissions, router]);
+  }, [requestMissingPermissions, router]);
 
   if (bootstrapping && !needsPerms) {
     // Kleiner Loader, falls der Redirect einen Tick dauert
@@ -190,21 +203,21 @@ export default function IndexGate() {
     return (
       <View style={{ flex: 1, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 20, fontWeight: '800', marginBottom: 8, textAlign: 'center' }}>
-          Standortberechtigung benötigt
+          Standort und Push fuer StepsMatch
         </Text>
         <Text style={{ color: '#4b5563', textAlign: 'center', marginBottom: 16, lineHeight: 20 }}>
-          Damit wir Angebote in deiner Nähe anzeigen können, erlaube bitte den Zugriff auf deinen Standort.
+          StepsMatch funktioniert nur, wenn Naehe, Zeit und Interesse zusammenpassen. Dafuer braucht die App Standort; Push hilft, passende Hinweise nicht zu verpassen.
         </Text>
 
         {pushDenied && (
           <Text style={{ color: '#6b7280', textAlign: 'center', marginBottom: 10, fontSize: 12 }}>
-            Tipp: Push-Benachrichtigungen sind optional – damit verpasst du keine neuen Angebote.
+            Ohne Push bleiben Hinweise in der App. Du kannst Rechte spaeter in den Systemeinstellungen widerrufen.
           </Text>
         )}
 
         <View style={{ flexDirection: 'column', width: '100%', maxWidth: 320 }}>
           <TouchableOpacity
-            onPress={openSettings}
+            onPress={locBlocked ? openSettings : retry}
             activeOpacity={0.9}
             style={{
               backgroundColor: '#3b82f6',
@@ -215,7 +228,7 @@ export default function IndexGate() {
             }}
           >
             <Text style={{ color: '#fff', fontWeight: '700' }}>
-              {Platform.OS === 'ios' ? 'Zu den iOS-Einstellungen' : 'Zu den App-Einstellungen'}
+              {locBlocked ? (Platform.OS === 'ios' ? 'Zu den iOS-Einstellungen' : 'Zu den App-Einstellungen') : 'Berechtigungen anfragen'}
             </Text>
           </TouchableOpacity>
 

@@ -235,9 +235,12 @@ export default function PermissionGate({
   // ---------- UI ----------
   const GateContent = (
     <View style={[overlay ? styles.overlayCard : styles.pageCard, state.notifs === 'granted' && styles.pageCardTight]}>
-      <Text style={styles.title}>Ersteinrichtung</Text>
+      <Text style={styles.title}>Berechtigungen fuer den Pre-Alpha-Test</Text>
+      <Text style={styles.consentLead}>
+        StepsMatch funktioniert nur, wenn Naehe, Zeit und Interesse zusammenpassen. Dafuer braucht die App Standort und Push.
+      </Text>
       <Text style={styles.subtitle}>
-        Damit StepsMatch zuverlässig im Hintergrund arbeitet, führe bitte diese Schritte aus:
+        Bitte erlaube nur die Rechte, die du fuer den Test wirklich nutzen moechtest:
       </Text>
 
       {/* Schritt 1: Benachrichtigungen */}
@@ -247,6 +250,7 @@ export default function PermissionGate({
         ok={state.notifs === 'granted'}
         actionLabel={state.notifs === 'granted' ? 'Erledigt' : 'Erlauben'}
         onAction={state.notifs === 'granted' ? undefined : askNotifs}
+        hint="Damit passende Hinweise dich erreichen koennen, statt nur in der App zu liegen. Ohne Push funktioniert die App weiter, aber leiser."
         extra={
           state.notifs !== 'granted' ? (
             <Pressable onPress={openAppNotificationSettings} style={styles.linkBtn}>
@@ -263,6 +267,7 @@ export default function PermissionGate({
         ok={state.fgLoc === 'granted'}
         actionLabel={state.fgLoc === 'granted' ? 'Erledigt' : 'Erlauben'}
         onAction={state.fgLoc === 'granted' ? undefined : askFgLocation}
+        hint="Damit die App lokale Hinweise nach deiner aktuellen Naehe sortieren kann. Ohne Standort funktionieren Naehe und Route nicht zuverlaessig."
       />
 
       {/* Schritt 3: Standort (Hintergrund) – optional */}
@@ -273,7 +278,7 @@ export default function PermissionGate({
           ok={state.bgLoc === 'granted'}
           actionLabel={state.bgLoc === 'granted' ? 'Erledigt' : 'Erlauben'}
           onAction={state.bgLoc === 'granted' ? undefined : askBgLocation}
-          hint="Wähle „Immer erlauben“, damit Enter-Pushes im Hintergrund funktionieren."
+          hint="Damit Heartbeat und Geofence erkennen, ob ein Hinweis wirklich in deiner Naehe passt. Du kannst das spaeter in den Systemeinstellungen widerrufen."
         />
       )}
 
@@ -281,25 +286,29 @@ export default function PermissionGate({
       {ANDROID && (
         <Step
           index={bgRequired ? 4 : 3}
-          title="Akku-Optimierung für StepsMatch ausschalten"
+          title="Akku-Optimierung fuer StepsMatch pruefen"
           ok={state.batteryConfirmed}
           actionLabel="Zu den Akku-Einstellungen"
           onAction={openBatterySettings}
-          hint="Bitte StepsMatch von Akku-Optimierungen ausnehmen (Doze). Danach unten Bestätigen tippen."
+          hint="Ohne diese Ausnahme koennen Hintergrund-Heartbeat und Geofence auf manchen Android-Geraeten stoppen."
           extra={
             <Pressable onPress={markBatteryConfirmed} style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnLabel}>Ich habe es ausgeschaltet ✓</Text>
+              <Text style={styles.secondaryBtnLabel}>Ich habe es geprueft</Text>
             </Pressable>
           }
         />
       )}
+
+      <Text style={styles.privacyNote}>
+        Hintergrundstandort ist fuer Heartbeat und Geofence gedacht, nicht fuer Werbung ohne passenden Kontext. Du kannst Standort und Push spaeter jederzeit in den Systemeinstellungen widerrufen.
+      </Text>
 
       <View style={styles.footer}>
         <Pressable onPress={refresh} style={styles.refreshBtn} disabled={busy}>
           {busy ? <ActivityIndicator /> : <Text style={styles.refreshLabel}>Status neu prüfen</Text>}
         </Pressable>
         {allOk ? (
-          <Text style={styles.allSet}>Alles bereit ✅ – Hintergrunddienst wird gestartet…</Text>
+          <Text style={styles.allSet}>Alles bereit - Hintergrunddienst wird gestartet...</Text>
         ) : (
           <Text style={styles.pending}>Noch nicht alles erledigt</Text>
         )}
@@ -389,6 +398,8 @@ const styles = StyleSheet.create({
 
   title: { fontSize: 22, fontWeight: '700', color: overlayColor('#111', '#fff') },
   subtitle: { fontSize: 14, color: overlayColor('#444', '#c9d1d9'), marginBottom: 8 },
+  consentLead: { fontSize: 14, color: overlayColor('#333', '#e4ecf7'), marginTop: 6, marginBottom: 8, lineHeight: 20 },
+  privacyNote: { fontSize: 12, color: overlayColor('#555', '#93a4bd'), marginTop: 8, lineHeight: 17 },
 
   card: {
     borderWidth: 1,

@@ -22,9 +22,8 @@ import { useTheme } from '@react-navigation/native';
 import OfferDistanceBadge from '../../components/DistanceBadge';
 import { isOfferActiveNow } from '../../utils/isOfferActiveNow';
 import colors from '../../theme/colors';
+import { API_BASE_URL } from '../../lib/runtimeConfig';
 
-const API_BASE_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://lobster-app-ie9a5.ondigitalocean.app/api').replace(/\/$/, '');
 const SCREEN_W = Dimensions.get('window').width;
 
 /* ───────── Geo / Utils ───────── */

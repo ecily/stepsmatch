@@ -13,8 +13,8 @@ export default function WelcomeScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.container}>
         <Text style={[styles.kicker, { color: t.colors.primary }]}>StepsMatch</Text>
-        <Text style={[styles.headline, { color: t.colors.inkHigh }]}>Finden. Nicht suchen.</Text>
-        <Text style={[styles.subheadline, { color: t.colors.inkLow }]}>Erhalte relevante Angebote zur richtigen Zeit am richtigen Ort.</Text>
+        <Text style={[styles.headline, { color: t.colors.inkHigh }]}>Lokale Hinweise testen.</Text>
+        <Text style={[styles.subheadline, { color: t.colors.inkLow }]}>Pre-Alpha: StepsMatch zeigt dir Hinweise, wenn Interesse, Naehe und Zeit zusammenpassen.</Text>
         <View style={{ width: '100%', marginTop: 20 }}>
           <Button title="Jetzt starten" size="lg" onPress={() => router.replace('/(onboarding)/LocationScreen')} />
         </View>

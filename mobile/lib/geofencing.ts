@@ -3,8 +3,9 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import { GEOFENCE_TASK } from '../background/geofencingTask';
+import { API_BASE_URL } from './runtimeConfig';
 
-const API_BASE = 'https://lobster-app-ie9a5.ondigitalocean.app';
+const API_BASE = API_BASE_URL.replace(/\/api$/, '');
 
 export type GeofenceItem = {
   offerId: string;
