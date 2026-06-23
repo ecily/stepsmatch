@@ -4,6 +4,15 @@ import { GoogleMap, Circle } from "@react-google-maps/api";
 import { Save, Trash2 } from "lucide-react";
 
 import axiosInstance from "../api/axios";
+import {
+  CONTENT_TYPE_OPTIONS,
+  GEO_VALIDITY_OPTIONS,
+  OFFER_POLICY_DEFAULTS,
+  PUBLIC_VISIBILITY_OPTIONS,
+  PUSH_ELIGIBILITY_OPTIONS,
+  PUSH_PRIORITY_OPTIONS,
+  normalizeActiveTimeWindows,
+} from "../utils/offerPolicy";
 
 const mapContainerStyle = { width: "100%", height: "300px" };
 const MAX_IMAGES = 3;
@@ -32,6 +41,7 @@ const EditOfferForm = () => {
     contact: "",
     images: [],
     provider: "",
+    ...OFFER_POLICY_DEFAULTS,
   });
 
   const [success, setSuccess] = useState(false);
@@ -71,13 +81,30 @@ const EditOfferForm = () => {
           categoryId: d.categoryId?._id || d.categoryId || "",
           subcategoryId: d.subcategoryId?._id || d.subcategoryId || "",
           description: d.description || "",
-          radius: d.radius ?? 100,
-          validDays: Array.isArray(d.validDays) ? d.validDays : [],
-          validTimes: { start: d.validTimes?.start || "", end: d.validTimes?.end || "" },
-          validDates: { from: formatDateInput(d.validDates?.from), to: formatDateInput(d.validDates?.to) },
+          radius: d.radius ?? d.radiusMeters ?? 100,
+          validDays: Array.isArray(d.activeDays) ? d.activeDays : Array.isArray(d.validDays) ? d.validDays : [],
+          validTimes: {
+            start: d.activeTimeWindows?.[0]?.from || d.validTimes?.start || d.validTimes?.from || "",
+            end: d.activeTimeWindows?.[0]?.to || d.validTimes?.end || d.validTimes?.to || "",
+          },
+          validDates: {
+            from: formatDateInput(d.validFrom || d.validDates?.from),
+            to: formatDateInput(d.validTo || d.validDates?.to),
+          },
           contact: d.contact || "",
           images: Array.isArray(d.images) ? d.images : [],
-          provider: d.provider || "",
+          provider: d.provider?._id || d.provider || "",
+          contentType: d.contentType || OFFER_POLICY_DEFAULTS.contentType,
+          publicVisibility: d.publicVisibility || OFFER_POLICY_DEFAULTS.publicVisibility,
+          demoLabel: d.demoLabel || OFFER_POLICY_DEFAULTS.demoLabel,
+          pushEligibility: d.pushEligibility || OFFER_POLICY_DEFAULTS.pushEligibility,
+          suggestedPushPriority: d.suggestedPushPriority || OFFER_POLICY_DEFAULTS.suggestedPushPriority,
+          matchReason: d.matchReason || "",
+          riskNote: d.riskNote || OFFER_POLICY_DEFAULTS.riskNote,
+          sourceUrl: d.sourceUrl || "",
+          sourceVerifiedAt: formatDateInput(d.sourceVerifiedAt),
+          geoValidity: d.geoValidity || OFFER_POLICY_DEFAULTS.geoValidity,
+          cooldownSuggestionHours: d.cooldownSuggestionHours ?? OFFER_POLICY_DEFAULTS.cooldownSuggestionHours,
         });
         setProviderLocation(Array.isArray(d.location?.coordinates) ? d.location.coordinates : null);
       } catch {
@@ -109,9 +136,9 @@ const EditOfferForm = () => {
     } else if (name.includes(".")) {
       const [parent, child] = name.split(".");
       setFormData((prev) => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
-    } else if (name === "radius") {
+    } else if (name === "radius" || name === "cooldownSuggestionHours") {
       const n = Number(value);
-      setFormData((prev) => ({ ...prev, radius: Number.isFinite(n) ? n : prev.radius }));
+      setFormData((prev) => ({ ...prev, [name]: Number.isFinite(n) ? n : prev[name] }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -182,6 +209,13 @@ const EditOfferForm = () => {
       const payload = {
         ...formData,
         radius: Number(formData.radius) || 0,
+        radiusMeters: Number(formData.radius) || 0,
+        validFrom: formData.validDates?.from || null,
+        validTo: formData.validDates?.to || null,
+        activeDays: formData.validDays,
+        activeTimeWindows: normalizeActiveTimeWindows(formData.validTimes),
+        cooldownSuggestionHours: Number(formData.cooldownSuggestionHours) || null,
+        sourceVerifiedAt: formData.sourceVerifiedAt || null,
         location: { type: "Point", coordinates: providerLocation },
       };
       await axiosInstance.put(`offers/${offerId}`, payload);
@@ -232,6 +266,9 @@ const EditOfferForm = () => {
             <div>
               <label className="sm-label" htmlFor="edit-offer-description">Beschreibung (max. 250)</label>
               <textarea id="edit-offer-description" name="description" value={formData.description} onChange={handleChange} maxLength={250} rows={3} className="sm-textarea" />
+              <p className="mt-2 text-xs text-slate-500">
+                Keine Preise, Rabatte, Oeffnungszeiten oder Partnerclaims eintragen, solange sie nicht freigegeben sind.
+              </p>
             </div>
 
             <div>
@@ -295,6 +332,87 @@ const EditOfferForm = () => {
                 ))}
               </div>
             </div>
+
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <div>
+                <h2 className="text-lg font-extrabold text-amber-950">Pitch-/Policy-Steuerung</h2>
+                <p className="mt-1 text-sm text-amber-900">
+                  Sichtbarkeit und Push bewusst setzen. Unsichere Inhalte bleiben In-App oder Silent, High Attention nur als Ausnahme.
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="sm-label" htmlFor="edit-contentType">Content-Typ</label>
+                  <select id="edit-contentType" name="contentType" value={formData.contentType} onChange={handleChange} className="sm-select">
+                    {CONTENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-publicVisibility">Sichtbarkeit</label>
+                  <select id="edit-publicVisibility" name="publicVisibility" value={formData.publicVisibility} onChange={handleChange} className="sm-select">
+                    {PUBLIC_VISIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-pushEligibility">Push-Eignung</label>
+                  <select id="edit-pushEligibility" name="pushEligibility" value={formData.pushEligibility} onChange={handleChange} className="sm-select">
+                    {PUSH_ELIGIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-suggestedPushPriority">Push-Prioritaet</label>
+                  <select id="edit-suggestedPushPriority" name="suggestedPushPriority" value={formData.suggestedPushPriority} onChange={handleChange} className="sm-select">
+                    {PUSH_PRIORITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-geoValidity">Geo-Gueltigkeit</label>
+                  <select id="edit-geoValidity" name="geoValidity" value={formData.geoValidity} onChange={handleChange} className="sm-select">
+                    {GEO_VALIDITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-cooldownSuggestionHours">Cooldown-Vorschlag (Stunden)</label>
+                  <input id="edit-cooldownSuggestionHours" type="number" min={1} name="cooldownSuggestionHours" value={formData.cooldownSuggestionHours} onChange={handleChange} className="sm-input" />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                <div>
+                  <label className="sm-label" htmlFor="edit-demoLabel">Demo-Label</label>
+                  <input id="edit-demoLabel" name="demoLabel" value={formData.demoLabel} onChange={handleChange} className="sm-input" />
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-matchReason">Match-Grund</label>
+                  <textarea id="edit-matchReason" name="matchReason" value={formData.matchReason} onChange={handleChange} rows={2} className="sm-textarea" />
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="edit-riskNote">Risiko-/Review-Hinweis</label>
+                  <textarea id="edit-riskNote" name="riskNote" value={formData.riskNote} onChange={handleChange} rows={2} className="sm-textarea" />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="sm-label" htmlFor="edit-sourceUrl">Quelle URL</label>
+                    <input id="edit-sourceUrl" type="url" name="sourceUrl" value={formData.sourceUrl} onChange={handleChange} className="sm-input" placeholder="https://..." />
+                  </div>
+                  <div>
+                    <label className="sm-label" htmlFor="edit-sourceVerifiedAt">Quelle geprueft am</label>
+                    <input id="edit-sourceVerifiedAt" type="date" name="sourceVerifiedAt" value={formData.sourceVerifiedAt} onChange={handleChange} className="sm-input" />
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <div className="sm-card-soft p-4">
               <label className="sm-label" htmlFor="edit-offer-images">Bilder (max. {MAX_IMAGES})</label>

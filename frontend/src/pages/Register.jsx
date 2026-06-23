@@ -114,8 +114,8 @@ const Register = ({ onRegisterSuccess }) => {
           <section className="sm-card p-7 sm:p-8 sm-rise">
             <h1 className="text-3xl font-extrabold">Anbieter Registrierung</h1>
             <p className="mt-2 text-slate-600">
-              Erstelle den Anbieterzugang für interne Tests und pflege danach Angebote mit
-              Radius, Laufzeit und Relevanz.
+              Erstelle den Anbieterzugang fuer den Pre-Alpha-Test und pflege danach Hinweise mit
+              Radius, Laufzeit, Sichtbarkeit und klarer Demo-Kennzeichnung.
             </p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
@@ -220,13 +220,14 @@ const Register = ({ onRegisterSuccess }) => {
             <p className="sm-chip !border-white/30 !bg-white/10 !text-white">StepsMatch Setup</p>
             <h2 className="mt-4 text-3xl font-extrabold">Von Stammdaten zu lokalem Matching</h2>
             <p className="mt-3 text-blue-50 sm:text-lg">
-              Nach der Registrierung kannst du Angebote klar strukturieren und für Menschen
-              in Reichweite sichtbar machen, wenn der Kontext passt.
+              Nach der Registrierung kannst du Inhalte klar strukturieren und fuer Menschen
+              in Reichweite sichtbar machen, wenn Interesse, Ort und Zeit passen.
             </p>
             <ul className="mt-6 grid gap-3 text-sm text-blue-50">
               <li>- Anbieterprofil mit lokaler Position</li>
-              <li>- Angebotslogik mit Tagen, Uhrzeiten und Radius</li>
-              <li>- Dashboard für laufende Pflege in der internen Alpha</li>
+              <li>- Hinweislogik mit Tagen, Uhrzeiten, Radius und Sichtbarkeit</li>
+              <li>- Keine Preise, Rabatte oder Partnerclaims ohne Freigabe</li>
+              <li>- Dashboard fuer laufende Pflege in der internen Alpha</li>
             </ul>
           </section>
         </div>

@@ -9,6 +9,17 @@ import {
 
 import axiosInstance from "../api/axios";
 import AdminNav from "../components/AdminNav";
+import {
+  CONTENT_TYPE_OPTIONS,
+  PUBLIC_VISIBILITY_OPTIONS,
+  PUSH_ELIGIBILITY_OPTIONS,
+  getContentTypeLabel,
+  getPolicyBadgeClass,
+  getPushEligibilityLabel,
+  getPushPriorityLabel,
+  getVisibilityLabel,
+  isPushCapable,
+} from "../utils/offerPolicy";
 
 const mapContainerStyle = { width: "100%", height: "440px" };
 
@@ -143,6 +154,9 @@ export default function AdminOffersMap() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState("all");
+  const [pushFilter, setPushFilter] = useState("all");
+  const [contentTypeFilter, setContentTypeFilter] = useState("all");
 
   const mapRef = useRef(null);
   const [selectedOfferId, setSelectedOfferId] = useState(null);
@@ -182,35 +196,57 @@ export default function AdminOffersMap() {
     };
   }, []);
 
+  const filteredOffers = useMemo(() => {
+    return offers.filter((offer) => {
+      if (visibilityFilter !== "all" && offer?.publicVisibility !== visibilityFilter) return false;
+      if (pushFilter !== "all" && offer?.pushEligibility !== pushFilter) return false;
+      if (contentTypeFilter !== "all" && offer?.contentType !== contentTypeFilter) return false;
+      return true;
+    });
+  }, [contentTypeFilter, offers, pushFilter, visibilityFilter]);
+
   const markers = useMemo(
     () =>
-      offers
+      filteredOffers
         .map((offer) => {
           const latLng = coordsToLatLng(offer?.location?.coordinates);
           if (!latLng) return null;
           return { offer, latLng };
         })
         .filter(Boolean),
-    [offers]
+    [filteredOffers]
   );
 
-  const nowActiveCount = useMemo(() => offers.filter((o) => isOfferActiveNow(o)).length, [offers]);
+  const nowActiveCount = useMemo(() => filteredOffers.filter((o) => isOfferActiveNow(o)).length, [filteredOffers]);
 
   const expiringNext24h = useMemo(() => {
     const now = new Date();
     const until = new Date(now.getTime() + 24 * 3600 * 1000);
-    return offers.filter((o) => {
+    return filteredOffers.filter((o) => {
       const to = parseDateFlexible(o?.validDates?.to);
       if (!to) return false;
       const end = makeLocalDateTime(to, o?.validTimes?.end || "23:59");
       return end && end > now && end <= until;
     }).length;
-  }, [offers]);
+  }, [filteredOffers]);
 
   const categoriesCount = useMemo(() => {
-    const set = new Set(offers.map((o) => o?.category).filter(Boolean));
+    const set = new Set(filteredOffers.map((o) => o?.category).filter(Boolean));
     return set.size;
-  }, [offers]);
+  }, [filteredOffers]);
+
+  const policyCounts = useMemo(() => {
+    return filteredOffers.reduce(
+      (acc, offer) => {
+        if (offer?.publicVisibility === "active_public_demo") acc.publicDemo += 1;
+        if (offer?.publicVisibility === "in_app_only_demo" || offer?.publicVisibility === "silent_admin_only") acc.quiet += 1;
+        if (isPushCapable(offer)) acc.pushCapable += 1;
+        if (["needs_review_before_import", "do_not_import_v1"].includes(offer?.publicVisibility) || offer?.riskNote) acc.review += 1;
+        return acc;
+      },
+      { publicDemo: 0, quiet: 0, pushCapable: 0, review: 0 }
+    );
+  }, [filteredOffers]);
 
   useEffect(() => {
     if (!isLoaded || !mapRef.current || markers.length === 0) return;
@@ -218,7 +254,7 @@ export default function AdminOffersMap() {
     const bounds = new google.maps.LatLngBounds();
 
     markers.forEach(({ offer, latLng }) => {
-      const r = Number(offer?.radius) || 0;
+      const r = Number(offer?.radiusMeters ?? offer?.radius) || 0;
       if (r > 0 && google?.maps?.Circle) {
         const circle = new google.maps.Circle({ center: latLng, radius: r });
         const cb = circle.getBounds();
@@ -269,7 +305,7 @@ export default function AdminOffersMap() {
             <header className="sm-card-strong p-6 sm:p-8">
               <h1 className="text-3xl font-extrabold sm:text-4xl">Admin-Dashboard Vorschau · Angebote auf Karte</h1>
               <p className="mt-3 max-w-4xl text-blue-50 sm:text-lg">
-                Aktive Angebotslage, Reichweitenradien und Laufzeiten an einem Ort. Diese Ansicht bildet die Grundlage für KPI- und Operations-Module.
+                Aktive Angebotslage, Reichweitenradien, Laufzeiten und Pitch-Policy an einem Ort. Demo-Hinweise bleiben klar von Partnerclaims getrennt.
               </p>
 
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -279,7 +315,7 @@ export default function AdminOffersMap() {
                 </div>
                 <div className="sm-kpi-card">
                   <p className="sm-kpi-label">Gesamt-Angebote</p>
-                  <p className="sm-kpi-value">{offers.length}</p>
+                  <p className="sm-kpi-value">{filteredOffers.length}</p>
                 </div>
                 <div className="sm-kpi-card">
                   <p className="sm-kpi-label">Enden ≤ 24h</p>
@@ -290,7 +326,60 @@ export default function AdminOffersMap() {
                   <p className="sm-kpi-value">{categoriesCount}</p>
                 </div>
               </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="sm-kpi-card">
+                  <p className="sm-kpi-label">Public Demo</p>
+                  <p className="sm-kpi-value">{policyCounts.publicDemo}</p>
+                </div>
+                <div className="sm-kpi-card">
+                  <p className="sm-kpi-label">In-App/Silent</p>
+                  <p className="sm-kpi-value">{policyCounts.quiet}</p>
+                </div>
+                <div className="sm-kpi-card">
+                  <p className="sm-kpi-label">Pushfaehig</p>
+                  <p className="sm-kpi-value">{policyCounts.pushCapable}</p>
+                </div>
+                <div className="sm-kpi-card">
+                  <p className="sm-kpi-label">Review/Risiko</p>
+                  <p className="sm-kpi-value">{policyCounts.review}</p>
+                </div>
+              </div>
             </header>
+
+            <section className="sm-card p-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="sm-label" htmlFor="admin-visibility-filter">Sichtbarkeit</label>
+                  <select id="admin-visibility-filter" value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value)} className="sm-select">
+                    <option value="all">Alle Sichtbarkeiten</option>
+                    {PUBLIC_VISIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="admin-push-filter">Push-Eignung</label>
+                  <select id="admin-push-filter" value={pushFilter} onChange={(e) => setPushFilter(e.target.value)} className="sm-select">
+                    <option value="all">Alle Push-Regeln</option>
+                    {PUSH_ELIGIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="admin-content-filter">Content-Typ</label>
+                  <select id="admin-content-filter" value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value)} className="sm-select">
+                    <option value="all">Alle Content-Typen</option>
+                    {CONTENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">
+                Sichere Pitch-Pruefung: oeffentlich, In-App-only, Silent, Pushfaehigkeit, Quelle und Risiko sind sichtbar, ohne echte Daten zu importieren.
+              </p>
+            </section>
 
             <section className="sm-card overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
@@ -319,7 +408,7 @@ export default function AdminOffersMap() {
                   ))}
 
                   {markers.map(({ offer, latLng }) => {
-                    const r = Number(offer?.radius) || 0;
+                    const r = Number(offer?.radiusMeters ?? offer?.radius) || 0;
                     if (r <= 0) return null;
                     return (
                       <CircleF
@@ -366,9 +455,25 @@ export default function AdminOffersMap() {
                               <div>
                                 <b>Restlaufzeit:</b> {remaining}
                               </div>
-                              {Number(sel.offer?.radius) ? (
+                              {Number(sel.offer?.radiusMeters ?? sel.offer?.radius) ? (
                                 <div>
-                                  <b>Radius:</b> {Number(sel.offer.radius)} m
+                                  <b>Radius:</b> {Number(sel.offer.radiusMeters ?? sel.offer.radius)} m
+                                </div>
+                              ) : null}
+                              <div>
+                                <b>Sichtbarkeit:</b> {getVisibilityLabel(sel.offer?.publicVisibility)}
+                              </div>
+                              <div>
+                                <b>Push:</b> {getPushEligibilityLabel(sel.offer?.pushEligibility)} / {getPushPriorityLabel(sel.offer?.suggestedPushPriority)}
+                              </div>
+                              <div>
+                                <b>Typ:</b> {getContentTypeLabel(sel.offer?.contentType)}
+                              </div>
+                              {sel.offer?.demoLabel ? <div>{sel.offer.demoLabel}</div> : null}
+                              {sel.offer?.riskNote ? <div className="text-amber-700">{sel.offer.riskNote}</div> : null}
+                              {sel.offer?.sourceUrl ? (
+                                <div>
+                                  <b>Quelle:</b> {sel.offer.sourceUrl}
                                 </div>
                               ) : null}
                             </div>
@@ -398,15 +503,21 @@ export default function AdminOffersMap() {
                     <th>Subkategorie</th>
                     <th>Gültig von</th>
                     <th>Gültig bis</th>
+                    <th>Radius</th>
+                    <th>Sichtbarkeit</th>
+                    <th>Push</th>
+                    <th>Typ</th>
+                    <th>Risiko</th>
                     <th>Noch gültig</th>
                     <th>Status heute</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {offers.map((o) => {
+                  {filteredOffers.map((o) => {
                     const provider = getProviderForOffer(o);
                     const remaining = computeRemainingDHMS(o);
                     const activeNow = isOfferActiveNow(o);
+                    const radiusMeters = Number(o.radiusMeters ?? o.radius) || 0;
 
                     return (
                       <tr
@@ -426,6 +537,19 @@ export default function AdminOffersMap() {
                         <td>
                           {fmtDate(o?.validDates?.to)} {fmtTime(o?.validTimes?.end)}
                         </td>
+                        <td>{radiusMeters ? `${radiusMeters} m` : "—"}</td>
+                        <td>
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${getPolicyBadgeClass("visibility", o.publicVisibility)}`}>
+                            {getVisibilityLabel(o.publicVisibility)}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${getPolicyBadgeClass("push", o.pushEligibility)}`}>
+                            {getPushEligibilityLabel(o.pushEligibility)}
+                          </span>
+                        </td>
+                        <td>{getContentTypeLabel(o.contentType)}</td>
+                        <td>{o.riskNote ? "ja" : "—"}</td>
                         <td>{remaining}</td>
                         <td>
                           {activeNow ? (
@@ -442,9 +566,9 @@ export default function AdminOffersMap() {
                     );
                   })}
 
-                  {offers.length === 0 && !loading && (
+                  {filteredOffers.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                      <td colSpan={13} className="px-4 py-10 text-center text-slate-500">
                         Keine Angebote gefunden.
                       </td>
                     </tr>

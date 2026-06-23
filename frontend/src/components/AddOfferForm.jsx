@@ -5,6 +5,15 @@ import { ToastContainer, toast } from "react-toastify";
 import { ImagePlus, Save, Trash2 } from "lucide-react";
 
 import axiosInstance from "../api/axios";
+import {
+  CONTENT_TYPE_OPTIONS,
+  GEO_VALIDITY_OPTIONS,
+  OFFER_POLICY_DEFAULTS,
+  PUBLIC_VISIBILITY_OPTIONS,
+  PUSH_ELIGIBILITY_OPTIONS,
+  PUSH_PRIORITY_OPTIONS,
+  normalizeActiveTimeWindows,
+} from "../utils/offerPolicy";
 import "react-toastify/dist/ReactToastify.css";
 
 const mapContainerStyle = { width: "100%", height: "320px" };
@@ -52,6 +61,7 @@ export default function AddOfferForm() {
     validDates: { from: today, to: today },
     contact: "",
     images: [],
+    ...OFFER_POLICY_DEFAULTS,
   });
 
   const [uploading, setUploading] = useState(false);
@@ -128,9 +138,9 @@ export default function AddOfferForm() {
     } else if (name.includes(".")) {
       const [parent, child] = name.split(".");
       setFormData((prev) => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
-    } else if (name === "radius") {
+    } else if (name === "radius" || name === "cooldownSuggestionHours") {
       const n = Number(value);
-      setFormData((prev) => ({ ...prev, radius: Number.isFinite(n) ? n : prev.radius }));
+      setFormData((prev) => ({ ...prev, [name]: Number.isFinite(n) ? n : prev[name] }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -225,6 +235,13 @@ export default function AddOfferForm() {
       ...formData,
       provider: resolvedProviderId,
       radius: Number(formData.radius) || 0,
+      radiusMeters: Number(formData.radius) || 0,
+      validFrom: formData.validDates?.from || null,
+      validTo: formData.validDates?.to || null,
+      activeDays: formData.validDays,
+      activeTimeWindows: normalizeActiveTimeWindows(formData.validTimes),
+      cooldownSuggestionHours: Number(formData.cooldownSuggestionHours) || null,
+      sourceVerifiedAt: formData.sourceVerifiedAt || null,
       location: {
         type: "Point",
         coordinates: [providerLocation.lng, providerLocation.lat],
@@ -290,6 +307,9 @@ export default function AddOfferForm() {
             <div>
               <label className="sm-label" htmlFor="offer-description">Beschreibung (max. 250)</label>
               <textarea id="offer-description" name="description" value={formData.description} onChange={handleChange} maxLength={250} rows={3} className="sm-textarea" />
+              <p className="mt-2 text-xs text-slate-500">
+                Keine Preise, Rabatte, Oeffnungszeiten oder Partnerclaims eintragen, solange sie nicht freigegeben sind.
+              </p>
             </div>
 
             <div>
@@ -360,6 +380,87 @@ export default function AddOfferForm() {
                 ))}
               </div>
             </div>
+
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <div>
+                <h2 className="text-lg font-extrabold text-amber-950">Pitch-/Policy-Steuerung</h2>
+                <p className="mt-1 text-sm text-amber-900">
+                  Sichere Defaults: Pre-Alpha klar kennzeichnen, nur In-App, kein High-Attention-Push und kein offizieller Partnerclaim.
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="sm-label" htmlFor="contentType">Content-Typ</label>
+                  <select id="contentType" name="contentType" value={formData.contentType} onChange={handleChange} className="sm-select">
+                    {CONTENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="publicVisibility">Sichtbarkeit</label>
+                  <select id="publicVisibility" name="publicVisibility" value={formData.publicVisibility} onChange={handleChange} className="sm-select">
+                    {PUBLIC_VISIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="pushEligibility">Push-Eignung</label>
+                  <select id="pushEligibility" name="pushEligibility" value={formData.pushEligibility} onChange={handleChange} className="sm-select">
+                    {PUSH_ELIGIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="suggestedPushPriority">Push-Prioritaet</label>
+                  <select id="suggestedPushPriority" name="suggestedPushPriority" value={formData.suggestedPushPriority} onChange={handleChange} className="sm-select">
+                    {PUSH_PRIORITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="geoValidity">Geo-Gueltigkeit</label>
+                  <select id="geoValidity" name="geoValidity" value={formData.geoValidity} onChange={handleChange} className="sm-select">
+                    {GEO_VALIDITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="cooldownSuggestionHours">Cooldown-Vorschlag (Stunden)</label>
+                  <input id="cooldownSuggestionHours" type="number" min={1} name="cooldownSuggestionHours" value={formData.cooldownSuggestionHours} onChange={handleChange} className="sm-input" />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                <div>
+                  <label className="sm-label" htmlFor="demoLabel">Demo-Label</label>
+                  <input id="demoLabel" name="demoLabel" value={formData.demoLabel} onChange={handleChange} className="sm-input" />
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="matchReason">Match-Grund</label>
+                  <textarea id="matchReason" name="matchReason" value={formData.matchReason} onChange={handleChange} rows={2} className="sm-textarea" placeholder="z. B. Passt zu Interesse, Naehe und aktivem Zeitfenster." />
+                </div>
+                <div>
+                  <label className="sm-label" htmlFor="riskNote">Risiko-/Review-Hinweis</label>
+                  <textarea id="riskNote" name="riskNote" value={formData.riskNote} onChange={handleChange} rows={2} className="sm-textarea" />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="sm-label" htmlFor="sourceUrl">Quelle URL</label>
+                    <input id="sourceUrl" type="url" name="sourceUrl" value={formData.sourceUrl} onChange={handleChange} className="sm-input" placeholder="https://..." />
+                  </div>
+                  <div>
+                    <label className="sm-label" htmlFor="sourceVerifiedAt">Quelle geprueft am</label>
+                    <input id="sourceVerifiedAt" type="date" name="sourceVerifiedAt" value={formData.sourceVerifiedAt} onChange={handleChange} className="sm-input" />
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <div>
               <label className="sm-label" htmlFor="offer-contact">Kontaktinfo (optional)</label>

@@ -104,17 +104,19 @@ const Login = () => {
             <p className="sm-chip !border-white/30 !bg-white/10 !text-white">StepsMatch Anbieterbereich</p>
             <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Lokale Angebote gezielt pflegen</h1>
             <p className="mt-3 text-blue-50 sm:text-lg">
-              Verwalte Radius, Zeitfenster und Inhalte deiner Angebote für das lokale Matching.
+              Verwalte Radius, Zeitfenster, Sichtbarkeit und Demo-Kennzeichnung deiner Inhalte fuer das lokale Matching.
             </p>
             <div className="mt-6 flex items-center gap-2 text-sm text-blue-50">
               <LogIn className="h-4 w-4" />
-              Sicherer Login für interne Alpha- und Anbieterpflege
+              Sicherer Login fuer interne Alpha- und Anbieterpflege
             </div>
           </section>
 
           <section className="sm-card p-7 sm:p-8 sm-rise sm-delay-1">
             <h2 className="text-2xl font-extrabold">Anbieter Login</h2>
-            <p className="mt-2 text-slate-600">Melde dich an, um Angebote für Nähe, Interesse und aktive Ausspielung zu pflegen.</p>
+            <p className="mt-2 text-slate-600">
+              Melde dich an, um Hinweise fuer Naehe, Interesse und aktive Ausspielung zu pflegen. Keine Partnerclaims ohne Freigabe.
+            </p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
 

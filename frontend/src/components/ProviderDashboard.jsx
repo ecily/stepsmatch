@@ -4,6 +4,14 @@ import { CheckCircle, Clock, LogOut, Ruler, Settings2, Trash2, XCircle } from "l
 import { GoogleMap, Circle, useJsApiLoader } from "@react-google-maps/api";
 
 import axiosInstance from "../api/axios";
+import {
+  getContentTypeLabel,
+  getPolicyBadgeClass,
+  getPushEligibilityLabel,
+  getPushPriorityLabel,
+  getVisibilityLabel,
+  isPushCapable,
+} from "../utils/offerPolicy";
 
 const ProviderDashboard = () => {
   const navigate = useNavigate();
@@ -11,6 +19,7 @@ const ProviderDashboard = () => {
   const [error, setError] = useState("");
   const [providerId, setProviderId] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [policyFilter, setPolicyFilter] = useState("all");
   const [query, setQuery] = useState("");
 
   const { isLoaded } = useJsApiLoader({
@@ -107,11 +116,15 @@ const ProviderDashboard = () => {
   }, [offers]);
 
   const metrics = useMemo(() => {
-    const base = { total: offers.length, active: 0, upcoming: 0, expired: 0 };
+    const base = { total: offers.length, active: 0, upcoming: 0, expired: 0, publicDemo: 0, inAppOnly: 0, pushCapable: 0, review: 0 };
     for (const row of dashboardRows) {
       if (row.status?.key === "active") base.active += 1;
       if (row.status?.key === "upcoming") base.upcoming += 1;
       if (row.status?.key === "expired") base.expired += 1;
+      if (row.offer?.publicVisibility === "active_public_demo") base.publicDemo += 1;
+      if (row.offer?.publicVisibility === "in_app_only_demo") base.inAppOnly += 1;
+      if (isPushCapable(row.offer)) base.pushCapable += 1;
+      if (["needs_review_before_import", "do_not_import_v1"].includes(row.offer?.publicVisibility)) base.review += 1;
     }
     return base;
   }, [dashboardRows, offers.length]);
@@ -120,13 +133,18 @@ const ProviderDashboard = () => {
     const q = query.trim().toLowerCase();
     return dashboardRows.filter((row) => {
       if (statusFilter !== "all" && row.status?.key !== statusFilter) return false;
+      if (policyFilter === "public" && row.offer?.publicVisibility !== "active_public_demo") return false;
+      if (policyFilter === "in_app" && row.offer?.publicVisibility !== "in_app_only_demo") return false;
+      if (policyFilter === "push" && !isPushCapable(row.offer)) return false;
+      if (policyFilter === "silent" && row.offer?.publicVisibility !== "silent_admin_only") return false;
+      if (policyFilter === "review" && !["needs_review_before_import", "do_not_import_v1"].includes(row.offer?.publicVisibility)) return false;
       if (!q) return true;
       const o = row.offer;
-      return [o?.name, o?.description, o?.category, o?.subcategory]
+      return [o?.name, o?.description, o?.category, o?.subcategory, o?.demoLabel, o?.matchReason, o?.riskNote]
         .filter(Boolean)
         .some((txt) => String(txt).toLowerCase().includes(q));
     });
-  }, [dashboardRows, query, statusFilter]);
+  }, [dashboardRows, policyFilter, query, statusFilter]);
 
   return (
     <div className="sm-page">
@@ -136,7 +154,11 @@ const ProviderDashboard = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-3xl font-extrabold">Deine Angebote</h1>
-                <p className="mt-2 text-slate-600">Verwalte Laufzeiten, Radius und Inhalte für deine aktive Ausspielung.</p>
+                <p className="mt-2 text-slate-600">Verwalte Laufzeiten, Radius und Inhalte fuer deine aktive Ausspielung.</p>
+                <p className="mt-2 max-w-3xl text-sm text-slate-500">
+                  Pre-Alpha: Inhalte sind lokale Hinweise fuer Tests. Bitte keine Preise, Rabatte, Oeffnungszeiten oder Partnerclaims eintragen,
+                  solange sie nicht sauber freigegeben sind.
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -178,6 +200,24 @@ const ProviderDashboard = () => {
                 <p className="mt-1 text-2xl font-extrabold text-red-800">{metrics.expired}</p>
               </div>
             </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-blue-700">In-App Demo</p>
+                <p className="mt-1 text-2xl font-extrabold text-blue-800">{metrics.inAppOnly}</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">Public Demo</p>
+                <p className="mt-1 text-2xl font-extrabold text-emerald-800">{metrics.publicDemo}</p>
+              </div>
+              <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-purple-700">Pushfaehig</p>
+                <p className="mt-1 text-2xl font-extrabold text-purple-800">{metrics.pushCapable}</p>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">Review</p>
+                <p className="mt-1 text-2xl font-extrabold text-amber-800">{metrics.review}</p>
+              </div>
+            </div>
           </section>
 
           {error && <p className="sm-error">{error}</p>}
@@ -206,6 +246,26 @@ const ProviderDashboard = () => {
                       </button>
                     ))}
                   </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: "all", label: "Alle Policies" },
+                      { id: "in_app", label: "In-App" },
+                      { id: "public", label: "Public Demo" },
+                      { id: "push", label: "Pushfaehig" },
+                      { id: "silent", label: "Silent" },
+                      { id: "review", label: "Review" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setPolicyFilter(f.id)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                          policyFilter === f.id ? "border-amber-300 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
@@ -220,9 +280,10 @@ const ProviderDashboard = () => {
               ) : null}
 
               {filteredRows.map(({ offer, status }) => {
-                const [lng, lat] = offer.location.coordinates;
-                const center = { lat, lng };
-                const radiusWithBuffer = offer.radius + 10;
+                const coords = Array.isArray(offer?.location?.coordinates) ? offer.location.coordinates : null;
+                const center = coords && coords.length === 2 ? { lat: Number(coords[1]), lng: Number(coords[0]) } : null;
+                const radiusMeters = Number(offer.radiusMeters ?? offer.radius) || 0;
+                const radiusWithBuffer = radiusMeters + 10;
 
                 return (
                   <article key={offer._id} className="sm-card p-5 sm:p-6">
@@ -258,8 +319,31 @@ const ProviderDashboard = () => {
 
                         <div className="flex items-center gap-1 text-sm text-slate-600">
                           <Ruler className="h-4 w-4" />
-                          Angebot gilt im Umkreis von {offer.radius} m
+                          Hinweis gilt im Umkreis von {radiusMeters} m
                         </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                            {getContentTypeLabel(offer.contentType)}
+                          </span>
+                          <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${getPolicyBadgeClass("visibility", offer.publicVisibility)}`}>
+                            {getVisibilityLabel(offer.publicVisibility)}
+                          </span>
+                          <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${getPolicyBadgeClass("push", offer.pushEligibility)}`}>
+                            {getPushEligibilityLabel(offer.pushEligibility)}
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                            {getPushPriorityLabel(offer.suggestedPushPriority)}
+                          </span>
+                        </div>
+
+                        {offer.demoLabel || offer.matchReason || offer.riskNote ? (
+                          <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-sm text-amber-950">
+                            {offer.demoLabel ? <p className="font-semibold">{offer.demoLabel}</p> : null}
+                            {offer.matchReason ? <p className="mt-1">{offer.matchReason}</p> : null}
+                            {offer.riskNote ? <p className="mt-1 text-xs">{offer.riskNote}</p> : null}
+                          </div>
+                        ) : null}
 
                         <div className="flex flex-wrap gap-2 pt-1">
                           <Link to={`/edit-offer/${offer._id}`} className="sm-btn-secondary !px-4 !py-2">
@@ -277,7 +361,7 @@ const ProviderDashboard = () => {
                           {status.text}
                         </div>
 
-                        {isLoaded ? (
+                        {isLoaded && center ? (
                           <GoogleMap
                             mapContainerStyle={{ width: "100%", height: "150px", borderRadius: "12px" }}
                             center={center}
@@ -292,7 +376,7 @@ const ProviderDashboard = () => {
                           >
                             <Circle
                               center={center}
-                              radius={offer.radius}
+                              radius={radiusMeters}
                               options={{
                                 fillColor: "#3b82f6",
                                 fillOpacity: 0.2,
