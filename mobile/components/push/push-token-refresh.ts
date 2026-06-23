@@ -15,7 +15,7 @@ async function getProjectId(): Promise<string> {
 
 async function getStoredToken(): Promise<string|null> {
   try {
-    const { SecureStore } = await import('expo-secure-store');
+    const SecureStore = await import('expo-secure-store');
     const v = await SecureStore.getItemAsync('expoPushToken');
     return v || null;
   } catch { return null; }
@@ -23,7 +23,7 @@ async function getStoredToken(): Promise<string|null> {
 
 async function setStoredToken(tok:string) {
   try {
-    const { SecureStore } = await import('expo-secure-store');
+    const SecureStore = await import('expo-secure-store');
     await SecureStore.setItemAsync('expoPushToken', tok);
   } catch {}
 }

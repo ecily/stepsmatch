@@ -1,9 +1,13 @@
 // stepsmatch/mobile/components/push/push-state.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Random from 'expo-random';
 import * as Notifications from 'expo-notifications';
 import { RESOLVED_PROJECT_ID } from './push-constants';
+import { csvToSet } from '../../utils/interests';
+
+export { Platform };
 
 const TOKEN_KEY = 'expoPushToken.v2';
 const DEVICE_ID_SECURE_KEY = 'deviceId.v1';
@@ -12,6 +16,7 @@ const GLOBAL_STATE_KEY = 'offerPushState.__global';
 const GROUP_STATE_KEY_PR = 'offerGroupState.'; // nur hier verwendet
 
 let CURRENT_EXPO_TOKEN: string | null = null;
+let PUSH_LOCKS = new Set<string>();
 
 export const nowMs = () => Date.now();
 
@@ -142,5 +147,62 @@ export async function getOfferMeta(offerId: string) {
     const raw = await AsyncStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
+}
+
+export async function getInterestSet(): Promise<Set<string>> {
+  try {
+    const [rawCsv, rawJson] = await Promise.all([
+      AsyncStorage.getItem('userInterests.csv'),
+      AsyncStorage.getItem('userInterests'),
+    ]);
+    const set = new Set<string>(csvToSet(rawCsv || ''));
+    if (rawJson) {
+      try {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            for (const token of csvToSet(String(item || ''))) set.add(token);
+          }
+        } else if (typeof parsed === 'string') {
+          for (const token of csvToSet(parsed)) set.add(token);
+        }
+      } catch {
+        for (const token of csvToSet(rawJson)) set.add(token);
+      }
+    }
+    return set;
+  } catch {
+    return new Set();
+  }
+}
+
+export function acquirePushLock(key: string) {
+  if (!safeKey(key)) return false;
+  if (PUSH_LOCKS.has(key)) return false;
+  PUSH_LOCKS.add(key);
+  setTimeout(() => {
+    try { PUSH_LOCKS.delete(key); } catch {}
+  }, 3000);
+  return true;
+}
+
+export async function pruneObsoleteOfferStates(validIdentifiers: string[]) {
+  try {
+    const validIds = new Set(
+      (validIdentifiers || [])
+        .map((identifier) => String(identifier || '').replace(/^offer:/, ''))
+        .filter(Boolean)
+    );
+    const keys = await AsyncStorage.getAllKeys();
+    const offerStateKeys = (keys || []).filter((key) => key.startsWith('offerPushState.'));
+    const ops: Promise<void>[] = [];
+    for (const key of offerStateKeys) {
+      const offerId = key.slice('offerPushState.'.length);
+      if (!validIds.has(offerId)) {
+        ops.push(AsyncStorage.setItem(key, JSON.stringify({ inside: false, lastPushedAt: 0 })));
+      }
+    }
+    if (ops.length) await Promise.allSettled(ops);
+  } catch {}
 }
 

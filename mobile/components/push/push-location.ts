@@ -55,7 +55,7 @@ export async function getFreshBestFixOrNull(timeoutMs = FRESH_FIX_TIMEOUT_MS) {
       accuracy: Location.Accuracy.BestForNavigation,
       maximumAge: 0,
       timeout: timeoutMs,
-    });
+    } as any);
     return fix?.coords ? fix : null;
   } catch {
     return null;
@@ -82,7 +82,7 @@ export async function ensureGoodAccuracyCoords(
       const fresh = await getFreshBestFixOrNull();
       if (
         fresh?.coords &&
-        fresh.coords.accuracy < (((coords as any).accuracy) ?? 1e9)
+        (fresh.coords.accuracy ?? 1e9) < (((coords as any).accuracy) ?? 1e9)
       ) {
         return fresh.coords;
       }
@@ -171,12 +171,12 @@ export async function sendHeartbeat(arg?: any) {
             accuracy: Location.Accuracy.BestForNavigation,
             maximumAge: 0,
             timeout: FRESH_FIX_TIMEOUT_MS,
-          });
+          } as any);
           if (fresh?.coords) {
             return _sendHeartbeatWithCoords({
               latitude: fresh.coords.latitude,
               longitude: fresh.coords.longitude,
-              accuracy: fresh.coords.accuracy,
+              accuracy: fresh.coords.accuracy ?? undefined,
               refreshMode: 'silent',
             });
           }
@@ -187,7 +187,7 @@ export async function sendHeartbeat(arg?: any) {
       return _sendHeartbeatWithCoords({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
+        accuracy: pos.coords.accuracy ?? undefined,
         refreshMode: 'silent',
       });
     }
@@ -206,7 +206,7 @@ export async function sendHeartbeat(arg?: any) {
       return _sendHeartbeatWithCoords({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
+        accuracy: pos.coords.accuracy ?? undefined,
         refreshMode: 'normal',
       });
     }
@@ -282,7 +282,8 @@ export async function startAggressiveBgLocation() {
         notificationChannelId: channelId, // safe
         killServiceOnDestroy: false,
       },
-    });    __lastStartAt = now;
+    } as any);
+    __lastStartAt = now;
 
     try {
       // Warmer Fix ohne harten Neustart – reduziert Binder-Last
@@ -294,7 +295,7 @@ export async function startAggressiveBgLocation() {
         await _sendHeartbeatWithCoords({
           latitude: warm.coords.latitude,
           longitude: warm.coords.longitude,
-          accuracy: warm.coords.accuracy,
+          accuracy: warm.coords.accuracy ?? undefined,
           refreshMode: isForeground() ? 'silent' : 'normal',
         });
       }
@@ -345,7 +346,7 @@ export async function kickstartBackgroundLocation() {
         await _sendHeartbeatWithCoords({
           latitude: loc.coords.latitude,
           longitude: loc.coords.longitude,
-          accuracy: loc.coords.accuracy,
+          accuracy: loc.coords.accuracy ?? undefined,
           refreshMode: 'silent',
         });
       }
@@ -359,7 +360,7 @@ export async function kickstartBackgroundLocation() {
       await _sendHeartbeatWithCoords({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
-        accuracy: loc.coords.accuracy,
+        accuracy: loc.coords.accuracy ?? undefined,
         refreshMode: 'silent',
       });
     }
@@ -383,7 +384,7 @@ export function useLocationWatchdog() {  const timerRef = useRef<any>(null);
             await _sendHeartbeatWithCoords({
               latitude: pos.coords.latitude,
               longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
+              accuracy: pos.coords.accuracy ?? undefined,
               refreshMode: 'silent',
             });
           }
@@ -425,7 +426,7 @@ export function useLocationWatchdog() {  const timerRef = useRef<any>(null);
               await _sendHeartbeatWithCoords({
                 latitude: pos.coords.latitude,
                 longitude: pos.coords.longitude,
-                accuracy: pos.coords.accuracy,
+                accuracy: pos.coords.accuracy ?? undefined,
                 refreshMode: 'normal',
               });
             }

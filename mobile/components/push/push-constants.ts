@@ -46,6 +46,8 @@ export const FRESH_FIX_TIMEOUT_MS   = 4_000;
 export const ACCURACY_TOKEN_CAP_M   = 60;
 export const ENTER_SANITY_BUFFER_M  = 5;
 export const OUTSIDE_TOLERANCE_M    = 5;
+export const HEARTBEAT_MIN_SECONDS  = 15 * 60;
+export const EUROPE_VIENNA          = 'Europe/Vienna';
 
 /** ───── Geofence Sync/Radius ───── */
 export const MAX_GEOFENCES              = 20;

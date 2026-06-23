@@ -231,7 +231,7 @@ async function primeFusedProviderOnce() {
       lastKnownLocRef.current = {
         latitude: fix.coords.latitude,
         longitude: fix.coords.longitude,
-        accuracy: fix.coords.accuracy,
+        accuracy: fix.coords.accuracy ?? undefined,
       };
       console.log('[BGLOC] primed fused provider with one-shot fix');
     }
@@ -440,7 +440,7 @@ async function ensureGoodAccuracyCoords(base: { latitude: number; longitude: num
     if (acc <= MIN_GOOD_ACCURACY_M) return base;
     const fresh = await getFreshBestFixOrNull();
     if (fresh?.coords?.latitude && fresh?.coords?.longitude) {
-      return { latitude: fresh.coords.latitude, longitude: fresh.coords.longitude, accuracy: fresh.coords.accuracy };
+      return { latitude: fresh.coords.latitude, longitude: fresh.coords.longitude, accuracy: fresh.coords.accuracy ?? undefined };
     }
   } catch {}
   return null;
@@ -948,7 +948,7 @@ export async function refreshGeofencesAroundUser(force = false) {
       return;
     }
     const { latitude, longitude } = loc.coords;
-    lastKnownLocRef.current = { latitude, longitude, accuracy: loc.coords.accuracy };
+    lastKnownLocRef.current = { latitude, longitude, accuracy: loc.coords.accuracy ?? undefined };
 
     const offers = await fetchCandidateOffers();
     const activeNearby: { offer: any; p: { lat: number; lng: number }; dist: number }[] = [];
@@ -1094,7 +1094,8 @@ async function sendHeartbeatSingleFlight(arg: {
   }
 
   hbInFlightMeta = { reason: r, startedAtMs: Date.now() };
-  const p = (async () => {
+  let p: Promise<any> | null = null;
+  p = (async () => {
     try {
       return await _sendHeartbeatWithCoords({ ...arg, reason: r });
     } finally {
@@ -1591,7 +1592,7 @@ function useHeartbeatScheduler() {
             lastKnownLocRef.current ||
             (await (async () => {
               const lk = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 200 } as any);
-              return lk?.coords ? { latitude: lk.coords.latitude, longitude: lk.coords.longitude, accuracy: lk.coords.accuracy } : null;
+              return lk?.coords ? { latitude: lk.coords.latitude, longitude: lk.coords.longitude, accuracy: lk.coords.accuracy ?? undefined } : null;
             })());
           if (last) {
             await sendHeartbeatSingleFlight({ ...last, reason: 'scheduler' });
@@ -1776,7 +1777,7 @@ if (!TaskManager.isTaskDefined(BG_LOCATION_TASK)) {
         const prev = lastCoordsForBooster;
         const moved = prev ? haversineMeters(prev.latitude, prev.longitude, latitude, longitude) : 0;
         if (!prev || moved >= BOOSTER_MOVE_METERS) {
-          if (now - lastBoosterAtMs >= BOOSTER_MIN_GAP_SECONDS * 1000) {
+          if (lastBoosterAtMs == null || now - lastBoosterAtMs >= BOOSTER_MIN_GAP_SECONDS * 1000) {
             lastBoosterAtMs = now;
             await sendHeartbeatSingleFlight({
               latitude,
@@ -1885,8 +1886,12 @@ if (!TaskManager.isTaskDefined(GEOFENCE_TASK)) {
     if (eventType === Location.GeofencingEventType.Enter) {
       if (Number.isFinite(region?.latitude) && Number.isFinite(region?.longitude)) {
         try {
-          const improved = await ensureGoodAccuracyCoords(lastKnown?.coords || null);
-          if (improved) { lat = improved.latitude; lng = improved.longitude; accuracy = improved.accuracy; }
+          const improved = await ensureGoodAccuracyCoords(lastKnown?.coords ? {
+            latitude: lastKnown.coords.latitude,
+            longitude: lastKnown.coords.longitude,
+            accuracy: lastKnown.coords.accuracy ?? undefined,
+          } : null);
+          if (improved) { lat = improved.latitude; lng = improved.longitude; accuracy = improved.accuracy ?? null; }
         } catch {}
 
         if (lat == null || lng == null) {

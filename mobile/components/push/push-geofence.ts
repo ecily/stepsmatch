@@ -39,9 +39,9 @@ const presentLocalOfferNotification: typeof _presentLocalOfferNotification =
   typeof _presentLocalOfferNotification === 'function'
     ? _presentLocalOfferNotification
     : (async () => { console.log('[warn] presentLocalOfferNotification noop'); });
-const shouldNotify: (offerId: string, reason: string) => Promise<{ ok: boolean; reason?: string }> =
+const shouldNotify: (offerId: string, reason: any) => Promise<{ ok: boolean; reason?: string }> =
   typeof _shouldNotify === 'function'
-    ? _shouldNotify
+    ? (_shouldNotify as any)
     : async () => ({ ok: true, reason: 'noop-shouldNotify' });
 
 // Regions cache (module-local)

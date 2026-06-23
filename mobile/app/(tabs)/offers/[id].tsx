@@ -29,7 +29,10 @@ const api = axios.create({ baseURL: API_BASE_URL, timeout: 12000 });
 const OID24 = /^[0-9a-fA-F]{24}$/;
 const SCREEN_W = Dimensions.get('window').width;
 
-function toNumber(val) {
+type LatLng = { lat: number; lng: number };
+type OfferLike = Record<string, any>;
+
+function toNumber(val: unknown): number | null {
   if (typeof val === 'number') return val;
   if (typeof val === 'string') {
     const n = parseFloat(val);
@@ -38,13 +41,13 @@ function toNumber(val) {
   return null;
 }
 
-function formatDistance(metersLike) {
+function formatDistance(metersLike: unknown): string | null {
   const meters = toNumber(metersLike);
   if (meters == null) return null;
   return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
 }
 
-function pickOfferLatLng(offer) {
+function pickOfferLatLng(offer: OfferLike | null | undefined): LatLng | null {
   const direct = offer?.location?.coordinates;
   if (Array.isArray(direct) && direct.length === 2) {
     const [lng, lat] = direct;
@@ -58,7 +61,7 @@ function pickOfferLatLng(offer) {
   return null;
 }
 
-function pickOfferEndDate(offer) {
+function pickOfferEndDate(offer: OfferLike | null | undefined): Date | null {
   const keys = ['activeUntil', 'activeEnd', 'validUntil', 'endAt', 'validTo', 'dateTo', 'activeWindowEnd', 'expiresAt'];
   for (const key of keys) {
     const raw = offer?.[key];
@@ -72,7 +75,7 @@ function pickOfferEndDate(offer) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatRemaining(diffMs) {
+function formatRemaining(diffMs: number | null | undefined): string {
   if (diffMs == null || diffMs <= 0) return 'endet bald';
   const totalMin = Math.ceil(diffMs / 60000);
   if (totalMin < 60) return `noch ${totalMin} min`;
@@ -92,13 +95,13 @@ export default function OfferDetailsScreen() {
   const id = useMemo(() => (typeof idParam === 'string' ? idParam.trim() : ''), [idParam]);
   const validId = useMemo(() => OID24.test(id), [id]);
 
-  const [offer, setOffer] = useState(null);
+  const [offer, setOffer] = useState<OfferLike | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
-  const [userPos, setUserPos] = useState(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [userPos, setUserPos] = useState<LatLng | null>(null);
 
   const mountedRef = useRef(true);
-  const mapRef = useRef(null);
+  const mapRef = useRef<MapView | null>(null);
   const titleAnim = useRef(new Animated.Value(0)).current;
 
   const distanceFromParam = useMemo(() => {
@@ -129,10 +132,10 @@ export default function OfferDetailsScreen() {
       try {
         setLoading(true);
         const res = await api.get(`/offers/${id}`, { params: { withProvider: 1 }, signal: controller.signal });
-        const data = res?.data?.offer ?? res?.data ?? null;
+        const data = (res?.data?.offer ?? res?.data ?? null) as OfferLike | null;
         if (!mountedRef.current) return;
         setOffer(data);
-      } catch (e) {
+      } catch (e: any) {
         if (!mountedRef.current) return;
         const isTimeout = String(e?.message || '').toLowerCase().includes('timeout');
         setErr(isTimeout ? 'Zeitueberschreitung - bitte erneut versuchen.' : 'Fehler beim Laden des Angebots.');
@@ -190,7 +193,7 @@ export default function OfferDetailsScreen() {
     return formatRemaining(end.getTime() - Date.now());
   }, [offer]);
 
-  const images = useMemo(() => (Array.isArray(offer?.images) ? offer.images.filter(Boolean) : []), [offer]);
+  const images = useMemo<string[]>(() => (Array.isArray(offer?.images) ? offer.images.filter(Boolean) : []), [offer]);
   const pitchBadges = useMemo(() => (offer ? getPitchBadges(offer) : []), [offer]);
   const matchReasonLines = useMemo(
     () => (offer ? buildMatchReasonLines(offer, { distanceMeters, isActiveNow: isActive }) : []),

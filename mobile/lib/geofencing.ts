@@ -2,7 +2,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
-import { GEOFENCE_TASK } from '../background/geofencingTask';
+import { GEOFENCE_TASK } from '../components/push/push-constants';
 import { API_BASE_URL } from './runtimeConfig';
 
 const API_BASE = API_BASE_URL.replace(/\/api$/, '');

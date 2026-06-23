@@ -10,8 +10,23 @@ import polyline from '@mapbox/polyline';
 
 const ENDPOINT = 'https://maps.googleapis.com/maps/api/directions/json';
 
+type RoutePoint = { latitude: number; longitude: number };
+type RouteMode = 'walking' | 'driving' | 'bicycling' | 'transit';
+type RouteOptions = {
+  avoidStairs?: boolean;
+  alternatives?: boolean;
+  timeoutMs?: number;
+  retryUnknown?: boolean;
+};
+
 // Utility: baue URL mit sicheren Parametern
-function buildUrl(origin, destination, apiKey, mode = 'walking', opts = {}) {
+function buildUrl(
+  origin: RoutePoint,
+  destination: RoutePoint,
+  apiKey: string,
+  mode: RouteMode = 'walking',
+  opts: RouteOptions = {}
+) {
   const params = new URLSearchParams({
     origin: `${origin.latitude},${origin.longitude}`,
     destination: `${destination.latitude},${destination.longitude}`,
@@ -35,7 +50,7 @@ function buildUrl(origin, destination, apiKey, mode = 'walking', opts = {}) {
 }
 
 // Utility: Timeout mit AbortController
-async function fetchWithTimeout(resource, options = {}, timeoutMs = 10000) {
+async function fetchWithTimeout(resource: string, options: RequestInit = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -47,8 +62,8 @@ async function fetchWithTimeout(resource, options = {}, timeoutMs = 10000) {
 }
 
 // Utility: decode polyline -> [{latitude, longitude}, ...]
-function decodePolyline(points) {
-  const decoded = polyline.decode(points); // [[lat, lng], ...]
+function decodePolyline(points: string): RoutePoint[] {
+  const decoded = polyline.decode(points) as Array<[number, number]>; // [[lat, lng], ...]
   return decoded.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
 }
 
@@ -61,17 +76,24 @@ function decodePolyline(points) {
  * @param {{ avoidStairs?: boolean, timeoutMs?: number, retryUnknown?: boolean }} options
  * @returns {Promise<Array<{latitude:number, longitude:number}>>}
  */
-export async function fetchRoute(origin, destination, apiKey, mode = 'walking', options = {}) {
+export async function fetchRoute(
+  origin: RoutePoint,
+  destination: RoutePoint,
+  apiKey: string,
+  mode: RouteMode = 'walking',
+  options: RouteOptions = {}
+): Promise<RoutePoint[]> {
   if (!apiKey) throw new Error('Google Directions: API-Key fehlt');
   if (!origin || !destination) throw new Error('Google Directions: origin/destination fehlen');
 
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 10000;
   const url = buildUrl(origin, destination, apiKey, mode, options);
 
-  let res, json;
+  let res: Response;
+  let json: any;
   try {
     res = await fetchWithTimeout(url, { method: 'GET' }, timeoutMs);
-  } catch (e) {
+  } catch (e: any) {
     // Abort oder Netzwerkfehler
     throw new Error(`Google Directions: Netzwerk-/Timeout-Fehler (${e?.name || 'fetch error'})`);
   }
