@@ -1,11 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Alert, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { stopBackgroundServices, syncRemoteServiceState } from '../../components/PushInitializer';
+import {
+  BRAND_BLUE,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+  STRONG_PATTERN,
+} from '../../components/push/push-constants';
 import { isStoppedUntilRestartNow, setServiceEnabled, setStopUntilRestart } from '../../components/push/service-control';
 
 const PRIVACY_OPTIN_KEY = 'privacy.push.optin.v1';
@@ -113,6 +121,49 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleStrongNearbyTest = useCallback(async () => {
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync(NEARBY_ATTENTION_CHANNEL_ID, {
+          name: 'Nearby matches',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: STRONG_PATTERN,
+          enableVibrate: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          enableLights: true,
+          lightColor: BRAND_BLUE,
+          bypassDnd: false,
+          showBadge: true,
+          description: 'Starker Hinweis bei passenden Angeboten in deiner Naehe',
+        });
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'StepsMatch Nähe-Test',
+          body: 'Diese Notification nutzt den starken Nearby-Channel.',
+          data: {
+            kind: 'profile-strong-nearby-test',
+            source: 'profile',
+            channelId: NEARBY_ATTENTION_CHANNEL_ID,
+            channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+            channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+          },
+          sound: true,
+          channelId: NEARBY_ATTENTION_CHANNEL_ID,
+          categoryIdentifier: 'offer-go-v2',
+        },
+        trigger: { seconds: 3 },
+      });
+
+      console.log(`[notify] strongNearbyTest channel=${NEARBY_ATTENTION_CHANNEL_ID} trigger=3s`);
+    } catch (e) {
+      console.log('[notify] strongNearbyTest error', String(e?.message || e));
+      Alert.alert('Test fehlgeschlagen', 'Die lokale Test-Notification konnte nicht ausgelöst werden.');
+    }
+  }, []);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.colors.background }]} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -167,6 +218,20 @@ export default function ProfileScreen() {
             size="lg"
             onPress={handleStopUntilRestart}
             disabled={hardStopped}
+          />
+        </View>
+
+        <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+          <Text style={[styles.sectionTitle, { color: t.colors.inkHigh }]}>Interner Test</Text>
+          <Text style={[styles.hint, { color: t.colors.inkLow }]}>
+            Plant lokal eine Test-Benachrichtigung nach 3 Sekunden ueber den starken Nearby-Channel. Kein Backend, kein Push-Versand.
+          </Text>
+          <Button
+            title="Starke Nearby-Notification testen"
+            variant="secondary"
+            size="lg"
+            onPress={handleStrongNearbyTest}
+            accessibilityLabel="Test strong nearby notification"
           />
         </View>
 
