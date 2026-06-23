@@ -24,6 +24,7 @@ export default function ProfileScreen() {
   const [privacyOptIn, setPrivacyOptIn] = useState(null);
   const [hardStopped, setHardStopped] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [strongTestStatus, setStrongTestStatus] = useState('');
 
   const loadPrivacy = useCallback(async () => {
     try {
@@ -123,6 +124,19 @@ export default function ProfileScreen() {
 
   const handleStrongNearbyTest = useCallback(async () => {
     try {
+      console.log('[notify] strongNearbyTest buttonPressed');
+      setStrongTestStatus('Test wird in 3 Sekunden ausgelöst.');
+
+      const permissions = await Notifications.getPermissionsAsync();
+      const permissionStatus = permissions?.status || (permissions?.granted ? 'granted' : 'unknown');
+      console.log(`[notify] strongNearbyTest permissionStatus=${permissionStatus}`);
+      if (!permissions?.granted) {
+        const msg = 'Benachrichtigungen sind nicht erlaubt. Bitte App-Benachrichtigungen aktivieren.';
+        console.log(`[notify] strongNearbyTest error=permission-not-granted status=${permissionStatus}`);
+        setStrongTestStatus(msg);
+        return;
+      }
+
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync(NEARBY_ATTENTION_CHANNEL_ID, {
           name: 'Nearby matches',
@@ -139,6 +153,7 @@ export default function ProfileScreen() {
         });
       }
 
+      console.log(`[notify] strongNearbyTest scheduling channel=${NEARBY_ATTENTION_CHANNEL_ID} trigger=3s`);
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'StepsMatch Nähe-Test',
@@ -157,9 +172,12 @@ export default function ProfileScreen() {
         trigger: { seconds: 3 },
       });
 
-      console.log(`[notify] strongNearbyTest channel=${NEARBY_ATTENTION_CHANNEL_ID} trigger=3s`);
+      console.log('[notify] strongNearbyTest scheduled ok');
+      setStrongTestStatus('Test geplant. Lege die App jetzt in den Hintergrund oder schalte den Bildschirm aus.');
     } catch (e) {
-      console.log('[notify] strongNearbyTest error', String(e?.message || e));
+      const message = String(e?.message || e);
+      console.log(`[notify] strongNearbyTest error=${message}`);
+      setStrongTestStatus(`Fehler: ${message}`);
       Alert.alert('Test fehlgeschlagen', 'Die lokale Test-Notification konnte nicht ausgelöst werden.');
     }
   }, []);
@@ -233,6 +251,9 @@ export default function ProfileScreen() {
             onPress={handleStrongNearbyTest}
             accessibilityLabel="Test strong nearby notification"
           />
+          {!!strongTestStatus && (
+            <Text style={[styles.state, { color: t.colors.inkLow }]}>{strongTestStatus}</Text>
+          )}
         </View>
 
         <View style={[styles.section, { backgroundColor: t.colors.card, borderColor: t.colors.divider }]}> 
