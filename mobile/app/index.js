@@ -7,6 +7,27 @@ import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 
+function isStrongNotificationTestUrl(url) {
+  return typeof url === 'string' && url.includes('test-strong-notification');
+}
+
+function isTestNotificationData(data) {
+  return (
+    data?.testOnly === true ||
+    data?.noNavigation === true ||
+    data?.kind === 'strongNotificationTest' ||
+    data?.kind === 'intent-strong-nearby-test' ||
+    data?.kind === 'profile-strong-nearby-test'
+  );
+}
+
+function getNavigableOfferId(data) {
+  const raw = data?.offerId || data?.id || data?.offer || null;
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (!id || id === ':id' || id.startsWith(':')) return null;
+  return id;
+}
+
 export default function IndexGate() {
   const router = useRouter();
   const [bootstrapping, setBootstrapping] = useState(true);
@@ -54,6 +75,10 @@ export default function IndexGate() {
         // 1) Deep-Link respektieren (z. B. Push-Open zu /offers/:id)
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
+          if (isStrongNotificationTestUrl(initialUrl)) {
+            router.replace('/(tabs)/ProfileScreen');
+            return;
+          }
           if (!mounted) return;
           router.replace(initialUrl);
           return;
@@ -61,7 +86,13 @@ export default function IndexGate() {
 
         const lastNotifResp = await Notifications.getLastNotificationResponseAsync();
         const lastNotifData = lastNotifResp?.notification?.request?.content?.data || {};
-        const lastOfferId = lastNotifData?.offerId || lastNotifData?.id || lastNotifData?.offer || null;
+        if (isTestNotificationData(lastNotifData)) {
+          console.log('[notify] strongNearbyIntent testNotificationResponse ignored');
+          if (!mounted) return;
+          router.replace('/(tabs)/ProfileScreen');
+          return;
+        }
+        const lastOfferId = getNavigableOfferId(lastNotifData);
         if (lastOfferId) {
           if (!mounted) return;
           router.replace({ pathname: '/(tabs)/offers/[id]', params: { id: String(lastOfferId) } });

@@ -52,6 +52,23 @@ async function postNotifAction(action, data = {}, minutes) {
   } catch {}
 }
 
+function isStrongNotificationTestData(data) {
+  return (
+    data?.testOnly === true ||
+    data?.noNavigation === true ||
+    data?.kind === 'strongNotificationTest' ||
+    data?.kind === 'intent-strong-nearby-test' ||
+    data?.kind === 'profile-strong-nearby-test'
+  );
+}
+
+function getNavigableOfferId(data) {
+  const raw = data?.offerId || data?.id || data?.offer || null;
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (!id || id === ':id' || id.startsWith(':')) return null;
+  return id;
+}
+
 async function runStrongNearbyIntentTest() {
   try {
     console.log('[notify] strongNearbyIntent buttonlessTrigger');
@@ -86,15 +103,17 @@ async function runStrongNearbyIntentTest() {
         title: 'StepsMatch Nähe-Test',
         body: 'Diese Notification nutzt den starken Nearby-Channel.',
         data: {
-          kind: 'intent-strong-nearby-test',
+          kind: 'strongNotificationTest',
           source: 'deep-link',
+          screen: 'profile',
+          testOnly: true,
+          noNavigation: true,
           channelId: NEARBY_ATTENTION_CHANNEL_ID,
           channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
           channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
         },
         sound: true,
         channelId: NEARBY_ATTENTION_CHANNEL_ID,
-        categoryIdentifier: 'offer-go-v2',
       },
       trigger: {
         type: 'timeInterval',
@@ -153,8 +172,13 @@ export default function RootLayout() {
       try {
         const action = resp?.actionIdentifier;
         const data = resp?.notification?.request?.content?.data || {};
-        const offerId = data?.offerId || data?.id || data?.offer || null;
+        const offerId = getNavigableOfferId(data);
         console.log('[notif] response', { action, data });
+
+        if (isStrongNotificationTestData(data)) {
+          console.log('[notify] strongNearbyIntent testNotificationResponse ignored');
+          return;
+        }
 
         // Standardaktion oder "GO" → App in den Vordergrund + optional Navigation
         if (action === Notifications.DEFAULT_ACTION_IDENTIFIER || action === 'go') {
