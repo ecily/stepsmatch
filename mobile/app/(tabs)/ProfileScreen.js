@@ -169,7 +169,11 @@ export default function ProfileScreen() {
           channelId: NEARBY_ATTENTION_CHANNEL_ID,
           categoryIdentifier: 'offer-go-v2',
         },
-        trigger: { seconds: 3 },
+        trigger: {
+          type: 'timeInterval',
+          seconds: 3,
+          channelId: NEARBY_ATTENTION_CHANNEL_ID,
+        },
       });
 
       console.log('[notify] strongNearbyTest scheduled ok');

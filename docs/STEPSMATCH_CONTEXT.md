@@ -233,6 +233,8 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - Web-Frontend zeigt Landing-/Info-/Legal-Seiten, Tester-Gate/NDA, Auth, Dashboard, Admin-Kategorien und Angebotskarte.
 - Mobile-App kann User registrieren/anmelden, E-Mail-Verifikation abbilden, Interessen speichern, Standort-/Push-Permissions anfordern, Angebote laden, Details anzeigen und Navigation starten.
 - Push-Kette ist breit implementiert: Token-Registrierung, Background Location, Heartbeat, Geofencing, OfferVisibility-Dedupe, serverseitige Expo Pushes, lokale Notifications und Diagnostics.
+- Strong-Notification-Teststand 2026-06-23: Der Profil-Testbutton bleibt sichtbar, zusaetzlich existiert ein lokaler ADB-Deep-Link `stepsmatch://test-strong-notification`. Der Deep-Link triggert keine Remote-Pushes, kein Backend und keine DB-Mutation; Logcat zeigt `strongNearbyIntent buttonlessTrigger`, `permissionStatus=granted`, Scheduling auf `stepsmatch-nearby-attention-v1` und `scheduled ok`.
+- Android-Device-Beleg 2026-06-23: Nach Release-Build/Install zeigt `dumpsys notification` fuer den Test `Notification(channel=stepsmatch-nearby-attention-v1)`, Titel `StepsMatch Naehe-Test`, Text `Diese Notification nutzt den starken Nearby-Channel.`, effektiven Channel mit Importance 5, Sound, Licht und Vibration `[0, 500, 180, 500, 180, 900]`. Vorher fiel auf, dass `channelId` fuer lokale Expo-Time-Interval-Notifications im Trigger stehen muss; nur Content/Data landete auf dem Expo-Fallback-Channel.
 - Angebotsmatching beruecksichtigt Ort, Zeitfenster, Datum/Wochentage, Radius und Interessen zumindest an mehreren Stellen server- und clientseitig.
 - Release-Doku vom 2026-04-01 behauptet erfolgreiche Checks fuer Mobile-Lint, Frontend-Lint/Build, `node --check backend/server.js` und Prod-Smoke gegen `/api/health`, `/api/ping`, `/api/_readyz`, `/apk`; in dieser Bestandsaufnahme wurde das nicht erneut ausgefuehrt.
 
@@ -246,6 +248,7 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
 - Android Package-Konflikt zwischen alter Doku und aktueller App-Konfiguration.
 - Potenziell sensible Konfigurationsartefakte im Repo: Google/Firebase-Dateien und ein AndroidManifest mit Google Maps Key-Metadaten. Keine Werte dokumentieren; Key-Scope/Restriktionen pruefen.
 - Mobile Background-Services koennen auf Android durch OEM-Akku-Management, Doze, fehlende "Immer erlauben"-Location oder deaktivierte Notification Channels ausfallen.
+- Strong-Notification-Wahrnehmung bleibt manuell zu pruefen: naechster Schritt ist APK/Device-Test mit Screen-off/Hosentasche; automatisiert bestaetigt ist der native Channel/Record, nicht die physische Lautstaerke/Vibration in Alltagssituation.
 - Native Manifest enthaelt Berechtigungen, deren Bedarf nicht aus der kurzen Analyse belegt ist (`RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, Storage).
 - `mobile/README.md` ist generisch und nicht projektspezifisch.
 - `.gitignore` ignoriert lokale Logs, Screenshots, UI-Dumps, Temp-Skripte, APK/AAB-Artefakte und Credential-Dateitypen; `.env.example` bleibt ausdruecklich versionierbar.

@@ -1,6 +1,6 @@
 // stepsmatch/mobile/app/_layout.js
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import { Slot, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,6 +19,13 @@ import PushInitializer, {
 // Geführtes Onboarding (Notifs → FG/BG-Location)
 import PermissionGate from '../components/PermissionGate';
 import { clearStopUntilRestart } from '../components/push/service-control';
+import {
+  BRAND_BLUE,
+  NEARBY_ATTENTION_CHANNEL_CONFIG,
+  NEARBY_ATTENTION_CHANNEL_ID,
+  NEARBY_ATTENTION_CHANNEL_VERSION,
+  STRONG_PATTERN,
+} from '../components/push/push-constants';
 
 const API_BASE =
   (Constants?.expoConfig?.extra?.apiBase || Constants?.manifest?.extra?.apiBase) ??
@@ -45,10 +52,73 @@ async function postNotifAction(action, data = {}, minutes) {
   } catch {}
 }
 
+async function runStrongNearbyIntentTest() {
+  try {
+    console.log('[notify] strongNearbyIntent buttonlessTrigger');
+
+    const permissions = await Notifications.getPermissionsAsync();
+    const permissionStatus = permissions?.status || (permissions?.granted ? 'granted' : 'unknown');
+    console.log(`[notify] strongNearbyIntent permissionStatus=${permissionStatus}`);
+    if (!permissions?.granted) {
+      console.log(`[notify] strongNearbyIntent error=permission-not-granted status=${permissionStatus}`);
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync(NEARBY_ATTENTION_CHANNEL_ID, {
+        name: 'Nearby matches',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        vibrationPattern: STRONG_PATTERN,
+        enableVibrate: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        enableLights: true,
+        lightColor: BRAND_BLUE,
+        bypassDnd: false,
+        showBadge: true,
+        description: 'Starker Hinweis bei passenden Angeboten in deiner Naehe',
+      });
+    }
+
+    console.log(`[notify] strongNearbyIntent scheduling channel=${NEARBY_ATTENTION_CHANNEL_ID} trigger=3s`);
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'StepsMatch Nähe-Test',
+        body: 'Diese Notification nutzt den starken Nearby-Channel.',
+        data: {
+          kind: 'intent-strong-nearby-test',
+          source: 'deep-link',
+          channelId: NEARBY_ATTENTION_CHANNEL_ID,
+          channelVersion: NEARBY_ATTENTION_CHANNEL_VERSION,
+          channelConfig: NEARBY_ATTENTION_CHANNEL_CONFIG,
+        },
+        sound: true,
+        channelId: NEARBY_ATTENTION_CHANNEL_ID,
+        categoryIdentifier: 'offer-go-v2',
+      },
+      trigger: {
+        type: 'timeInterval',
+        seconds: 3,
+        channelId: NEARBY_ATTENTION_CHANNEL_ID,
+      },
+    });
+
+    console.log('[notify] strongNearbyIntent scheduled ok');
+  } catch (e) {
+    const message = String(e?.message || e);
+    console.log(`[notify] strongNearbyIntent error=${message}`);
+  }
+}
+
+function isStrongNearbyTestUrl(url) {
+  return typeof url === 'string' && url.includes('test-strong-notification');
+}
+
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
   const gateCompletedRef = useRef(false);
   const appStateRef = useRef(AppState.currentState || 'active');
+  const lastStrongIntentAtRef = useRef(0);
   const router = useRouter();
 
   // Falls App mit bereits erteilten Rechten startet, Gate überspringen
@@ -123,6 +193,35 @@ export default function RootLayout() {
     });
     return () => sub?.remove?.();
   }, [appReady]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const maybeRunStrongIntent = async (url) => {
+      if (!isStrongNearbyTestUrl(url)) return;
+      const now = Date.now();
+      if (now - lastStrongIntentAtRef.current < 1000) return;
+      lastStrongIntentAtRef.current = now;
+      await runStrongNearbyIntentTest();
+    };
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (mounted) maybeRunStrongIntent(url);
+      })
+      .catch((e) => {
+        console.log(`[notify] strongNearbyIntent error=${String(e?.message || e)}`);
+      });
+
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      maybeRunStrongIntent(url);
+    });
+
+    return () => {
+      mounted = false;
+      try { sub?.remove?.(); } catch {}
+    };
+  }, []);
 
   const handleGateDone = useCallback(async () => {
     if (gateCompletedRef.current) return; // Doppelklick-Schutz
