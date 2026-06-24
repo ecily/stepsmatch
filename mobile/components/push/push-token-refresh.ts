@@ -2,10 +2,9 @@
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { API_BASE } from './push-constants';
-import { getPersistentDeviceId } from './push-state';
+import { getPersistentDeviceId, resolveExpoTokenAuthoritative } from './push-state';
 
 async function getProjectId(): Promise<string> {
-  // aus Constants, fallback auf euren festen Wert
   const pid =
     (Constants?.expoConfig as any)?.extra?.eas?.projectId ||
     (Constants as any)?.easConfig?.projectId ||
@@ -13,7 +12,7 @@ async function getProjectId(): Promise<string> {
   return String(pid);
 }
 
-async function getStoredToken(): Promise<string|null> {
+async function getStoredToken(): Promise<string | null> {
   try {
     const SecureStore = await import('expo-secure-store');
     const v = await SecureStore.getItemAsync('expoPushToken');
@@ -21,7 +20,7 @@ async function getStoredToken(): Promise<string|null> {
   } catch { return null; }
 }
 
-async function setStoredToken(tok:string) {
+async function setStoredToken(tok: string) {
   try {
     const SecureStore = await import('expo-secure-store');
     await SecureStore.setItemAsync('expoPushToken', tok);
@@ -30,7 +29,6 @@ async function setStoredToken(tok:string) {
 
 export async function refreshExpoPushTokenNow(reason = 'manual-refresh') {
   try {
-    // 1) Permission sicherstellen
     const perm = await Notifications.getPermissionsAsync();
     if (perm.status !== 'granted') {
       const req = await Notifications.requestPermissionsAsync();
@@ -40,13 +38,10 @@ export async function refreshExpoPushTokenNow(reason = 'manual-refresh') {
       }
     }
 
-    // 2) Token mit Project ID holen (wichtig!)
     const projectId = await getProjectId();
-    const tokenResp = await Notifications.getExpoPushTokenAsync({ projectId });
-    const token = tokenResp?.data || null;
+    const token = await resolveExpoTokenAuthoritative();
     if (!token) return null;
 
-    // 3) Bei Änderung registrieren
     const prev = await getStoredToken();
     if (token !== prev) {
       await setStoredToken(token);
@@ -55,11 +50,11 @@ export async function refreshExpoPushTokenNow(reason = 'manual-refresh') {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, deviceId, projectId, platform: 'android' }),
-      }).catch(()=>{});
-      console.log('[PUSH] token (re)registered', token.slice(0,22)+'…', { reason, projectId });
+      }).catch(() => {});
+      console.log('[PUSH] token (re)registered', { reason, projectId });
     }
     return token;
-  } catch (e:any) {
+  } catch (e: any) {
     console.log('[PUSH] refreshExpoPushTokenNow error', String(e?.message || e));
     return null;
   }

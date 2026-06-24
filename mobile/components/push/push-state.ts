@@ -17,8 +17,35 @@ const GROUP_STATE_KEY_PR = 'offerGroupState.'; // nur hier verwendet
 
 let CURRENT_EXPO_TOKEN: string | null = null;
 let PUSH_LOCKS = new Set<string>();
+const TOKEN_FETCH_BACKOFF_BASE_MS = 30 * 1000;
+const TOKEN_FETCH_BACKOFF_MAX_MS = 5 * 60 * 1000;
+let TOKEN_FETCH_IN_FLIGHT: Promise<string | null> | null = null;
+let TOKEN_FETCH_NEXT_RETRY_AT = 0;
+let TOKEN_FETCH_FAILURES = 0;
+let LAST_TOKEN_FETCH_ERROR_LOG_AT = 0;
 
 export const nowMs = () => Date.now();
+
+function errorMessage(e: any): string {
+  return String((e && (e.message || e.stack)) || e || '');
+}
+
+function isTransientPushTokenError(e: any): boolean {
+  return /SERVICE_NOT_AVAILABLE|INTERNAL_SERVER_ERROR|TIMEOUT|NETWORK_ERROR|IOException/i.test(errorMessage(e));
+}
+
+function nextTokenFetchBackoffMs() {
+  const exp = Math.max(0, TOKEN_FETCH_FAILURES - 1);
+  const base = Math.min(TOKEN_FETCH_BACKOFF_MAX_MS, TOKEN_FETCH_BACKOFF_BASE_MS * (2 ** exp));
+  return Math.min(TOKEN_FETCH_BACKOFF_MAX_MS, base + Math.floor(Math.random() * 5000));
+}
+
+function logTokenFetchFailure(e: any, transient: boolean, retryInMs: number) {
+  const now = nowMs();
+  if (transient && now - LAST_TOKEN_FETCH_ERROR_LOG_AT < 30_000) return;
+  LAST_TOKEN_FETCH_ERROR_LOG_AT = now;
+  console.log('[push:resolveToken]', JSON.stringify({ transient, retryInMs }), errorMessage(e));
+}
 
 function safeKey(k: any): string | null {
   if (typeof k === 'string' && k.length) return k;
@@ -58,7 +85,34 @@ export async function getPersistentDeviceId() {
 
 // Expo token
 export async function resolveExpoTokenAuthoritative() {
-  const { data: freshToken } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
+  if (TOKEN_FETCH_IN_FLIGHT) return await TOKEN_FETCH_IN_FLIGHT;
+
+  const now = nowMs();
+  if (TOKEN_FETCH_NEXT_RETRY_AT > now) {
+    CURRENT_EXPO_TOKEN = CURRENT_EXPO_TOKEN || (await AsyncStorage.getItem(TOKEN_KEY));
+    return CURRENT_EXPO_TOKEN;
+  }
+
+  TOKEN_FETCH_IN_FLIGHT = (async () => {
+    try {
+      const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
+      TOKEN_FETCH_FAILURES = 0;
+      TOKEN_FETCH_NEXT_RETRY_AT = 0;
+      return token || null;
+    } catch (e) {
+      TOKEN_FETCH_FAILURES += 1;
+      const transient = isTransientPushTokenError(e);
+      const retryInMs = transient ? nextTokenFetchBackoffMs() : TOKEN_FETCH_BACKOFF_MAX_MS;
+      TOKEN_FETCH_NEXT_RETRY_AT = nowMs() + retryInMs;
+      logTokenFetchFailure(e, transient, retryInMs);
+      return null;
+    } finally {
+      TOKEN_FETCH_IN_FLIGHT = null;
+    }
+  })();
+
+  const freshToken = await TOKEN_FETCH_IN_FLIGHT;
+  if (!freshToken) return null;
   const cached = await AsyncStorage.getItem(TOKEN_KEY);
   if (cached !== freshToken) {
     await AsyncStorage.setItem(TOKEN_KEY, freshToken);

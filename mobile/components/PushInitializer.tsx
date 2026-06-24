@@ -164,6 +164,15 @@ let LAST_BG_MODE_CHANGE_AT = 0;
 const LAST_TOKEN_REFRESH_AT_KEY = 'push.lastTokenRefreshAt';
 const TOKEN_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let SELF_HEAL_IN_FLIGHT = false;
+const TOKEN_FETCH_BACKOFF_BASE_MS = 30 * 1000;
+const TOKEN_FETCH_BACKOFF_MAX_MS = 5 * 60 * 1000;
+const PUSH_CONTEXT_RETRY_DELAYS_MS = [30 * 1000, 90 * 1000, 180 * 1000];
+let TOKEN_FETCH_IN_FLIGHT: Promise<string | null> | null = null;
+let TOKEN_FETCH_NEXT_RETRY_AT = 0;
+let TOKEN_FETCH_FAILURES = 0;
+let LAST_TOKEN_FETCH_ERROR_LOG_AT = 0;
+let PUSH_CONTEXT_RETRY_TIMER: ReturnType<typeof setTimeout> | null = null;
+let PUSH_CONTEXT_RETRY_ATTEMPT = 0;
 let LAST_BG_REARM_AT = 0;
 let BG_REARM_IN_FLIGHT = false;
 const BG_REARM_MIN_GAP_MS = 15000;
@@ -189,6 +198,55 @@ function nowMs() { return Date.now(); }
 function logErr(tag: string, e: any, ctx?: any) {
   const msg = (e && (e.stack || e.message)) ? (e.stack || e.message) : String(e);
   console.log(`[${tag}]`, ctx ? JSON.stringify(ctx) : '', msg);
+}
+
+function errorMessage(e: any): string {
+  return String((e && (e.message || e.stack)) || e || '');
+}
+
+function isTransientPushTokenError(e: any): boolean {
+  const msg = errorMessage(e);
+  return /SERVICE_NOT_AVAILABLE|INTERNAL_SERVER_ERROR|TIMEOUT|NETWORK_ERROR|IOException/i.test(msg);
+}
+
+function nextTokenFetchBackoffMs() {
+  const exp = Math.max(0, TOKEN_FETCH_FAILURES - 1);
+  const base = Math.min(TOKEN_FETCH_BACKOFF_MAX_MS, TOKEN_FETCH_BACKOFF_BASE_MS * (2 ** exp));
+  return Math.min(TOKEN_FETCH_BACKOFF_MAX_MS, base + Math.floor(Math.random() * 5000));
+}
+
+function logTokenFetchFailure(e: any, transient: boolean, retryInMs: number) {
+  const now = nowMs();
+  if (transient && now - LAST_TOKEN_FETCH_ERROR_LOG_AT < 30_000) return;
+  LAST_TOKEN_FETCH_ERROR_LOG_AT = now;
+  logErr('push:resolveToken', e, { transient, retryInMs });
+}
+
+function schedulePushTokenUserContextRetry(reason: string) {
+  if (PUSH_CONTEXT_RETRY_TIMER) return;
+  if (PUSH_CONTEXT_RETRY_ATTEMPT >= PUSH_CONTEXT_RETRY_DELAYS_MS.length) return;
+
+  const attempt = PUSH_CONTEXT_RETRY_ATTEMPT + 1;
+  const baseDelay = PUSH_CONTEXT_RETRY_DELAYS_MS[PUSH_CONTEXT_RETRY_ATTEMPT];
+  const tokenRetryDelay = Math.max(0, TOKEN_FETCH_NEXT_RETRY_AT - nowMs() + 1000);
+  const delayMs = Math.max(baseDelay, tokenRetryDelay);
+  PUSH_CONTEXT_RETRY_ATTEMPT = attempt;
+  console.log('[push] token sync retry scheduled', { reason, attempt, delayMs });
+
+  PUSH_CONTEXT_RETRY_TIMER = setTimeout(async () => {
+    PUSH_CONTEXT_RETRY_TIMER = null;
+    try {
+      await registerTokenAtBackend(`retry:${reason}:${attempt}`);
+    } catch {}
+  }, delayMs);
+}
+
+function clearPushTokenUserContextRetry() {
+  PUSH_CONTEXT_RETRY_ATTEMPT = 0;
+  if (PUSH_CONTEXT_RETRY_TIMER) {
+    clearTimeout(PUSH_CONTEXT_RETRY_TIMER);
+    PUSH_CONTEXT_RETRY_TIMER = null;
+  }
 }
 async function dumpChannelsOnce(tag = 'CHANNELS') {
   if (Platform.OS !== 'android') return;
@@ -670,11 +728,38 @@ async function resolveExpoTokenAuthoritative(): Promise<string | null> {
       return CURRENT_EXPO_TOKEN;
     }
 
-    console.log('[push] meta projectId',
-      (Constants as any)?.expoConfig?.extra?.eas?.projectId,
-      (Constants as any)?.easConfig?.projectId
-    );
-    const { data: freshToken } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
+    if (TOKEN_FETCH_IN_FLIGHT) return await TOKEN_FETCH_IN_FLIGHT;
+
+    const now = nowMs();
+    if (TOKEN_FETCH_NEXT_RETRY_AT > now) {
+      const retryInMs = TOKEN_FETCH_NEXT_RETRY_AT - now;
+      diagLog('push.token.backoff', { retryInMs }, 'warn', 10_000);
+      const cached = await AsyncStorage.getItem(TOKEN_KEY);
+      CURRENT_EXPO_TOKEN = cached || CURRENT_EXPO_TOKEN;
+      return CURRENT_EXPO_TOKEN;
+    }
+
+    console.log('[push] meta projectId available', !!RESOLVED_PROJECT_ID);
+    TOKEN_FETCH_IN_FLIGHT = (async () => {
+      try {
+        const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: RESOLVED_PROJECT_ID });
+        TOKEN_FETCH_FAILURES = 0;
+        TOKEN_FETCH_NEXT_RETRY_AT = 0;
+        return token || null;
+      } catch (e) {
+        TOKEN_FETCH_FAILURES += 1;
+        const transient = isTransientPushTokenError(e);
+        const retryInMs = transient ? nextTokenFetchBackoffMs() : TOKEN_FETCH_BACKOFF_MAX_MS;
+        TOKEN_FETCH_NEXT_RETRY_AT = nowMs() + retryInMs;
+        logTokenFetchFailure(e, transient, retryInMs);
+        return null;
+      } finally {
+        TOKEN_FETCH_IN_FLIGHT = null;
+      }
+    })();
+
+    const freshToken = await TOKEN_FETCH_IN_FLIGHT;
+    if (!freshToken) return null;
     const cached = await AsyncStorage.getItem(TOKEN_KEY);
     if (cached !== freshToken) {
       await AsyncStorage.setItem(TOKEN_KEY, freshToken);
@@ -703,6 +788,7 @@ async function registerTokenAtBackend(reason: string) {
       console.log('[push] register skipped (no token/permission) →', reason);
       diagLog('push.register.skip', { reason }, 'warn', 2000);
       REGISTERED_READY = false;
+      schedulePushTokenUserContextRetry(reason);
       return;
     }
     await syncNativeHeartbeatConfig(`register:${reason}`, token);
@@ -729,6 +815,7 @@ async function registerTokenAtBackend(reason: string) {
     console.log('[push] register =>', res.status);
     diagLog('push.register', { reason, ok: res.ok, status: res.status }, res.ok ? 'info' : 'warn', 1000);
     REGISTERED_READY = res.ok;
+    if (res.ok) clearPushTokenUserContextRetry();
 
     if (!res.ok && looksLikeInvalidToken(res, json)) {
       console.log('[push] register detected invalid token → self-heal');
