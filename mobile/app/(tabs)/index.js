@@ -271,6 +271,7 @@ export default function HomeTab() {
   // Error/Info
   const [err, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [hasUserInterests, setHasUserInterests] = useState(true);
   // Location
   const [userLoc, setUserLoc] = useState(null);
 
@@ -342,6 +343,17 @@ export default function HomeTab() {
 
   const interestsCSVFromStorage = useCallback(async () => {
     try {
+      const rawProfile = await AsyncStorage.getItem('userProfile');
+      if (rawProfile) {
+        try {
+          const profile = JSON.parse(rawProfile);
+          if (Array.isArray(profile?.interests)) {
+            return profile.interests.map((x) => String(x || '').trim()).filter(Boolean).join(',');
+          }
+        } catch {}
+      }
+      const rawCsv = await AsyncStorage.getItem('userInterests.csv');
+      if (rawCsv) return String(rawCsv).trim();
       const raw = await AsyncStorage.getItem('userInterests');
       const arr = raw ? JSON.parse(raw) : [];
       if (Array.isArray(arr) && arr.length) return arr.join(',');
@@ -412,6 +424,22 @@ export default function HomeTab() {
         const [interestsCSV, loc] = await Promise.all([interestsCSVFromStorage(), getLocation()]);
         setUserLoc(loc || null);
         const interestSet = csvToSet(interestsCSV);
+        const hasInterests = interestSet.size > 0;
+        if (mountedRef.current) setHasUserInterests(hasInterests);
+
+        if (!hasInterests) {
+          if (!mountedRef.current) return;
+          setLastUpdated(new Date());
+          setHasMore(false);
+          setPage(pageToLoad);
+          if (pageToLoad === 1) {
+            setOffers([]);
+            setGrouped({});
+          }
+          if (!hasLoadedOnce) setHasLoadedOnce(true);
+          console.log(`[HomeTab] skip /offers p=${pageToLoad} reason=no-interests loc=${loc ? 'yes' : 'no'}`);
+          return;
+        }
 
         let expoToken = null;
         try {
@@ -519,7 +547,7 @@ export default function HomeTab() {
 
         if (!mountedRef.current) return;
         setLastUpdated(new Date());
-        setHasMore(serverHasMore);
+        setHasMore(hasInterests && serverHasMore);
         setPage(pageToLoad);
 
         if (pageToLoad === 1) {
@@ -710,10 +738,16 @@ export default function HomeTab() {
     }
     return Number.isFinite(best) ? best : null;
   })();
-  const heroTitle = offersCount > 0 ? `${offersCount} passende Hinweise fuer deinen Tag` : 'Neue Wege warten schon auf dich';
+  const heroTitle = !hasUserInterests
+    ? 'Waehle deine Interessen'
+    : offersCount > 0
+      ? `${offersCount} passende Hinweise fuer deinen Tag`
+      : 'Neue Wege warten schon auf dich';
   const heroSubtitle = nearestDistance != null
     ? `Der naechste Hinweis ist nur ${Math.round(nearestDistance)} m entfernt. Starte entspannt und sammle Schritte mit Sinn.`
-    : 'Sobald in deiner Umgebung etwas Spannendes aktiv ist, findest du es hier sofort.';
+    : hasUserInterests
+      ? 'Sobald in deiner Umgebung etwas Spannendes aktiv ist, findest du es hier sofort.'
+      : 'Der Feed nutzt deine Profil-Interessen. Lege sie fest, damit keine beliebigen Hinweise angezeigt werden.';
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: t.colors.surface }}>
@@ -773,8 +807,8 @@ export default function HomeTab() {
 
           {groupedEntries.length === 0 ? (
             <EmptyState
-              title="Keine Hinweise in deiner Naehe"
-              subtitle="Passe deine Interessen an oder versuche es später erneut."
+              title={hasUserInterests ? 'Keine Hinweise in deiner Naehe' : 'Noch keine Interessen ausgewaehlt'}
+              subtitle={hasUserInterests ? 'Passe deine Interessen an oder versuche es spaeter erneut.' : 'Oeffne die Interessen-Auswahl, damit StepsMatch passende Hinweise laden kann.'}
               icon="📍"
             />
           ) : (

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { API_BASE_URL } from '../../lib/runtimeConfig';
+import { syncPushTokenUserContext } from '../../components/PushInitializer';
 
 export default function InterestsScreen() {
   const router = useRouter();
@@ -14,17 +15,29 @@ export default function InterestsScreen() {
   const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [res, stored] = await Promise.all([
+        const [res, rawProfile, stored] = await Promise.all([
           axios.get(`${API_BASE_URL}/categories`),
+          AsyncStorage.getItem('userProfile'),
           AsyncStorage.getItem('userInterests'),
         ]);
         if (!mounted) return;
         setCategories(Array.isArray(res.data) ? res.data : []);
+        if (rawProfile) {
+          try {
+            const profile = JSON.parse(rawProfile);
+            if (Array.isArray(profile?.interests)) {
+              setSelected(profile.interests);
+              return;
+            }
+          } catch {}
+        }
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
@@ -50,13 +63,60 @@ export default function InterestsScreen() {
   };
 
   const handleSave = async () => {
-    const csv = (selected || []).map((s) => String(s || '').trim()).filter(Boolean).join(',');
-    await AsyncStorage.multiSet([
-      ['userInterests', JSON.stringify(selected)],
-      ['userInterests.csv', csv],
-      ['hasOnboarded', '1'],
-    ]);
-    router.replace('/(onboarding)/DoneScreen');
+    const nextInterests = (selected || []).map((s) => String(s || '').trim()).filter(Boolean);
+    const csv = nextInterests.join(',');
+    setSaving(true);
+    setError('');
+
+    try {
+      const [token, storedUserId, rawProfile] = await Promise.all([
+        AsyncStorage.getItem('token'),
+        AsyncStorage.getItem('userId'),
+        AsyncStorage.getItem('userProfile'),
+      ]);
+
+      let profile = null;
+      try {
+        profile = rawProfile ? JSON.parse(rawProfile) : null;
+      } catch {
+        profile = null;
+      }
+
+      const userId = String(storedUserId || profile?._id || '').trim();
+      const preferredRadiusRaw = Number(profile?.preferredRadius);
+      const preferredRadius = Number.isFinite(preferredRadiusRaw) && preferredRadiusRaw > 0 ? preferredRadiusRaw : 500;
+
+      if (token && userId) {
+        const res = await axios.put(
+          `${API_BASE_URL}/users/preferences/${userId}`,
+          { preferredRadius, interests: nextInterests },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const backendUser = res?.data?.user;
+        profile = backendUser && typeof backendUser === 'object'
+          ? { ...(profile || {}), ...backendUser, interests: Array.isArray(backendUser.interests) ? backendUser.interests : nextInterests }
+          : { ...(profile || {}), _id: userId, preferredRadius, interests: nextInterests };
+      } else if (profile && typeof profile === 'object') {
+        profile = { ...profile, interests: nextInterests };
+      }
+
+      const pairs = [
+        ['userInterests', JSON.stringify(nextInterests)],
+        ['userInterests.csv', csv],
+        ['hasOnboarded', '1'],
+      ];
+      if (profile && typeof profile === 'object') {
+        pairs.push(['userProfile', JSON.stringify(profile)]);
+      }
+
+      await AsyncStorage.multiSet(pairs);
+      await syncPushTokenUserContext('interests');
+      router.replace('/(onboarding)/DoneScreen');
+    } catch {
+      setError('Interessen konnten nicht gespeichert werden. Bitte erneut versuchen.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -72,6 +132,7 @@ export default function InterestsScreen() {
       <View style={styles.container}>
         <Text style={[styles.headline, { color: t.colors.inkHigh }]}>Was interessiert dich?</Text>
         <Text style={[styles.sub, { color: t.colors.inkLow }]}>Damit wir nur relevante Angebote senden, waehle deine Themen.</Text>
+        {error ? <Text style={[styles.error, { color: t.colors.danger }]}>{error}</Text> : null}
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {categories.map((cat, idx) => (
@@ -102,7 +163,11 @@ export default function InterestsScreen() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <Button title="Auswahl speichern" size="lg" onPress={handleSave} disabled={selected.length === 0 && allSubcats.length > 0} />
+          {saving ? (
+            <ActivityIndicator color={t.colors.primary} />
+          ) : (
+            <Button title="Auswahl speichern" size="lg" onPress={handleSave} disabled={selected.length === 0 && allSubcats.length > 0} />
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -115,6 +180,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 8 },
   headline: { fontSize: 28, fontWeight: '800' },
   sub: { fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 14 },
+  error: { fontSize: 13, fontWeight: '700', marginBottom: 10 },
   scrollContent: { paddingBottom: 20 },
   section: { marginBottom: 14 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },

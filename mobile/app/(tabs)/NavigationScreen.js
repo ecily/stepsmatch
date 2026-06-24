@@ -53,6 +53,24 @@ function nearestRouteIndex(route, point) {
   return best;
 }
 
+function pickOfferPosition(offer) {
+  const coordinateSources = [
+    offer?.location?.coordinates,
+    offer?.provider?.location?.coordinates,
+  ];
+
+  for (const coords of coordinateSources) {
+    if (!Array.isArray(coords) || coords.length < 2) continue;
+    const lat = Number(coords[1]);
+    const lng = Number(coords[0]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { latitude: lat, longitude: lng };
+    }
+  }
+
+  return null;
+}
+
 function resolveDirectionsKey() {
   const extra =
     Constants?.expoConfig?.extra ||
@@ -97,9 +115,7 @@ export default function NavigationScreen() {
   const arrivalNotified = useRef(false);
 
   const offerPos = useMemo(() => {
-    const lat = Number(offer?.location?.coordinates?.[1]);
-    const lng = Number(offer?.location?.coordinates?.[0]);
-    return Number.isFinite(lat) && Number.isFinite(lng) ? { latitude: lat, longitude: lng } : null;
+    return pickOfferPosition(offer);
   }, [offer]);
 
   const initialRegion = useMemo(() => {
@@ -171,7 +187,12 @@ export default function NavigationScreen() {
   }, [id]);
 
   const loadRoute = useCallback(async (origin, dest) => {
-    if (!origin || !dest) return;
+    if (!dest) {
+      setRouteError('Fuer dieses Angebot ist kein Zielstandort hinterlegt.');
+      setRouteCoords([]);
+      return;
+    }
+    if (!origin) return;
     if (!DIRECTIONS_KEY) {
       setRouteError('Kein Directions-Key verfuegbar.');
       setRouteCoords([origin, dest]);
@@ -193,10 +214,16 @@ export default function NavigationScreen() {
   }, []);
 
   useEffect(() => {
-    if (userLocation && offerPos) {
+    if (!offer) return;
+    if (!offerPos) {
+      setRouteError('Fuer dieses Angebot ist kein Zielstandort hinterlegt.');
+      setRouteCoords([]);
+      return;
+    }
+    if (userLocation) {
       loadRoute(userLocation, offerPos);
     }
-  }, [userLocation, offerPos, loadRoute]);
+  }, [offer, userLocation, offerPos, loadRoute]);
 
   useEffect(() => {
     fitToRoute();
@@ -347,7 +374,7 @@ export default function NavigationScreen() {
         </View>
         <Text style={[styles.progressText, { color: t.colors.inkLow }]}>{progressPct}% der Strecke geschafft</Text>
         {routeError ? <Text style={[styles.warn, { color: t.colors.warning }]}>{routeError}</Text> : null}
-        {routeCoords.length < 2 ? <Text style={[styles.warn, { color: t.colors.inkLow }]}>Route wird vorbereitet ...</Text> : null}
+        {!routeError && routeCoords.length < 2 ? <Text style={[styles.warn, { color: t.colors.inkLow }]}>Route wird vorbereitet ...</Text> : null}
       </View>
 
       {showArrivalCard ? (

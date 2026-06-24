@@ -483,13 +483,15 @@ router.put('/preferences/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { preferredRadius, interests } = req.body || {};
+    const authUserId = parseAuthUserId(req);
+    const effectiveUserId = authUserId || userId;
 
     if (preferredRadius == null || !Array.isArray(interests)) {
       return res.status(400).json({ message: 'Radius und Interessen sind erforderlich.' });
     }
 
     const updated = await User.findByIdAndUpdate(
-      userId,
+      effectiveUserId,
       { preferredRadius, interests },
       { new: true }
     );

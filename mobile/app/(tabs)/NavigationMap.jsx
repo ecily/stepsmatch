@@ -64,6 +64,7 @@ export default function NavigationMap() {
   const [rawOffers, setRawOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(true);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [routeStartError, setRouteStartError] = useState('');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [mapType, setMapType] = useState('standard');
@@ -196,7 +197,15 @@ export default function NavigationMap() {
   const onGoNavigateOffer = useCallback(
     (row) => {
       const id = row?.offer?._id || row?.offer?.id;
-      if (!id) return;
+      if (!id) {
+        setRouteStartError('Route kann ohne Angebots-ID nicht gestartet werden.');
+        return;
+      }
+      if (!row?.loc) {
+        setRouteStartError('Fuer dieses Angebot ist kein Zielstandort hinterlegt.');
+        return;
+      }
+      setRouteStartError('');
       router.push({ pathname: '/(tabs)/NavigationScreen', params: { id } });
     },
     [router]
@@ -230,7 +239,10 @@ export default function NavigationMap() {
               key={row.offer?._id || `${row.loc.latitude}-${row.loc.longitude}`}
               coordinate={row.loc}
               pinColor={row.isActive ? t.colors.primary : '#9ca3af'}
-              onPress={() => setSelectedRow(row)}
+              onPress={() => {
+                setRouteStartError('');
+                setSelectedRow(row);
+              }}
               title={row.offer?.name || 'Angebot'}
               description={`${row.offer?.category || '-'} | ${fmtDistance(row.distanceM)}`}
             />
@@ -289,7 +301,7 @@ export default function NavigationMap() {
         ) : null}
 
         {selectedRow ? (
-          <View style={[styles.sheet, { paddingBottom: 12 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
+          <View style={[styles.sheet, { bottom: 84 + insets.bottom, backgroundColor: t.colors.card, borderColor: t.colors.divider }]}>
             <Text style={[styles.sheetTitle, { color: t.colors.inkHigh }]} numberOfLines={2}>
               {selectedRow.offer?.name || 'Angebot'}
             </Text>
@@ -299,12 +311,21 @@ export default function NavigationMap() {
             <Text style={[styles.sheetDesc, { color: t.colors.ink }]} numberOfLines={3}>
               {selectedRow.offer?.description || 'Keine Beschreibung verfuegbar.'}
             </Text>
+            {routeStartError ? (
+              <Text style={[styles.sheetError, { color: t.colors.warning }]}>{routeStartError}</Text>
+            ) : null}
 
             <View style={styles.sheetActions}>
-              <TouchableOpacity onPress={() => onGoNavigateOffer(selectedRow)} style={[styles.btn, { backgroundColor: t.colors.primary }]}>
+              <TouchableOpacity activeOpacity={0.9} onPress={() => onGoNavigateOffer(selectedRow)} style={[styles.btn, { backgroundColor: t.colors.primary }]}>
                 <Text style={styles.btnPrimaryText}>Zu Fuss starten</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setSelectedRow(null)} style={[styles.btnGhost, { borderColor: t.colors.divider }]}>
+              <TouchableOpacity
+                onPress={() => {
+                  setRouteStartError('');
+                  setSelectedRow(null);
+                }}
+                style={[styles.btnGhost, { borderColor: t.colors.divider }]}
+              >
                 <Text style={[styles.btnGhostText, { color: t.colors.ink }]}>Weiter schauen</Text>
               </TouchableOpacity>
             </View>
@@ -402,7 +423,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 0,
     borderWidth: 1,
     borderRadius: 18,
     padding: 12,
@@ -410,11 +430,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 20,
-    elevation: 8,
+    elevation: 18,
+    zIndex: 20,
   },
   sheetTitle: { fontSize: 18, fontWeight: '900' },
   sheetMeta: { marginTop: 4, fontSize: 12 },
   sheetDesc: { marginTop: 10, fontSize: 13, lineHeight: 18 },
+  sheetError: { marginTop: 8, fontSize: 12, fontWeight: '700' },
 
   sheetActions: { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
   btn: {
