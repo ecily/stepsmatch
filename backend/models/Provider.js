@@ -47,6 +47,36 @@ const providerSchema = new Schema(
 
     description: { type: String, trim: true },
     radiusMeters: { type: Number, min: 1, default: 250 },
+    demoKey: { type: String, trim: true, default: null, index: true },
+    demoSeedTag: { type: String, trim: true, default: null, index: true },
+    gebiet: { type: String, trim: true, default: null },
+    contentType: {
+      type: String,
+      enum: [
+        'legacy_provider',
+        'real_demo_location',
+        'editorial_public_place',
+        'official_test_provider',
+        'demo_provider',
+      ],
+      default: 'legacy_provider',
+    },
+    publicVisibility: {
+      type: String,
+      enum: [
+        'active_public_demo',
+        'in_app_only_demo',
+        'silent_admin_only',
+        'needs_review_before_import',
+        'do_not_import_v1',
+      ],
+      default: 'in_app_only_demo',
+      index: true,
+    },
+    demoLabel: { type: String, trim: true, default: null },
+    sourceUrl: { type: String, trim: true, default: null },
+    sourceVerifiedAt: { type: Date, default: null },
+    riskNote: { type: String, trim: true, maxlength: 1000, default: null },
     contact: {
       phone: { type: String, trim: true },
       email: { type: String, trim: true },
@@ -69,6 +99,7 @@ const providerSchema = new Schema(
 );
 
 providerSchema.index({ location: '2dsphere' });
+providerSchema.index({ demoSeedTag: 1, demoKey: 1 }, { sparse: true });
 
 providerSchema.pre('validate', function (next) {
   if (this.location && Array.isArray(this.location.coordinates)) {

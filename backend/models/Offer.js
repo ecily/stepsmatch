@@ -26,6 +26,8 @@ const OfferSchema = new Schema(
     category: { type: String, required: true },
     subcategory: { type: String, default: null },
 
+    demoKey: { type: String, trim: true, default: null, index: true },
+    demoSeedTag: { type: String, trim: true, default: null, index: true },
     name: { type: String, required: true },
     description: { type: String, maxlength: 250, default: null },
     radius: { type: Number, default: 100, min: 1 },
@@ -51,6 +53,18 @@ const OfferSchema = new Schema(
         'demo_provider',
       ],
       default: 'legacy_offer',
+    },
+    contentKind: {
+      type: String,
+      enum: [
+        'neutral_hint',
+        'editorial_hint',
+        'demo_offer_without_claim',
+        'service_hint',
+        'pause_hint',
+        'event_placeholder_without_date_claim',
+      ],
+      default: 'neutral_hint',
     },
     publicVisibility: {
       type: String,
@@ -133,6 +147,7 @@ OfferSchema.index({ updatedAt: -1 }, { name: 'offer_updatedAt_desc' });
 OfferSchema.index({ provider: 1, updatedAt: -1 }, { name: 'provider_updatedAt' });
 OfferSchema.index({ 'validDates.from': 1, 'validDates.to': 1 }, { name: 'validDates_range' });
 OfferSchema.index({ publicVisibility: 1, pushEligibility: 1, geoValidity: 1 }, { name: 'offer_pitch_policy' });
+OfferSchema.index({ demoSeedTag: 1, demoKey: 1 }, { sparse: true });
 
 OfferSchema.pre('validate', function (next) {
   if (this.location && this.location.type !== 'Point') this.location.type = 'Point';
