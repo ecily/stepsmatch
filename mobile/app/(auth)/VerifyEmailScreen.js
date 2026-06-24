@@ -8,6 +8,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { persistAuthSession } from '../../utils/authSession';
 import { API_BASE_URL } from '../../lib/runtimeConfig';
+import { syncPushTokenUserContext } from '../../components/PushInitializer';
 
 const API_URL = API_BASE_URL;
 
@@ -65,6 +66,7 @@ export default function VerifyEmailScreen() {
       });
 
       await persistAuthSession({ token: res?.data?.token, user: res?.data?.user });
+      await syncPushTokenUserContext('verify-email');
       await navigateAfterVerify();
     } catch (err) {
       const payload = err?.response?.data || {};

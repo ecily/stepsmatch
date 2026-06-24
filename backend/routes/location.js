@@ -3,9 +3,11 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
+import User from '../models/User.js';
 import Offer from '../models/Offer.js';
 import OfferVisibility from '../models/OfferVisibility.js';
 import { sendPushAndCheckReceipts } from '../utils/push.js';
+import { resolvePushTokenUserContext } from '../utils/pushTokenUserContext.js';
 import {
   POLICY_FIELDS,
   buildVisibleOfferMatch,
@@ -316,7 +318,13 @@ router.post('/heartbeat', async (req, res) => {
     const projectId = b.projectId ? String(b.projectId) : undefined;
     const deviceId = b.deviceId ? String(b.deviceId) : undefined;
     const platform = b.platform ? String(b.platform).toLowerCase() : undefined;
-    const normalizedInterests = interestsFromPayload(b.interests);
+    const userContext = await resolvePushTokenUserContext({
+      authorizationHeader: req.headers.authorization,
+      bodyUserId: b.userId,
+      bodyInterests: b.interests,
+      UserModel: User,
+    });
+    const normalizedInterests = userContext.interests;
 
     const now = new Date();
     const point = pointOrNull(lat, lng); // ✅ strikter Guard
@@ -335,6 +343,9 @@ router.post('/heartbeat', async (req, res) => {
       ...(normalizedInterests !== null ? { interests: normalizedInterests } : {}),
       updatedAt: now,
     };
+    if (userContext.userId) {
+      $set.userId = userContext.userId;
+    }
     const $setOnInsert = {
       platform: platform || 'android',
       createdAt: now,
@@ -355,6 +366,7 @@ router.post('/heartbeat', async (req, res) => {
       lng.toFixed(5),
       accuracy !== undefined ? `±${Math.round(accuracy)}m` : '',
       deviceId ? `dev=${deviceId}` : '',
+      userContext.userId ? 'user=linked' : 'user=anonymous',
       (projectId || PROJECT_ID) ? `pid=${projectId || PROJECT_ID}` : '',
       source ? `src=${source}` : ''
     );

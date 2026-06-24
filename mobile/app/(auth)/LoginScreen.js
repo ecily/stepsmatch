@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import Button from '../../components/ui/Button';
 import { persistAuthSession } from '../../utils/authSession';
 import { API_BASE_URL } from '../../lib/runtimeConfig';
+import { syncPushTokenUserContext } from '../../components/PushInitializer';
 
 const API_URL = API_BASE_URL;
 
@@ -26,6 +27,7 @@ export default function LoginScreen() {
     try {
       const res = await axios.post(`${API_URL}/users/login`, { email: cleanEmail, password });
       await persistAuthSession({ token: res?.data?.token, user: res?.data?.user });
+      await syncPushTokenUserContext('login');
       router.replace('/(tabs)');
     } catch (err) {
       const payload = err?.response?.data || {};

@@ -289,6 +289,40 @@ async function syncNativeHeartbeatConfig(reason: string, tokenOverride?: string 
   } catch {}
 }
 
+type AuthContext = { authToken: string | null; userId: string | null };
+
+async function readAuthContext(): Promise<AuthContext> {
+  try {
+    const [token, userId, rawProfile] = await Promise.all([
+      AsyncStorage.getItem('token'),
+      AsyncStorage.getItem('userId'),
+      AsyncStorage.getItem('userProfile'),
+    ]);
+
+    let profileUserId: string | null = null;
+    if (rawProfile) {
+      try {
+        const profile = JSON.parse(rawProfile);
+        profileUserId = profile?._id ? String(profile._id).trim() : null;
+      } catch {}
+    }
+
+    return {
+      authToken: token ? String(token).trim() : null,
+      userId: userId ? String(userId).trim() : profileUserId,
+    };
+  } catch {
+    return { authToken: null, userId: null };
+  }
+}
+
+function authHeaders(auth: AuthContext): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(auth.authToken ? { Authorization: `Bearer ${auth.authToken}` } : {}),
+  };
+}
+
 // Lightweight client diag logger (writes to backend Mongo)
 const diagLastAt: Record<string, number> = {};
 async function diagLog(
@@ -358,10 +392,26 @@ async function readInterestsForBackend(): Promise<string[]> {
       return Array.from(INTEREST_SET_CACHE);
     }
 
-    const [rawCsv, rawJson] = await Promise.all([
+    const [rawProfile, rawCsv, rawJson] = await Promise.all([
+      AsyncStorage.getItem('userProfile'),
       AsyncStorage.getItem('userInterests.csv'),
       AsyncStorage.getItem('userInterests'),
     ]);
+
+    if (rawProfile) {
+      try {
+        const profile = JSON.parse(rawProfile);
+        if (Array.isArray(profile?.interests)) {
+          const profileSet = new Set<string>();
+          for (const item of profile.interests) {
+            for (const token of csvToSet(String(item || ''))) profileSet.add(token);
+          }
+          INTEREST_SET_CACHE = profileSet;
+          INTERESTS_LAST_LOAD_AT = now;
+          return Array.from(profileSet);
+        }
+      } catch {}
+    }
 
     const set = new Set<string>(csvToSet(rawCsv || ''));
     if (rawJson) {
@@ -657,13 +707,15 @@ async function registerTokenAtBackend(reason: string) {
     }
     await syncNativeHeartbeatConfig(`register:${reason}`, token);
     const deviceId = await getPersistentDeviceId();
+    const auth = await readAuthContext();
     const interests = await readInterestsForBackend();
     const res = await fetch(`${API_BASE}/push/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(auth),
       body: JSON.stringify({
         token,
         deviceId,
+        userId: auth.userId || undefined,
         projectId: RESOLVED_PROJECT_ID,
         platform: Platform.OS,
         reason,
@@ -744,9 +796,10 @@ type EnterReport = { offerId: string; lat: number; lng: number; accuracy: number
 async function reportEnterToBackend(p: EnterReport) {
   try {
     const token = await getCurrentExpoToken();
+    const auth = await readAuthContext();
     await fetch(`${API_BASE}/location/heartbeat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(auth),
       body: JSON.stringify({
         lat: p.lat,
         lng: p.lng,
@@ -755,6 +808,7 @@ async function reportEnterToBackend(p: EnterReport) {
         offerId: p.offerId,
         deviceId: await getPersistentDeviceId(),
         token: token || undefined,
+        userId: auth.userId || undefined,
         platform: Platform.OS,
       }),
     });
@@ -1150,13 +1204,15 @@ async function _sendHeartbeatWithCoords({
       lastHeartbeatAt = now;
       try {
         const deviceId = await getPersistentDeviceId();
+        const auth = await readAuthContext();
         const interests = await readInterestsForBackend();
         diagLog('hb.send', { reason, lat: latitude, lng: longitude, acc: accVal, appState: appStateRef.current }, 'info', 1000);
         const res = await fetch(`${API_BASE}/location/heartbeat`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(auth),
           body: JSON.stringify({
             token: token || undefined, deviceId, lat: latitude, lng: longitude, accuracy: accVal,
+            userId: auth.userId || undefined,
             platform: Platform.OS, projectId: RESOLVED_PROJECT_ID, reason, appState: appStateRef.current,
             interests,
           }),
@@ -2064,14 +2120,16 @@ export async function syncRemoteServiceState(enabled: boolean, reason = 'manual'
   try {
     const deviceId = await getPersistentDeviceId();
     const token = await getCurrentExpoToken();
+    const auth = await readAuthContext();
     const interests = await readInterestsForBackend();
     const res = await fetch(`${API_BASE}/push/service-state`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(auth),
       body: JSON.stringify({
         enabled: !!enabled,
         reason,
         token: token || undefined,
+        userId: auth.userId || undefined,
         deviceId,
         projectId: RESOLVED_PROJECT_ID,
         interests,
@@ -2258,6 +2316,12 @@ export async function getBgStatus() {
 // Exports for Diagnostics
 export async function kickstartBackgroundLocation() { await startAggressiveBgLocation(); }
 export const sendHeartbeat = sendHeartbeatOnce;
+
+export async function syncPushTokenUserContext(reason = 'auth-sync') {
+  try {
+    await registerTokenAtBackend(reason);
+  } catch {}
+}
 export const sendRoundtripTest = roundtripTest;
 
 

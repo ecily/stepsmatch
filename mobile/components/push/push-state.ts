@@ -151,10 +151,24 @@ export async function getOfferMeta(offerId: string) {
 
 export async function getInterestSet(): Promise<Set<string>> {
   try {
-    const [rawCsv, rawJson] = await Promise.all([
+    const [rawProfile, rawCsv, rawJson] = await Promise.all([
+      AsyncStorage.getItem('userProfile'),
       AsyncStorage.getItem('userInterests.csv'),
       AsyncStorage.getItem('userInterests'),
     ]);
+    if (rawProfile) {
+      try {
+        const profile = JSON.parse(rawProfile);
+        if (Array.isArray(profile?.interests)) {
+          const profileSet = new Set<string>();
+          for (const item of profile.interests) {
+            for (const token of csvToSet(String(item || ''))) profileSet.add(token);
+          }
+          return profileSet;
+        }
+      } catch {}
+    }
+
     const set = new Set<string>(csvToSet(rawCsv || ''));
     if (rawJson) {
       try {

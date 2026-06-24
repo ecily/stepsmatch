@@ -1,9 +1,13 @@
 // stepsmatch/backend/routes/push.js
 import express from 'express';
-import mongoose from 'mongoose';
 import { Expo } from 'expo-server-sdk';
 import PushToken from '../models/PushToken.js';
+import User from '../models/User.js';
 import { sendToDevice } from '../services/pushService.js';
+import {
+  normalizeInterestsInput,
+  resolvePushTokenUserContext,
+} from '../utils/pushTokenUserContext.js';
 
 const router = express.Router();
 
@@ -24,25 +28,6 @@ const parseBool = (v) => {
   if (['0', 'false', 'off', 'no', 'disabled', 'inactive'].includes(s)) return false;
   return undefined;
 };
-const normalizeInterestsInput = (input) => {
-  if (input === undefined) return null; // no update requested
-  const src = Array.isArray(input) ? input : String(input || '').split(/[,\n;|]/);
-  const out = src
-    .map((s) =>
-      String(s || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-    )
-    .filter(Boolean);
-  return Array.from(new Set(out));
-};
-const isValidObjectId = (v) => {
-  try { return !!v && mongoose.Types.ObjectId.isValid(String(v)); } catch { return false; }
-};
-
 console.log('[push] EXPO_ACCESS_TOKEN present =', Boolean(process.env.EXPO_ACCESS_TOKEN));
 
 const PROJECT_ID =
@@ -242,7 +227,13 @@ router.post('/register', async (req, res) => {
 
     // Strikte Geo-Validierung (setzt nur bei valider Koordinate)
     const point = normalizePoint(lastLocation, Number(lat), Number(lng));
-    const normalizedInterests = normalizeInterestsInput(interests);
+    const userContext = await resolvePushTokenUserContext({
+      authorizationHeader: req.headers.authorization,
+      bodyUserId: userId,
+      bodyInterests: interests,
+      UserModel: User,
+    });
+    const normalizedInterests = userContext.interests;
     const enabledFlag = parseBool(serviceEnabled);
 
     const now = new Date();
@@ -251,7 +242,6 @@ router.post('/register', async (req, res) => {
     const $set = {
       token: token.trim(),
       platform: normPlatform(platform),
-      userId: isValidObjectId(userId) ? userId : null,
       deviceId: deviceId || null,
       valid: true,
       disabled: enabledFlag === false ? true : false,
@@ -261,6 +251,9 @@ router.post('/register', async (req, res) => {
       updatedAt: now,
       ...(projectId ? { projectId } : {}),
     };
+    if (userContext.userId) {
+      $set.userId = userContext.userId;
+    }
 
     // Nur wenn Koordinate gültig ist → GeoJSON + lastHeartbeatAt
     if (point) {
@@ -307,6 +300,7 @@ router.post('/register', async (req, res) => {
       'deviceId=', $set.deviceId || '(none)',
       'point=', point ? 'ok' : 'n/a',
       normalizedInterests !== null ? `interests=${normalizedInterests.length}` : 'interests=keep',
+      `user=${userContext.userId ? 'linked' : 'anonymous'}`,
       enabledFlag !== undefined ? `serviceEnabled=${enabledFlag}` : 'serviceEnabled=default-on',
       reason ? `reason=${reason}` : ''
     );
@@ -316,6 +310,7 @@ router.post('/register', async (req, res) => {
       id: doc?._id || null,
       platform: $set.platform,
       deviceId: $set.deviceId,
+      userLinked: Boolean(doc?.userId),
       valid: true,
       hadPoint: Boolean(point),
     });
@@ -332,7 +327,7 @@ router.post('/register', async (req, res) => {
  */
 router.post('/service-state', async (req, res) => {
   try {
-    const { token, deviceId, projectId, enabled, interests, reason } = req.body || {};
+    const { token, deviceId, projectId, enabled, interests, reason, userId } = req.body || {};
     const enabledFlag = parseBool(enabled);
     if (enabledFlag === undefined) {
       return res.status(400).json({ success: false, error: 'enabled-required' });
@@ -340,7 +335,6 @@ router.post('/service-state', async (req, res) => {
 
     const trimmedToken = typeof token === 'string' ? token.trim() : '';
     const projectScope = projectId || PROJECT_ID || null;
-    const normalizedInterests = normalizeInterestsInput(interests);
 
     const or = [];
     if (trimmedToken && Expo.isExpoPushToken(trimmedToken)) or.push({ token: trimmedToken });
@@ -355,6 +349,13 @@ router.post('/service-state', async (req, res) => {
 
     const filter = or.length === 1 ? or[0] : { $or: or };
     const now = new Date();
+    const userContext = await resolvePushTokenUserContext({
+      authorizationHeader: req.headers.authorization,
+      bodyUserId: userId,
+      bodyInterests: interests,
+      UserModel: User,
+    });
+    const normalizedInterests = userContext.interests;
     const $set = {
       disabled: !enabledFlag,
       valid: true,
@@ -362,6 +363,7 @@ router.post('/service-state', async (req, res) => {
       lastSeenAt: now,
       ...(projectScope ? { projectId: projectScope } : {}),
     };
+    if (userContext.userId) $set.userId = userContext.userId;
     if (normalizedInterests !== null) $set.interests = normalizedInterests;
 
     const upd = await PushToken.updateMany(filter, { $set });
@@ -374,6 +376,7 @@ router.post('/service-state', async (req, res) => {
       `matched=${upd.matchedCount || 0}`,
       `modified=${upd.modifiedCount || 0}`,
       normalizedInterests !== null ? `interests=${normalizedInterests.length}` : 'interests=keep',
+      userContext.userId ? 'user=linked' : 'user=anonymous',
       reason ? `reason=${reason}` : ''
     );
 
