@@ -4,19 +4,29 @@ Stand: 2026-07-26
 
 ## Pitchfähiger Kern
 
+### Kernbeweis
+
+Der Pitch-MVP kann den echten Kern zeigen: Nutzer wählen Interessen, die App läuft im Hintergrund, Nähe/Zeit/Radius/Gültigkeit erzeugen Relevanz, und Push erreicht den Nutzer auch bei geschlossener App bzw. ausgeschaltetem Bildschirm. Feed, Karte, Route und Match-Grund erklären danach den Match. Der technische Kern ist lokal am getesteten Android-Gerät bewiesen.
+
+Das ist kein Versprechen einer öffentlichen Beta, von Partnerclaims, Play-Store-Reife oder eines allgemeinen Rollouts.
+
 Der Pitch kann den Ablauf zeigen: Interessen wählen → Standortkontext → passender lokaler Demo-Hinweis → Match-Grund/Pre-Alpha-Label → Karte → Route. Ergänzend kann der Anbieter-/Admin-Flow Radius, Laufzeit, Zeitfenster, Sichtbarkeit, Push-Eignung und Risiko-/Quellenfelder zeigen.
 
 Lokal sind die automatisierten Checks grün: 25 Backend-Tests, Frontend Lint/Build, Mobile Lint/TypeScript. Der Seed umfasst 50 Locations und 25 matchbare Inhalte für Andritz, Gösting/Graz-Nord und Gratwein-Strassengel.
 
 ## Gerätetest-Befunde
 
-Aus dem Projektkontext dokumentiert: Login, Interessen, Feed, Demo-/Pre-Alpha-Labels, Match-Gründe, Karte, manuelle Route, PushToken/User-Kontext, Heartbeat und Geofence wurden auf Android getestet. Die Basemap- und Directions-Probleme wurden lokal über Konfiguration behoben. Screen-off-Heartbeat/Foreground-Service ist dokumentiert, der vollständige wiederholbare Remote-Push-E2E bleibt wegen Credential-/Runtime-/OEM-Abhängigkeiten ein gelber Bereich.
+Aus dem Projektkontext dokumentiert und am getesteten Android-Gerät validiert: Login, Interessen, Feed, Demo-/Pre-Alpha-Labels, Match-Gründe, Karte, manuelle Route, PushToken/User-Kontext, Heartbeat, Geofence sowie Background-/Closed-App-/Screen-off-Push. Der technische Kern ist damit lokal auf diesem Gerät bewiesen. Die Basemap- und Directions-Probleme wurden lokal über Konfiguration behoben.
 
 Nicht behauptet werden darf: Feldstabilität auf mehreren OEMs, belastbare Push-Open-Rate, Partnerzustimmung oder Markt-/Umsatznachweis.
 
 ## Demo-Daten
 
-`backend/seeds/pitchDemoGrazNorthV1.mjs` ist idempotent über `demoSeedTag=pitch_demo_graz_north_v1` und stabile Keys. Es gibt keine Importausführung in diesem Audit. Ein read-only DB-Abgleich scheiterte an der Atlas-IP-Whitelist. Der direkte Live-Offer-Endpoint meldete 31 ältere/andere Inhalte; das ist kein Beleg für den neuen 25er Seed.
+**Korrektur:** Laut vorherigem Context wurde der kontrollierte Seed importiert. In diesem Korrekturlauf wurde der Live-Bestand nicht verifiziert; der zuvor dokumentierte aktuelle Standort lag außerhalb der Seed-Radien.
+
+Der Live-Bestand ist damit ausdrücklich nicht verifiziert; die Aussage „keine Importausführung“ in der älteren Audit-Fassung ist durch den vorherigen Importbefund überholt.
+
+`backend/seeds/pitchDemoGrazNorthV1.mjs` ist idempotent über `demoSeedTag=pitch_demo_graz_north_v1` und stabile Keys. Laut vorherigem Context wurde der Seed kontrolliert importiert. Der aktuelle Live-Bestand ist nicht verifiziert; der zuvor dokumentierte aktuelle Standort lag außerhalb der Seed-Radien.
 
 ## Was im Pitch gezeigt werden kann
 

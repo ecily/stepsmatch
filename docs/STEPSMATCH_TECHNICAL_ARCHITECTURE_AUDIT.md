@@ -31,13 +31,30 @@ Die Policy ist additive und legacy-kompatibel: `radiusMeters` wird auf `Offer.ra
 
 Heartbeat und Geofence liefern Standortkontext. Feed und Poller prüfen aktive Zeit/Datum, Distanz, Interessen, Sichtbarkeit, PushEligibility sowie Cooldown/Dedupe. `in_app_only` und Review-/unsichere Inhalte werden nicht pushfähig. Route-/Area-Kandidaten bleiben in v1 bewusst nicht punkt-radius-matchbar; das ist durch Tests abgesichert.
 
+## Core Technical Proof: Background Push + Location
+
+Der zentrale technische Proof ist am getesteten Android-Gerät validiert: Background-/Closed-App-/Screen-off-Push funktioniert im aktuellen lokalen Teststand. StepsMatch steht und fällt mit Nähe + Interesse + Zeit + Push. Der Proof verbindet Standortkontext, Match-Policy und Push, ohne dass die App geöffnet sein muss.
+
+Beteiligte Komponenten:
+
+- Mobile `PushInitializer` und Expo/Firebase PushToken;
+- PushToken/User-Kontext;
+- nativer/JS-Heartbeat und Foreground Service;
+- Geofence;
+- Backend `/api/push/register` und `/api/location/heartbeat`;
+- GeoPush und `OfferVisibility`.
+
+Damit ist StepsMatch mehr als eine offene Karten-App: Relevante Inhalte werden im Hintergrund anhand von Nähe, Interesse, Zeit und Radius erkannt und gezielt zugestellt. Die Validierung gilt für das getestete Android-Gerät, nicht als Gerätegarantie.
+
+Offen bleiben Multi-OEM-/Multi-Device-Tests, transiente FCM-/Expo-Fehler, Google-Maps-Runtime-Caveats und ein Monitoring-/KPI-Minimum.
+
 Der Kern ist technisch nachvollziehbar, aber die Ereigniskette ist noch nicht als vollständiges, aggregierbares Eventmodell persistiert. `OfferVisibility` ist eher Zustand als vollständige Entscheidungshistorie.
 
 ## Mobile
 
 Die App enthält Consent-/Onboarding-Routen, Auth/Verify, Interessen, Tabs für Offers/Map/Profile/Diagnostics, Offer-Screen, Marker-Sheet und Directions. `PushInitializer`, Token-Refresh, User-Kontext-Sync, `BackgroundLocationManager`, Geofence-Task und nativer `HeartbeatService` bilden die Kernkette.
 
-Dokumentierte Gerätetests bestätigen Android-Release-APK, Login, Interessen, Feed, Google-Basemap, Directions, Screen-off-Heartbeat/Foreground-Service und Geofence. Nicht vollständig abgesichert sind OEM-Doze/MIUI, dauerhafte Background-Service-Stabilität unter realer Nutzung, FCM-Fehlerfälle und Release-Signing.
+Dokumentierte Gerätetests bestätigen Android-Release-APK, Login, Interessen, Feed, Google-Basemap, Directions, Screen-off-Heartbeat/Foreground-Service, Geofence sowie Background-/Closed-App-/Screen-off-Push am getesteten Android-Gerät. Nicht vollständig abgesichert sind OEM-Doze/MIUI, Multi-Device-Stabilität, transiente FCM-/Expo-Fehlerfälle und Release-Signing.
 
 Offene technische Punkte: temporäre Diagnoseflächen/Logs, Google-Key-Rotation und Restriktionen, echte Release-Signatur, Package-/Native-Namespace-Konsistenz, FCM/EAS-Credentials und Notification-Kanalverhalten im Alltag.
 

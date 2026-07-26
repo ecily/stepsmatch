@@ -4,9 +4,15 @@ Stand: 2026-07-26, Audit in `C:\coding\stepsmatch`.
 
 ## Aktueller Audit-Stand
 
-- Der technische MVP-Kern ist lokal **gelb**: Backend-Policy/Matching und automatisierte Checks sind grün, Live/API-Synchronität, vollständige Observability und Mobile-/Release-Härtung bleiben offen.
-- `main` steht aktuell bei `8672011` (`feat: seed pitch demo data`), laut Git 23 Commits vor `origin/main`. Der Arbeitsbaum war vor der Audit-Dokumentation sauber; die Audit-Dateien sind die einzigen beabsichtigten Änderungen dieses Laufs.
-- Der lokale Pitch-Seed enthält 50 Locations und 25 matchbare Inhalte mit stabilem `demoSeedTag=pitch_demo_graz_north_v1`. Es wurde kein Import ausgeführt. Ein read-only DB-Abgleich war wegen MongoDB-Atlas-IP-Whitelist nicht möglich.
+### Zentrale technische Kernentscheidung
+
+StepsMatch steht und fällt mit Nähe + Interesse + Zeit + Push. Push funktioniert am getesteten Android-Gerät im Vordergrund, im Hintergrund, bei geschlossener App und bei ausgeschaltetem Bildschirm. Heartbeat, Geofence, PushToken/User-Kontext und OfferVisibility bilden den zentralen technischen Proof-of-Core. Dieser Kern ist lokal validiert und Grundlage für Pitch, Demo-Dichte und Feldtests. Die Aussage gilt für das getestete Android-Gerät; Multi-OEM-/Multi-Device-Validierung bleibt offen.
+
+Korrektur zur älteren Audit-Kurzfassung: Der kontrollierte Pitch-Seed wurde laut vorherigem Stand importiert; der aktuelle Live-Bestand ist nicht verifiziert und der zuvor dokumentierte aktuelle Standort lag außerhalb der Seed-Radien.
+
+- Der technische MVP-Kern ist lokal **grün validiert**: Backend-Policy/Matching und automatisierte Checks sind grün. Live/API-Synchronität, vollständige Observability und Mobile-/Release-Härtung bleiben gelb.
+- `main` steht aktuell bei `65fb403` (`docs: audit current stepsmatch state`), laut Git 24 Commits vor `origin/main`. Der Arbeitsbaum war vor diesem Korrekturlauf sauber.
+- Der lokale Pitch-Seed enthält 50 Locations und 25 matchbare Inhalte mit stabilem `demoSeedTag=pitch_demo_graz_north_v1` und wurde laut vorherigem Stand kontrolliert importiert. Der aktuelle Live-Bestand ist nicht verifiziert.
 - `stepsmatch.com` liefert die SPA. Die direkte Domain liefert unter `/api/*` derzeit SPA-HTML statt Backend-JSON; der direkte DigitalOcean-Backend-Host antwortet auf Health/Ready und `/api/offers`. Lokaler API-Fallback und öffentliche Domain müssen vor Pitch abgeglichen werden.
 - Backend-Tests (25/25), Frontend Lint/Build, Mobile Lint/TypeScript und Diff-Checks waren am 2026-07-26 grün.
 

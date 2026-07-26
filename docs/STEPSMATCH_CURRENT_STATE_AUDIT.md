@@ -5,15 +5,21 @@ Prüfumfang: lokaler Arbeitsbaum in `C:\coding\stepsmatch`, Branch `main`, read-
 
 ## Gesamtstatus
 
-**Ampel: GELB.** Der technische MVP-Kern ist lokal belastbar und die automatisierten Checks sind grün. Pitch-/Rollout-Reife wird aber durch den nicht synchronen Live-Stand, die ungeklärte öffentliche API-Domain, fehlende vollständige Observability und offene Mobile-/Credential-Härtung begrenzt.
+### Korrektur und Kernvalidierung
+
+Der lokale technische MVP-Kern ist solide und am getesteten Android-Gerät validiert: Login, Interessen, Feed, Demo-/Pre-Alpha-Labels, Match-Gründe, Karte, manuelle Route, PushToken/User-Kontext, Heartbeat, Geofence sowie Background-/Closed-App-/Screen-off-Push funktionieren im aktuellen lokalen Teststand. Das ist der zentrale technische Proof-of-Core für StepsMatch. Live/API-Routing, Observability und Rollout bleiben gelb; der Produktkern ist nicht unbewiesen.
+
+Aktuelle Gewichtung: **lokal technischer MVP solide**; der Produktkern ist grün validiert. Live/API-Routing, Observability und Rollout bleiben gelb.
+
+**Ampel: GELB mit grünem technischem Core.** Der technische MVP-Kern ist lokal am getesteten Android-Gerät validiert. Pitch-/Rollout-Reife wird weiterhin durch Live/API-Routing, fehlende vollständige Observability und offene Multi-OEM-/Release-Härtung begrenzt.
 
 | Bereich | Status | Befund |
 | --- | --- | --- |
-| Produktkern | grün/gelb | Nähe + Interesse + aktive Inhalte sind klar umgesetzt; echte Anbieter- und Marktvalidierung fehlt. |
+| Produktkern | grün | Nähe + Interesse + Zeit + Push sowie Feed/Karte/Route sind lokal am getesteten Android-Gerät validiert; echte Anbieter- und Marktvalidierung fehlt. |
 | Backend-Policy/Matching | grün | Radius, Zeit/Datum, Sichtbarkeit, Push-Eligibility und Cooldown sind implementiert und getestet. |
 | Frontend | grün lokal / gelb live | Lint und Build grün; Provider-/Admin-Flows vorhanden. Live-API-Basis ist nicht dieselbe Domain wie die SPA. |
-| Mobile | gelb | APK-/Gerätetests dokumentieren Login, Feed, Karte, Route, Heartbeat und Geofence; FCM-/OEM-/Release-Härtung bleibt offen. |
-| Demo-Daten | grün lokal / gelb live | Seed-Datei enthält 50 Locations und 25 Inhalte; DB-Abgleich lokal blockiert durch Atlas-IP-Whitelist, Live-API zeigt einen älteren/anderen Bestand. |
+| Mobile | grün am Testgerät / gelb für Rollout | APK-/Gerätetests dokumentieren Login, Feed, Karte, Route, Heartbeat, Geofence sowie Background-/Closed-App-/Screen-off-Push; Multi-OEM-/Release-Härtung bleibt offen. |
+| Demo-Daten | grün lokal / gelb live | Seed-Datei enthält 50 Locations und 25 Inhalte und wurde laut vorherigem Stand kontrolliert importiert; aktueller Live-Bestand ist nicht verifiziert. |
 | Observability | gelb | Diagnostics, NotificationLogs, OfferVisibility und PushToken existieren; Funnel- und Match-Events für belastbare KPIs fehlen weitgehend. |
 | Datenschutz/Security | gelb | Consent-first ist fachlich dokumentiert; Key-Restriktionen, Retention, echte Release-Signatur und Live-Domain/CORS müssen vor Rollout final geprüft werden. |
 
@@ -34,7 +40,9 @@ Es ist keine Pilger-App, kein Branchenverzeichnis und keine reine Angebots-App. 
 
 ## Nicht nachgewiesen
 
-- Kein aktueller read-only DB-Count: MongoDB Atlas verweigerte die Verbindung wegen fehlender IP-Whitelist. Das Seed-Script wurde nicht mit `--apply` ausgeführt.
+**Seed-Korrektur:** Laut vorherigem Context wurde der kontrollierte Seed bereits importiert. Der aktuelle Live-Bestand ist in diesem Korrekturlauf nicht verifiziert; der zuvor dokumentierte aktuelle Standort lag außerhalb der Seed-Radien.
+
+- Kein neuer aktueller read-only DB-Count in diesem Korrekturlauf: MongoDB Atlas verweigerte die Verbindung wegen fehlender IP-Whitelist. Laut vorherigem Context wurde der Seed kontrolliert importiert; der aktuelle Live-Bestand ist nicht verifiziert.
 - Keine vollständige Feldvalidierung mit mehreren Geräten/OEMs und kein neuer APK-Build in diesem Audit.
 - Keine belastbare Notification-Öffnungs-/Arrival-/Feedback-KPI-Kette.
 - Keine Bestätigung, dass Live-Frontend, Live-Backend und aktuelle lokale Seed-/Policy-Version denselben Release-Stand sprechen.
