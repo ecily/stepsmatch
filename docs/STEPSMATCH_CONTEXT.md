@@ -1,6 +1,21 @@
 # StepsMatch.com - Projektkontext
 
-Stand: 2026-06-24, lokale Bestandsaufnahme in `C:\coding\stepsmatch`.
+Stand: 2026-07-26, Audit in `C:\coding\stepsmatch`.
+
+## Aktueller Audit-Stand
+
+- Der technische MVP-Kern ist lokal **gelb**: Backend-Policy/Matching und automatisierte Checks sind grün, Live/API-Synchronität, vollständige Observability und Mobile-/Release-Härtung bleiben offen.
+- `main` steht aktuell bei `8672011` (`feat: seed pitch demo data`), laut Git 23 Commits vor `origin/main`. Der Arbeitsbaum war vor der Audit-Dokumentation sauber; die Audit-Dateien sind die einzigen beabsichtigten Änderungen dieses Laufs.
+- Der lokale Pitch-Seed enthält 50 Locations und 25 matchbare Inhalte mit stabilem `demoSeedTag=pitch_demo_graz_north_v1`. Es wurde kein Import ausgeführt. Ein read-only DB-Abgleich war wegen MongoDB-Atlas-IP-Whitelist nicht möglich.
+- `stepsmatch.com` liefert die SPA. Die direkte Domain liefert unter `/api/*` derzeit SPA-HTML statt Backend-JSON; der direkte DigitalOcean-Backend-Host antwortet auf Health/Ready und `/api/offers`. Lokaler API-Fallback und öffentliche Domain müssen vor Pitch abgeglichen werden.
+- Backend-Tests (25/25), Frontend Lint/Build, Mobile Lint/TypeScript und Diff-Checks waren am 2026-07-26 grün.
+
+Vertiefung:
+
+- `docs/STEPSMATCH_CURRENT_STATE_AUDIT.md`
+- `docs/STEPSMATCH_TECHNICAL_ARCHITECTURE_AUDIT.md`
+- `docs/STEPSMATCH_PITCH_MVP_STATUS.md`
+- `docs/STEPSMATCH_RISK_REGISTER.md`
 
 ## 1. Projektgrenzen
 
