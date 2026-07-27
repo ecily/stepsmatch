@@ -82,30 +82,30 @@ const pages = {
 Object.assign(pages, {
   app: {
     ...pages.app,
-    title: "Relevant, wenn du wirklich in der Nähe bist.",
-    lead: "StepsMatch verbindet lokale Hinweise mit Menschen, wenn Nähe, Zeit und Interesse zusammenpassen – auch wenn die App gerade nicht geöffnet ist.",
+    title: "Relevant, wenn Angebot, Ort und Zeit zusammenpassen.",
+    lead: "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe. Interessen, Radius und gültiges Zeitfenster entscheiden, ob ein Hinweis relevant ist.",
     points: [
       "Interessen bewusst wählen",
       "Standortfreigabe selbst kontrollieren",
       "Hinweise nur im passenden lokalen Moment",
-      "Push statt ständiger Suche",
+      "Push statt ständiger Suche – nur bei passendem Match",
     ],
   },
   anbieter: {
     ...pages.anbieter,
-    lead: "StepsMatch soll lokale Anbieter, Orte und Services dann sichtbar machen, wenn sie im passenden Radius und Zeitfenster wirklich relevant sind. Anbieter können später Radius, Laufzeit und Sichtbarkeit steuern.",
+    lead: "Anbieter legen Angebote mit Details, Bildern, Kategorie oder Interesse an und steuern Radius, Datum, Wochentage und Zeitfenster.",
     points: [
       "Stammdaten und Standort sauber prüfen",
       "Kategorie oder Interesse passend wählen",
-      "Radius, Laufzeit und Sichtbarkeit festlegen",
+      "Radius, Datum, Wochentage und Zeitfenster festlegen",
       "Keine Massenwerbung und keine lauten Pushes für alles",
       "Keine Rabatte, Preise oder Partnerclaims erfinden",
     ],
-    note: "Pre-Alpha/Pilot: Demo-Hinweise sind keine offiziellen Partnerclaims und kein bestehendes Partnernetzwerk. Sichtbarkeit und Push-Regeln werden vor echter Ausspielung bewusst geprüft.",
+    note: "Beispiel: Ein Gasthaus könnte ein Mittagsmenü um 9,90 EUR von Montag bis Freitag, 11:00 bis 15:00, in 200 m Radius anlegen. Das ist kein echtes Angebot und kein Partnerclaim.",
   },
   "so-funktionierts": {
     ...pages["so-funktionierts"],
-    lead: "Du wählst Interessen. StepsMatch prüft Nähe, Radius, Gültigkeit und Zeitfenster. Ein Hinweis kommt nur, wenn der Kontext passt.",
+    lead: "Du wählst Interessen. Die App kann im Hintergrund bleiben und informiert nur, wenn Interesse, Ort und Zeitfenster eines Angebots passen. Ohne Match bleibt sie ruhig.",
   },
   "pre-alpha": {
     ...pages["pre-alpha"],

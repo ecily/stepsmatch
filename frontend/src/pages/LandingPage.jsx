@@ -37,18 +37,42 @@ function hasAcceptedTesterAccess() {
 const userSteps = [
   {
     title: "Interessen wählen",
-    text: "Du legst fest, welche Hinweise für dich grundsätzlich relevant sind.",
+    text: "Zum Beispiel günstig essen, Kaffee, Nahversorgung, Freizeit oder lokale Services.",
     icon: CheckCircle2,
   },
   {
-    title: "App ruhig laufen lassen",
-    text: "StepsMatch bleibt im Hintergrund und drängt sich nicht in den Vordergrund.",
+    title: "App laufen lassen",
+    text: "Die App kann im Hintergrund bleiben. Du musst nicht ständig selbst suchen.",
     icon: EyeOff,
   },
   {
-    title: "Hinweis bekommen",
-    text: "Du wirst informiert, wenn Ort, Radius, Zeit und Interesse zusammenpassen.",
+    title: "Passenden Hinweis erhalten",
+    text: "Nur wenn Interesse, Ort und Zeitfenster passen, kann StepsMatch informieren.",
     icon: BellRing,
+  },
+  {
+    title: "Details ansehen und hinfinden",
+    text: "Angebot öffnen, Karte ansehen und Route starten.",
+    icon: Route,
+  },
+];
+
+const providerSteps = [
+  {
+    title: "Angebot anlegen",
+    text: "Mittagsmenü, Service, Aktion, Hinweis oder lokaler Vorteil.",
+  },
+  {
+    title: "Radius festlegen",
+    text: "Zum Beispiel 200 m rund um das eigene Geschäft.",
+  },
+  {
+    title: "Laufzeit bestimmen",
+    text: "Datum, Wochentage und Uhrzeit passend zum Angebot festlegen.",
+  },
+  {
+    title: "Passende Menschen erreichen",
+    text: "Nur Nutzer mit passendem Interesse im gültigen Radius werden informiert.",
   },
 ];
 
@@ -58,15 +82,6 @@ const differencePoints = [
   "Kein alles für alle",
   "Relevanz im richtigen Moment",
   "Lokale Nähe statt Angebotslärm",
-];
-
-const providerSteps = [
-  "Stammdaten angeben",
-  "Standort prüfen",
-  "Hinweis oder Angebot erstellen",
-  "Radius und Laufzeit festlegen",
-  "Vorschau prüfen",
-  "Veröffentlichen oder zur Prüfung einreichen",
 ];
 
 const corePillars = [
@@ -249,10 +264,10 @@ export default function LandingPage() {
             <div className="max-w-4xl text-white sm-rise">
               <p className="sm-badge !border-white/30 !bg-white/10 !text-white">PRE ALPHA · Raum Graz im Aufbau</p>
               <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[0.92] sm:text-6xl lg:text-8xl">
-                Relevant, wenn du wirklich in der Nähe bist.
+                Angebote erreichen Menschen genau dann, wenn sie wirklich passen.
               </h1>
               <p className="mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-white/92 sm:text-2xl">
-                StepsMatch verbindet lokale Hinweise, Orte, Services und Angebote mit deinem Alltag – wenn Nähe, Zeit und Interesse zusammenpassen.
+                StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – basierend auf Interesse, Radius und gültigem Zeitfenster.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -268,7 +283,7 @@ export default function LandingPage() {
               </div>
 
               <p className="mt-6 max-w-2xl text-sm font-semibold uppercase tracking-[0.08em] text-[var(--sm-accent)]">
-                Nähe + Zeit + Interesse + Push. Keine Listenflut, keine Massenwerbung.
+                Angebot + Interesse + Ort + Zeit = relevanter Match.
               </p>
             </div>
 
@@ -307,10 +322,10 @@ export default function LandingPage() {
             <div className="max-w-3xl">
               <p className="sm-chip">Der StepsMatch-Kern</p>
               <h2 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">
-                Nicht alles überall. Sondern das Richtige in deiner Nähe.
+                Relevant, wenn Angebot, Ort und Zeit zusammenpassen.
               </h2>
               <p className="mt-4 text-blue-50 sm:text-lg">
-                Standort und Push sind Teil des Produkts, weil ein passender Hinweis auch dann ankommen soll, wenn die App gerade nicht geöffnet ist. StepsMatch ist auf sparsame, zweckgebundene Standortnutzung ausgelegt.
+                Der Kern von StepsMatch ist eine orts- und zeitabhängige Push-Logik. Wenn ein passendes Angebot im gültigen Radius liegt und zum Interesse passt, kann die App auch im Hintergrund informieren. Ohne passenden Match bleibt StepsMatch ruhig.
               </p>
             </div>
             <div className="mt-7 grid gap-3 md:grid-cols-3">
@@ -331,8 +346,8 @@ export default function LandingPage() {
         <section id="so-funktionierts" className="sm-shell py-10 sm:py-14">
           <div className="sm-card p-7 sm:p-9 sm-rise">
             <p className="sm-badge">So funktioniert StepsMatch</p>
-            <h2 className="sm-section-title mt-4">Drei einfache Schritte.</h2>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <h2 className="sm-section-title mt-4">So funktioniert StepsMatch für Nutzer</h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {userSteps.map((step, index) => {
                 const Icon = step.icon;
                 return (
@@ -388,18 +403,25 @@ export default function LandingPage() {
             <p className="sm-badge">
               <Store size={14} /> Für Anbieter
             </p>
-            <h2 className="sm-section-title mt-4">Erreiche Menschen, wenn dein Ort gerade relevant ist.</h2>
+            <h2 className="sm-section-title mt-4">So funktioniert StepsMatch für Anbieter</h2>
             <p className="sm-section-copy">
-              Anbieter sollen später Inhalte mit Standort, Radius, Laufzeit und Sichtbarkeit so steuern können, dass sie nur im passenden lokalen Kontext relevant werden – ohne Massenwerbung.
+              Anbieter können ein Angebot mit Details, Bildern, Kategorie oder Interesse anlegen und bestimmen, wann und für welchen Radius es relevant ist.
             </p>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {providerSteps.map((step, index) => (
-                <div key={step} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div key={step.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{String(index + 1).padStart(2, "0")}</p>
-                  <p className="mt-2 text-lg font-extrabold text-slate-900">{step}</p>
+                  <p className="mt-2 text-lg font-extrabold text-slate-900">{step.title}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-700">{step.text}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-5">
+              <p className="text-sm font-bold uppercase tracking-[0.08em] text-blue-700">Beispiel</p>
+              <p className="mt-2 text-lg font-extrabold text-slate-950">Ein Gasthaus könnte ein Mittagsmenü um 9,90 EUR anlegen – Montag bis Freitag, 11:00 bis 15:00, in 200 m Radius rund um das Gasthaus.</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-700">Das ist ein erklärendes Beispiel, kein echtes Angebot und kein echter Partnerclaim.</p>
             </div>
 
             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">

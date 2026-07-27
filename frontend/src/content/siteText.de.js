@@ -10,19 +10,19 @@ const siteTextDe = {
     appDownloadUrl: "https://www.stepsmatch.com/apk",
   },
   landing: {
-    title: "StepsMatch | Relevant, wenn du wirklich in der Nähe bist.",
+    title: "StepsMatch | Angebote erreichen Menschen, wenn sie passen.",
     description:
-      "StepsMatch verbindet lokale Hinweise, Orte, Services und Angebote, wenn Nähe, Zeit und Interesse zusammenpassen.",
+      "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – basierend auf Interesse, Radius und gültigem Zeitfenster.",
     badge: "PRE ALPHA · Raum Graz im Aufbau",
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
-    heroTitle: "Relevant, wenn du wirklich in der Nähe bist",
+    heroTitle: "Angebote erreichen Menschen genau dann, wenn sie wirklich passen.",
     heroLead:
-      "StepsMatch läuft ruhig im Hintergrund und meldet sich nur, wenn Nähe, Zeit und Interesse zusammenpassen.",
+      "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – wenn Angebot, Interesse, Ort und Zeit zusammenpassen.",
     heroQuickLine:
-      "Der technische Kern: Standort, Interessen, Gültigkeit und Push arbeiten zusammen – auch wenn die App nicht geöffnet ist.",
-    quickTrustLine: "Der USP: relevant, wenn du wirklich in der Nähe bist.",
+      "Der technische Kern: Angebot, Interesse, Ort und Zeit werden abgeglichen. Bei einem passenden Match kann Push auch im Hintergrund informieren.",
+    quickTrustLine: "Angebot + Interesse + Ort + Zeit = relevanter Match.",
 
     founderMessage:
       "StepsMatch wird aufgebaut, damit lokale Angebote nicht in Listen warten, sondern im passenden Moment relevant werden.",
@@ -33,7 +33,7 @@ const siteTextDe = {
 
     helpTitle: "Wie hilft dir StepsMatch konkret?",
     helpText:
-      "StepsMatch vergleicht Standort, Interessen und aktive Angebote. Ein Hinweis soll nur entstehen, wenn diese drei Faktoren zusammenpassen.",
+      "StepsMatch vergleicht Angebot, Interesse, Ort und Zeit. Nur wenn diese Faktoren zusammenpassen, soll ein relevanter Hinweis entstehen.",
 
     painTitle: "Für Nutzer",
     painIntro:
@@ -77,7 +77,7 @@ const siteTextDe = {
 
     providerTitle: "Für Anbieter",
     providerLead:
-      "Angebote erreichen Menschen genau dann, wenn sie in der Nähe relevant werden.",
+      "Anbieter steuern Angebot, Radius und Laufzeit. So werden Menschen nur dann erreicht, wenn der lokale und zeitliche Kontext passt.",
     providerPoints: [
       "Angebot erstellen und aktuell halten",
       "Radius, Laufzeit und Interessen als Relevanzfilter nutzen",
@@ -104,7 +104,7 @@ const siteTextDe = {
     ],
 
     quote:
-      "Angebote finden dich, wenn Nähe und Interesse passen.",
+      "Angebot + Interesse + Ort + Zeit = relevanter Match.",
   },
   way: {
     title: "Warum StepsMatch diesen Weg testet",
