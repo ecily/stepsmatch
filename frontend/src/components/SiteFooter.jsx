@@ -2,6 +2,7 @@
 import { Link } from "react-router-dom";
 
 import { getPreferredSiteText } from "../content/siteContent";
+import logoIcon from "../assets/stepsmatch-icon.svg";
 
 export default function SiteFooter() {
   const text = React.useMemo(() => getPreferredSiteText(), []);
@@ -10,9 +11,7 @@ export default function SiteFooter() {
     <footer className="sm-divider bg-white/70">
       <div className="sm-shell flex flex-col gap-4 py-8 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-800 text-xs font-extrabold text-white">
-            SM
-          </span>
+          <img src={logoIcon} alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
           <p className="text-sm font-semibold text-slate-700">
             © {new Date().getFullYear()} {text.brand.name}
           </p>
