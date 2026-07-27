@@ -20,6 +20,8 @@ Frontend-Pitch-Schärfung am 2026-07-27: Landingpage, MarketingInfoPage sowie Lo
 
 GitHub-Sicherung und Live-Smoke am 2026-07-27: `main` auf `c3565a2` und der annotierte Tag `core-proof-2026-06-24` wurden erfolgreich zu GitHub gepusht. Ein Auto-Deploy ist durch den aktualisierten LandingPage-Asset-Stand erkennbar; es wurde kein manuelles Deploy-Script ausgefuehrt. `https://stepsmatch.com` und die geprueften Frontend-Routen antworten mit HTTP 200; die aktuelle LandingPage-JavaScript-Datei enthaelt die neue USP-Kommunikation, waehrend das gelieferte HTML-Shell-Dokument noch den alten Seitentitel/Textstand zeigt. `/api/health` auf der oeffentlichen Domain liefert weiterhin SPA-HTML statt JSON. Der direkte DigitalOcean-Backend-Health-/Ready-Check liefert HTTP 200 JSON. Read-only geprueft, keine DB-Mutation.
 
+Live-API-Routing-Analyse am 2026-07-27: Das Backend implementiert `/api/health`, `/api/_healthz` und `/api/_readyz` korrekt. Im Repository existiert keine DigitalOcean-App-Spec oder Proxy-Konfiguration; `frontend/public/_redirects` ist nur ein SPA-Catchall und wird laut Deploy-Doku von DigitalOcean nicht als Netlify-Proxy verwendet. Der sichere Fix liegt daher in der DigitalOcean-Domain-/Service-Konfiguration: `/api/*` muss zum Backend-Service geroutet werden oder die Frontend-API-Basis muss auf einen dedizierten Backend-Host zeigen. Kein Codefix, keine DB-Mutation.
+
 Vertiefung:
 
 - `docs/STEPSMATCH_CURRENT_STATE_AUDIT.md`

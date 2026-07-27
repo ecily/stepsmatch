@@ -21,6 +21,12 @@
    - Use `frontend/.env.example` as template.
    - `VITE_API_BASE_URL` must point to backend `/api`.
 
+## 2a) Canonical Domain API Routing
+
+The repository contains separate frontend and backend services, but no DigitalOcean App Spec or reverse-proxy configuration. The frontend Static Site catchall must remain limited to frontend routes; it must not receive `/api/*` requests. Configure the canonical `stepsmatch.com` domain in DigitalOcean so `/api/*` is routed to the backend service, if the App Platform setup supports path routing. Otherwise use a dedicated API hostname and set `VITE_API_BASE_URL` to that backend `/api` URL. Do not try to solve this with `frontend/public/_redirects`; DigitalOcean App Platform does not use it as a Netlify-style API proxy.
+
+Read-only status checked 2026-07-27: `https://stepsmatch.com/api/health` returned SPA HTML, while the direct backend health endpoint returned JSON 200. This remains a DigitalOcean routing configuration task, not a frontend or backend feature change.
+
 ## 3) Post-Deploy Smoke
 1. `GET /api/health` -> 200
 2. `GET /api/categories` -> 200 + non-empty
