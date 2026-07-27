@@ -4,6 +4,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 
 import axiosInstance from "../api/axios";
 import logoIcon from "../assets/stepsmatch-icon.svg";
+import TesterKeyRequestForm from "../components/TesterKeyRequestForm";
 
 export default function TesterGate() {
   const navigate = useNavigate();
@@ -100,6 +101,7 @@ export default function TesterGate() {
                 {loading ? "Prüfe Key..." : "Weiter zur NDA"}
               </button>
             </form>
+            <TesterKeyRequestForm source="tester-page" />
           </section>
         </div>
       </div>

@@ -6,6 +6,7 @@
 3. Working Directory: `backend`
 4. Environment Variables:
    - Use `backend/.env.example` as template.
+   - Tester-Key-Anfragen benötigen `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` und `GRAPH_SENDER_USER`; optional `GRAPH_RECIPIENT_EMAIL` (Default: `andreas.franz@ecily.com`). Keine Werte in Git oder Logs dokumentieren.
    - Set all secrets in DO (never in git).
 5. Health check path: `/api/health`
 

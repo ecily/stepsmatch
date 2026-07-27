@@ -20,6 +20,7 @@ import {
 
 import Navbar from "../components/Navbar";
 import SiteFooter from "../components/SiteFooter";
+import TesterKeyRequestForm from "../components/TesterKeyRequestForm";
 import { getPreferredSiteText } from "../content/siteContent";
 import heroCity from "../assets/hero-city-daylight.jpg";
 
@@ -170,6 +171,7 @@ function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
             {error ? <div className="sm-error" role="alert">{error}</div> : null}
             <button type="submit" className="sm-btn-primary !w-full sm:!w-auto">Zugang prüfen</button>
           </form>
+          <TesterKeyRequestForm source="app-download-popup" />
           <div className="mt-5 flex justify-end"><button type="button" onClick={onClose} className="sm-btn-secondary">Weiter</button></div>
         </div>
       </div>
