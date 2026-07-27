@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { KeyRound, ShieldCheck } from "lucide-react";
 
 import axiosInstance from "../api/axios";
@@ -60,6 +60,11 @@ export default function TesterGate() {
       <div className="sm-stack sm-shell grid min-h-screen place-items-center py-10">
         <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.08fr_0.92fr]">
           <section className="sm-card-strong p-7 sm:p-9 sm-rise">
+            <div className="mb-6 flex">
+              <Link to="/" className="sm-btn-ghost min-h-11 px-4 py-2" aria-label="Zur Startseite">
+                ← Zur Startseite
+              </Link>
+            </div>
             <p className="sm-chip !border-white/30 !bg-white/10 !text-white">Private Testphase</p>
             <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Willkommen im StepsMatch MVP-Access</h1>
             <p className="mt-3 max-w-xl text-blue-50 sm:text-lg">
@@ -70,6 +75,7 @@ export default function TesterGate() {
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Zugang nur für eingeladene Tester</div>
               <div className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Key-Prüfung gegen Backend-Validierung</div>
             </div>
+
           </section>
 
           <section className="sm-card p-7 sm:p-8 sm-rise sm-delay-1">
