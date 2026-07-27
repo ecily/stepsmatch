@@ -16,6 +16,8 @@ Korrektur zur älteren Audit-Kurzfassung: Der kontrollierte Pitch-Seed wurde lau
 - `stepsmatch.com` liefert die SPA. Die direkte Domain liefert unter `/api/*` derzeit SPA-HTML statt Backend-JSON; der direkte DigitalOcean-Backend-Host antwortet auf Health/Ready und `/api/offers`. Lokaler API-Fallback und öffentliche Domain müssen vor Pitch abgeglichen werden.
 - Backend-Tests (25/25), Frontend Lint/Build, Mobile Lint/TypeScript und Diff-Checks waren am 2026-07-26 grün.
 
+Frontend-Pitch-Schärfung am 2026-07-27: Landingpage, MarketingInfoPage sowie Login/Register-Kommunikation wurden leicht und sichtbar auf den USP „Relevant, wenn du wirklich in der Nähe bist“ ausgerichtet. Nähe + Zeit + Interesse + Push, sparsame zweckgebundene Standortnutzung, Provider-Steuerung und klare Pre-Alpha-/Pilot-Grenzen werden verständlicher erklärt. Keine Backend-/Mobile-/Seed-/Auth-Änderung, kein Deploy, kein GitHub-Push, keine DB-Mutation.
+
 Vertiefung:
 
 - `docs/STEPSMATCH_CURRENT_STATE_AUDIT.md`

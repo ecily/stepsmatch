@@ -117,6 +117,9 @@ const Login = () => {
             <p className="mt-2 text-slate-600">
               Melde dich an, um Hinweise fuer Naehe, Interesse und aktive Ausspielung zu pflegen. Keine Partnerclaims ohne Freigabe.
             </p>
+            <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Pre-Alpha/Pilot: Du steuerst lokale Inhalte mit Radius, Laufzeit und Sichtbarkeit. StepsMatch ist kein Massenwerbe- oder Partnernetzwerk.
+            </p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
 

@@ -117,6 +117,9 @@ const Register = ({ onRegisterSuccess }) => {
               Erstelle den Anbieterzugang fuer den Pre-Alpha-Test und pflege danach Hinweise mit
               Radius, Laufzeit, Sichtbarkeit und klarer Demo-Kennzeichnung.
             </p>
+            <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Ziel ist lokale Relevanz: Inhalte sollen nur dann sichtbar werden, wenn Nähe, Zeit und Interesse zusammenpassen. Ein offizielles Partnernetzwerk wird nicht behauptet.
+            </p>
 
             {error && <div className="sm-error mt-4">{error}</div>}
 

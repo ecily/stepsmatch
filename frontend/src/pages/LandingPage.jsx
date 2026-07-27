@@ -58,6 +58,24 @@ const providerSteps = [
   "Veröffentlichen oder zur Prüfung einreichen",
 ];
 
+const corePillars = [
+  {
+    title: "Näher dran",
+    text: "Ein Hinweis wird relevant, wenn du wirklich im passenden Radius bist.",
+    icon: MapPin,
+  },
+  {
+    title: "Im richtigen Moment",
+    text: "Zeitfenster und Gültigkeit halten unpassende Hinweise zurück.",
+    icon: Clock3,
+  },
+  {
+    title: "Ruhig informiert",
+    text: "Push soll dich auch ohne geöffnete App erreichen – nicht alles und überall.",
+    icon: BellRing,
+  },
+];
+
 const contentTypes = [
   {
     title: "Verifizierter Anbieter",
@@ -169,10 +187,10 @@ export default function LandingPage() {
             <div className="max-w-4xl text-white sm-rise">
               <p className="sm-badge !border-white/30 !bg-white/10 !text-white">PRE ALPHA · Raum Graz im Aufbau</p>
               <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[0.92] sm:text-6xl lg:text-8xl">
-                Angebote finden dich.
+                Relevant, wenn du wirklich in der Nähe bist.
               </h1>
               <p className="mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-white/92 sm:text-2xl">
-                StepsMatch läuft ruhig im Hintergrund und meldet sich nur, wenn in deiner Nähe etwas zu dir passt.
+                StepsMatch verbindet lokale Hinweise, Orte, Services und Angebote mit deinem Alltag – wenn Nähe, Zeit und Interesse zusammenpassen.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -188,7 +206,7 @@ export default function LandingPage() {
               </div>
 
               <p className="mt-6 max-w-2xl text-sm font-semibold uppercase tracking-[0.08em] text-[var(--sm-accent)]">
-                Ruhige Hinweise. Klare Nähe. Keine dauernde Werbung.
+                Nähe + Zeit + Interesse + Push. Keine Listenflut, keine Massenwerbung.
               </p>
             </div>
 
@@ -221,6 +239,32 @@ export default function LandingPage() {
             </aside>
           </section>
         </header>
+
+        <section className="sm-shell py-10 sm:py-14">
+          <div className="sm-card-strong p-7 sm:p-9 sm-rise">
+            <div className="max-w-3xl">
+              <p className="sm-chip">Der StepsMatch-Kern</p>
+              <h2 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">
+                Nicht alles überall. Sondern das Richtige in deiner Nähe.
+              </h2>
+              <p className="mt-4 text-blue-50 sm:text-lg">
+                Standort und Push sind Teil des Produkts, weil ein passender Hinweis auch dann ankommen soll, wenn die App gerade nicht geöffnet ist. StepsMatch ist auf sparsame, zweckgebundene Standortnutzung ausgelegt.
+              </p>
+            </div>
+            <div className="mt-7 grid gap-3 md:grid-cols-3">
+              {corePillars.map((pillar) => {
+                const Icon = pillar.icon;
+                return (
+                  <article key={pillar.title} className="rounded-lg border border-white/15 bg-white/10 p-4">
+                    <Icon size={20} className="text-[var(--sm-accent)]" />
+                    <h3 className="mt-3 text-lg font-extrabold text-white">{pillar.title}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-blue-50">{pillar.text}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         <section id="so-funktionierts" className="sm-shell py-10 sm:py-14">
           <div className="sm-card p-7 sm:p-9 sm-rise">
@@ -272,9 +316,7 @@ export default function LandingPage() {
             <p className="sm-badge">PRE ALPHA transparent</p>
             <h2 className="sm-section-title mt-4">Raum Graz im Aufbau.</h2>
             <p className="sm-section-copy">
-              StepsMatch ist derzeit eine PRE ALPHA im Raum Graz. Der technische Kern funktioniert: Die App kann im
-              Hintergrund laufen und dich benachrichtigen, wenn in deiner Nähe ein passender Hinweis aktiv ist. Jetzt
-              bauen wir gemeinsam die regionale Datenbasis, bessere Anbieter-Flows und ein verlässliches Beta-Erlebnis auf.
+              StepsMatch ist derzeit eine PRE ALPHA im Raum Graz. Der technische Kern – Nähe, Interesse, Zeit und Push – ist am getesteten Android-Gerät validiert. Demo-Inhalte zeigen das Prinzip, ohne echte Partner-, Preis- oder Rabattclaims. Regionale Datenbasis und Anbieter-Flows werden kontrolliert weiterentwickelt.
             </p>
           </div>
         </section>
@@ -286,7 +328,7 @@ export default function LandingPage() {
             </p>
             <h2 className="sm-section-title mt-4">Erreiche Menschen, wenn dein Ort gerade relevant ist.</h2>
             <p className="sm-section-copy">
-              Anbieter können Hinweise oder Angebote mit Standort, Radius, Laufzeit und klaren Bedingungen veröffentlichen.
+              Anbieter sollen später Inhalte mit Standort, Radius, Laufzeit und Sichtbarkeit so steuern können, dass sie nur im passenden lokalen Kontext relevant werden – ohne Massenwerbung.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -299,8 +341,7 @@ export default function LandingPage() {
             </div>
 
             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-              StepsMatch verspricht keine Verkäufe und keine garantierten Besuche. StepsMatch hilft dabei, relevante
-              Hinweise im passenden lokalen Moment sichtbar zu machen.
+              StepsMatch ist kein offizielles Partnernetzwerk und verspricht keine Verkäufe oder garantierten Besuche. Im Pilot zählen lokale Relevanz, klare Grenzen und nachvollziehbare Ausspielung.
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -339,7 +380,7 @@ export default function LandingPage() {
             <p className="sm-chip">StepsMatch</p>
             <h2 className="mt-4 text-3xl font-extrabold sm:text-4xl">Ein ruhiger Hinweis, wenn Nähe und Interesse passen.</h2>
             <p className="mt-3 max-w-3xl text-blue-50 sm:text-lg">
-              Der aktuelle MVP-Kern ist verifiziert. Die Website bereitet jetzt die Beta-Kommunikation vor.
+              Der technische Kern ist lokal validiert. Die Website erklärt jetzt klar, was StepsMatch kann – und was im Pre-Alpha-/Pilotstatus noch offen bleibt.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => setApkOpen(true)} className="sm-btn-secondary gap-2">

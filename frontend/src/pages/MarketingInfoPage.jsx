@@ -79,6 +79,51 @@ const pages = {
   },
 };
 
+Object.assign(pages, {
+  app: {
+    ...pages.app,
+    title: "Relevant, wenn du wirklich in der Nähe bist.",
+    lead: "StepsMatch verbindet lokale Hinweise mit Menschen, wenn Nähe, Zeit und Interesse zusammenpassen – auch wenn die App gerade nicht geöffnet ist.",
+    points: [
+      "Interessen bewusst wählen",
+      "Standortfreigabe selbst kontrollieren",
+      "Hinweise nur im passenden lokalen Moment",
+      "Push statt ständiger Suche",
+    ],
+  },
+  anbieter: {
+    ...pages.anbieter,
+    lead: "StepsMatch soll lokale Anbieter, Orte und Services dann sichtbar machen, wenn sie im passenden Radius und Zeitfenster wirklich relevant sind. Anbieter können später Radius, Laufzeit und Sichtbarkeit steuern.",
+    points: [
+      "Stammdaten und Standort sauber prüfen",
+      "Kategorie oder Interesse passend wählen",
+      "Radius, Laufzeit und Sichtbarkeit festlegen",
+      "Keine Massenwerbung und keine lauten Pushes für alles",
+      "Keine Rabatte, Preise oder Partnerclaims erfinden",
+    ],
+    note: "Pre-Alpha/Pilot: Demo-Hinweise sind keine offiziellen Partnerclaims und kein bestehendes Partnernetzwerk. Sichtbarkeit und Push-Regeln werden vor echter Ausspielung bewusst geprüft.",
+  },
+  "so-funktionierts": {
+    ...pages["so-funktionierts"],
+    lead: "Du wählst Interessen. StepsMatch prüft Nähe, Radius, Gültigkeit und Zeitfenster. Ein Hinweis kommt nur, wenn der Kontext passt.",
+  },
+  "pre-alpha": {
+    ...pages["pre-alpha"],
+    lead: "Der technische Kern ist am getesteten Android-Gerät validiert. Jetzt bauen wir regionale Datenbasis und bessere Anbieter-Flows kontrolliert weiter aus.",
+  },
+  "datenschutz-standort": {
+    ...pages["datenschutz-standort"],
+    lead: "Standort und Benachrichtigungen sind Teil der Produktfunktion: relevante lokale Hinweise im passenden Moment. StepsMatch ist auf sparsame, zweckgebundene Standortnutzung ausgelegt.",
+    points: [
+      "Standortfreigaben werden bewusst erteilt",
+      "Interessen bleiben Teil der eigenen Relevanzsteuerung",
+      "Rechte können jederzeit widerrufen werden",
+      "Keine Marketing- oder Tracking-Cookies auf der Website",
+      "PRE ALPHA heißt: Funktionen werden transparent geprüft",
+    ],
+  },
+});
+
 export default function MarketingInfoPage() {
   const { slug } = useParams();
   const page = pages[slug || ""];

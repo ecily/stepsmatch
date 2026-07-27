@@ -10,19 +10,19 @@ const siteTextDe = {
     appDownloadUrl: "https://www.stepsmatch.com/apk",
   },
   landing: {
-    title: "StepsMatch | Angebote finden dich.",
+    title: "StepsMatch | Relevant, wenn du wirklich in der Nähe bist.",
     description:
-      "StepsMatch testet standortbasiertes Angebots-Matching: Nähe, Interesse und aktive Angebote entscheiden, wann ein Hinweis relevant ist.",
+      "StepsMatch verbindet lokale Hinweise, Orte, Services und Angebote, wenn Nähe, Zeit und Interesse zusammenpassen.",
     badge: "PRE ALPHA · Raum Graz im Aufbau",
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
-    heroTitle: "Angebote finden dich",
+    heroTitle: "Relevant, wenn du wirklich in der Nähe bist",
     heroLead:
-      "StepsMatch läuft ruhig im Hintergrund und meldet sich nur, wenn in deiner Nähe etwas zu dir passt.",
+      "StepsMatch läuft ruhig im Hintergrund und meldet sich nur, wenn Nähe, Zeit und Interesse zusammenpassen.",
     heroQuickLine:
-      "Mobile-App als Kern: Nähe, Interessen und aktive Angebote werden im Alltag geprüft.",
-    quickTrustLine: "Der USP in wenigen Worten: Nähe + Interesse + aktives Angebot.",
+      "Der technische Kern: Standort, Interessen, Gültigkeit und Push arbeiten zusammen – auch wenn die App nicht geöffnet ist.",
+    quickTrustLine: "Der USP: relevant, wenn du wirklich in der Nähe bist.",
 
     founderMessage:
       "StepsMatch wird aufgebaut, damit lokale Angebote nicht in Listen warten, sondern im passenden Moment relevant werden.",
