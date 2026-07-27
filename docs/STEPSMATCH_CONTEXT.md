@@ -24,6 +24,8 @@ Live-API-Routing-Analyse am 2026-07-27: Das Backend implementiert `/api/health`,
 
 Frontend-API-Subdomain am 2026-07-27: Production-API-Basis und sicherer Hosted-Fallback wurden auf `https://api.stepsmatch.com/api` gestellt; `frontend/.env.example`, Frontend-README und DigitalOcean-Checkliste sind entsprechend aktualisiert. Die kanonische Web-Route `https://www.stepsmatch.com/api/*` darf weiterhin SPA-HTML liefern; API-Requests des Frontends sollen gegen die API-Subdomain gehen. Keine Backend-/Mobile-/Provider-/Offer-/User-/Token-Änderung.
 
+Pre-Alpha-App-Download-Gate am 2026-07-27: Das Landingpage-Popup zeigt QR-Code und APK-Download erst nach Tester-Key und Vertraulichkeits-Checkbox. Der Zustand speichert nur eine Bestätigung plus Zeitstempel im Browser; der eingegebene Key wird nicht gespeichert. Das Gate nutzt bewusst Frontend-Konfiguration und ist nur eine Pre-Alpha-Zugangshürde, keine echte Security-Grenze. Der vorhandene Backend-Tester-Validate-Endpunkt wurde wegen seiner DB-Schreibwirkung in diesem Task nicht verwendet. Keine DB-Mutation, keine Mobile-/APK-Änderung.
+
 Vertiefung:
 
 - `docs/STEPSMATCH_CURRENT_STATE_AUDIT.md`
