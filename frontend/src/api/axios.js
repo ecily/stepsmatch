@@ -19,7 +19,7 @@ const buildMode = import.meta?.env?.MODE || "unknown";
 const isBuildDev = !!import.meta?.env?.DEV;
 const isBuildProd = !!import.meta?.env?.PROD;
 
-const PROD_API_FALLBACK = "https://lobster-app-ie9a5.ondigitalocean.app/api";
+const PROD_API_FALLBACK = "https://api.stepsmatch.com/api";
 
 const host = typeof window !== "undefined" ? window.location.hostname : "";
 const isLocalHost =

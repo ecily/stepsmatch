@@ -19,7 +19,7 @@
    - Do not rely on `frontend/public/_redirects`; DigitalOcean App Platform does not use it as a Netlify-style rewrite rule.
 5. Environment Variables:
    - Use `frontend/.env.example` as template.
-   - `VITE_API_BASE_URL` must point to backend `/api`.
+   - `VITE_API_BASE_URL` must point to `https://api.stepsmatch.com/api` in production.
 
 ## 2a) Canonical Domain API Routing
 

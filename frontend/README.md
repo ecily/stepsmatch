@@ -22,7 +22,7 @@ npm run preview
 
 ## Wichtige ENV-Variablen
 
-- `VITE_API_BASE_URL` – Backend-API-Basis (`.../api`)
+- `VITE_API_BASE_URL` – Backend-API-Basis; production: `https://api.stepsmatch.com/api`
 - `VITE_GOOGLE_MAPS_API_KEY` – Google Maps API Key
 - `VITE_GOOGLE_MAPS_MAP_ID` – optional für erweiterte Map-Styles/Marker
 
