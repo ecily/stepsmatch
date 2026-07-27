@@ -78,6 +78,9 @@ router.post('/request-key', async (req, res) => {
     if (error?.code === 'GRAPH_NOT_CONFIGURED') {
       return res.status(503).json({ ok: false, message: 'Tester-Key-Anfrage ist noch nicht vollständig konfiguriert.' });
     }
+    if (error?.code === 'GRAPH_TIMEOUT') {
+      return res.status(504).json({ ok: false, message: 'Der Maildienst antwortet gerade nicht. Bitte versuche es später erneut.' });
+    }
     return res.status(502).json({ ok: false, message: 'Die Anfrage konnte gerade nicht gesendet werden.' });
   }
 });

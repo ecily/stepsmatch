@@ -1,5 +1,23 @@
 const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
 const GRAPH_RECIPIENT_DEFAULT = 'andreas.franz@ecily.com';
+const GRAPH_REQUEST_TIMEOUT_MS = 10000;
+
+async function fetchGraph(url, options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GRAPH_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('Graph mail service timed out');
+      timeoutError.code = 'GRAPH_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function requiredEnv(name) {
   const value = String(process.env[name] || '').trim();
@@ -22,7 +40,7 @@ function getGraphConfig() {
 
 export async function sendTesterKeyRequestEmail({ subject, content }) {
   const config = getGraphConfig();
-  const tokenResponse = await fetch(
+  const tokenResponse = await fetchGraph(
     `https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/token`,
     {
       method: 'POST',
@@ -44,7 +62,7 @@ export async function sendTesterKeyRequestEmail({ subject, content }) {
   const accessToken = String(tokenData?.access_token || '').trim();
   if (!accessToken) throw new Error('Graph token response did not contain an access token');
 
-  const mailResponse = await fetch(
+  const mailResponse = await fetchGraph(
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.sender)}/sendMail`,
     {
       method: 'POST',
