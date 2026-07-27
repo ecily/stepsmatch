@@ -42,7 +42,7 @@ export default function AddOfferForm() {
 
   const resolvedProviderId = useMemo(() => (paramId || "").trim(), [paramId]);
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
-  const API_BASE = (import.meta.env.VITE_API_BASE_URL || axiosInstance?.defaults?.baseURL || "").replace(/\/+$/, "");
+  const API_BASE = (axiosInstance?.defaults?.baseURL || import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
   const [providerLocation, setProviderLocation] = useState(null);
   const [providerMeta, setProviderMeta] = useState(null);

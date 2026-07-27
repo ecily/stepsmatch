@@ -27,6 +27,7 @@ const isLocalHost =
   host === "127.0.0.1" ||
   host === "::1" ||
   host.endsWith(".local");
+const isCanonicalWebHost = host === "stepsmatch.com" || host === "www.stepsmatch.com";
 
 const resolved =
   (envBase && String(envBase).trim()) ||
@@ -48,6 +49,10 @@ if (!isLocalHost) {
     baseURL = PROD_API_FALLBACK;
     console.warn("[StepsMatch] Hosted frontend resolved localhost API. Overriding to production API fallback.");
   }
+}
+
+if (isCanonicalWebHost) {
+  baseURL = PROD_API_FALLBACK;
 }
 
 if (!baseURL) {

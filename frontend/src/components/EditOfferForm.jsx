@@ -20,7 +20,7 @@ const MAX_IMAGES = 3;
 const EditOfferForm = () => {
   const { offerId } = useParams();
   const navigate = useNavigate();
-  const API_BASE = (import.meta.env.VITE_API_BASE_URL || axiosInstance?.defaults?.baseURL || "").replace(/\/+$/, "");
+  const API_BASE = (axiosInstance?.defaults?.baseURL || import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
   const [providerLocation, setProviderLocation] = useState(null);
   const [categories, setCategories] = useState([]);
