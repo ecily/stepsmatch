@@ -3,7 +3,11 @@ const GRAPH_RECIPIENT_DEFAULT = 'andreas.franz@ecily.com';
 
 function requiredEnv(name) {
   const value = String(process.env[name] || '').trim();
-  if (!value) throw new Error(`Missing Graph mail configuration: ${name}`);
+  if (!value) {
+    const error = new Error('Graph mail configuration is incomplete');
+    error.code = 'GRAPH_NOT_CONFIGURED';
+    throw error;
+  }
   return value;
 }
 function getGraphConfig() {

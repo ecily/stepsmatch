@@ -149,9 +149,9 @@ function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
 
   if (!accessAccepted) {
     return (
-      <div className="fixed inset-0 z-[120] grid place-items-end bg-slate-900/60 p-3 sm:place-items-center sm:p-6" role="dialog" aria-modal="true">
-        <div className="sm-card w-full max-w-xl p-6 sm:p-8 sm-rise">
-          <div className="flex items-start justify-between gap-3">
+      <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-2 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+        <div className="sm-card my-1 flex max-h-[calc(100vh-1rem)] w-full max-w-xl flex-col overflow-hidden p-4 sm:my-4 sm:max-h-[calc(100vh-2rem)] sm:p-6">
+          <div className="flex shrink-0 items-start justify-between gap-3">
             <div>
               <p className="sm-badge">App testen</p>
               <h3 className="mt-3 text-2xl font-extrabold">StepsMatch Pre-Alpha testen</h3>
@@ -159,29 +159,31 @@ function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
             </div>
             <button type="button" onClick={onClose} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Schließen</button>
           </div>
-          <form onSubmit={handleAccessCheck} className="mt-5 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div>
-              <label htmlFor="apk-tester-key" className="sm-label">Tester-Key</label>
-              <input id="apk-tester-key" value={key} onChange={(event) => setKey(event.target.value)} className="sm-input uppercase tracking-wide" placeholder="z. B. PREALPHA-DEMO" autoComplete="off" />
-            </div>
-            <label htmlFor="apk-nda" className="flex items-start gap-3 text-sm text-slate-700">
-              <input id="apk-nda" type="checkbox" checked={ndaAccepted} onChange={(event) => setNdaAccepted(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300" />
-              <span>Ich bestätige, dass ich Pre-Alpha-Inhalte vertraulich behandle und keine Screenshots, APKs oder Zugangsdaten öffentlich weitergebe.</span>
-            </label>
-            {error ? <div className="sm-error" role="alert">{error}</div> : null}
-            <button type="submit" className="sm-btn-primary !w-full sm:!w-auto">Zugang prüfen</button>
-          </form>
-          <TesterKeyRequestForm source="app-download-popup" />
-          <div className="mt-5 flex justify-end"><button type="button" onClick={onClose} className="sm-btn-secondary">Weiter</button></div>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <form onSubmit={handleAccessCheck} className="mt-5 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <label htmlFor="apk-tester-key" className="sm-label">Tester-Key</label>
+                <input id="apk-tester-key" value={key} onChange={(event) => setKey(event.target.value)} className="sm-input uppercase tracking-wide" placeholder="z. B. PREALPHA-DEMO" autoComplete="off" />
+              </div>
+              <label htmlFor="apk-nda" className="flex items-start gap-3 text-sm leading-relaxed text-slate-700">
+                <input id="apk-nda" type="checkbox" checked={ndaAccepted} onChange={(event) => setNdaAccepted(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300" />
+                <span>Ich bestätige vertraulichen Umgang mit Pre-Alpha-Inhalten und gebe keine APKs, Screenshots oder Zugangsdaten öffentlich weiter.</span>
+              </label>
+              {error ? <div className="sm-error" role="alert">{error}</div> : null}
+              <button type="submit" className="sm-btn-primary !w-full sm:!w-auto">Zugang prüfen</button>
+            </form>
+            <TesterKeyRequestForm source="app-download-popup" />
+          </div>
+          <div className="mt-4 flex shrink-0 justify-end border-t border-slate-200 pt-4"><button type="button" onClick={onClose} className="sm-btn-secondary">Weiter</button></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-[120] grid place-items-end bg-slate-900/60 p-3 sm:place-items-center sm:p-6" role="dialog" aria-modal="true">
-      <div className="sm-card w-full max-w-xl p-6 sm:p-8 sm-rise">
-        <div className="flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-2 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+      <div className="sm-card my-1 flex max-h-[calc(100vh-1rem)] w-full max-w-xl flex-col overflow-hidden p-4 sm:my-4 sm:max-h-[calc(100vh-2rem)] sm:p-6">
+        <div className="flex shrink-0 items-start justify-between gap-3">
           <div>
             <p className="sm-badge">App testen</p>
             <h3 className="mt-3 text-2xl font-extrabold">StepsMatch Pre-Alpha testen</h3>
@@ -194,20 +196,22 @@ function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[auto_1fr] sm:items-center">
-          <div className="mx-auto rounded-lg border border-slate-200 bg-white p-3 sm:mx-0">
-            <QRCodeCanvas value={qrValue} size={180} includeMargin level="M" />
-          </div>
-          <div>
-            <p className="text-sm text-slate-700">Option A: Kamera öffnen und QR-Code scannen</p>
-            <a href={apkUrl} className="sm-btn-primary mt-3 !w-full gap-2 sm:!w-auto" target="_blank" rel="noreferrer">
-              {text.brand.appDownloadLabel}
-            </a>
-            <p className="mt-3 text-xs text-slate-600">Android: Installation aus dieser Quelle einmal erlauben.</p>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="mt-5 grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[auto_1fr] sm:items-center">
+            <div className="mx-auto rounded-lg border border-slate-200 bg-white p-3 sm:mx-0">
+              <QRCodeCanvas value={qrValue} size={180} includeMargin level="M" />
+            </div>
+            <div>
+              <p className="text-sm text-slate-700">Option A: Kamera öffnen und QR-Code scannen</p>
+              <a href={apkUrl} className="sm-btn-primary mt-3 !w-full gap-2 sm:!w-auto" target="_blank" rel="noreferrer">
+                {text.brand.appDownloadLabel}
+              </a>
+              <p className="mt-3 text-xs text-slate-600">Android: Installation aus dieser Quelle einmal erlauben.</p>
+            </div>
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
           <button type="button" onClick={onDontShowAgain} className="text-sm font-semibold text-slate-600 underline-offset-4 hover:underline">
             Nicht mehr anzeigen
           </button>

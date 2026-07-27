@@ -46,7 +46,7 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
   };
 
   return (
-    <div className="mt-6 border-t border-slate-200 pt-6">
+    <div className="mt-5 border-t border-slate-200 pt-5">
       <h3 className="text-xl font-extrabold text-slate-950">Tester-Key anfordern</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
         StepsMatch befindet sich in der Pre-Alpha. Der App-Test ist derzeit nur für freigegebene Tester vorgesehen. Sende eine kurze Anfrage, wenn du Zugang erhalten möchtest.
@@ -59,7 +59,7 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
           <label htmlFor="tester-request-website">Website</label>
           <input id="tester-request-website" name="website" value={form.website} onChange={updateField} tabIndex={-1} autoComplete="off" />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="tester-request-name" className="sm-label">Name *</label>
             <input id="tester-request-name" name="name" value={form.name} onChange={updateField} required maxLength={120} className="sm-input" autoComplete="name" />
@@ -83,7 +83,7 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
         </div>
         <div>
           <label htmlFor="tester-request-message" className="sm-label">Warum möchtest du testen? <span className="font-normal text-slate-500">(optional, empfohlen)</span></label>
-          <textarea id="tester-request-message" name="message" value={form.message} onChange={updateField} maxLength={2000} rows={3} className="sm-textarea" />
+          <textarea id="tester-request-message" name="message" value={form.message} onChange={updateField} maxLength={2000} rows={2} className="sm-textarea" />
         </div>
         <label htmlFor="tester-request-confidentiality" className="flex items-start gap-3 text-sm leading-relaxed text-slate-700">
           <input id="tester-request-confidentiality" name="confidentialityAccepted" type="checkbox" checked={form.confidentialityAccepted} onChange={updateField} required className="mt-1 h-4 w-4 rounded border-slate-300" />

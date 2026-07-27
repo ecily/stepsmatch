@@ -75,6 +75,9 @@ router.post('/request-key', async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     console.error('[testers] request-key mail failed:', error?.message || 'unknown error');
+    if (error?.code === 'GRAPH_NOT_CONFIGURED') {
+      return res.status(503).json({ ok: false, message: 'Tester-Key-Anfrage ist noch nicht vollständig konfiguriert.' });
+    }
     return res.status(502).json({ ok: false, message: 'Die Anfrage konnte gerade nicht gesendet werden.' });
   }
 });
