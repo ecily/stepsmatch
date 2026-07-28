@@ -24,6 +24,7 @@ import TesterKeyRequestForm from "../components/TesterKeyRequestForm";
 import { getPreferredSiteText } from "../content/siteContent";
 import heroCity from "../assets/hero-city-daylight.jpg";
 import userFlowComic from "../assets/stepsmatch-user-flow-comic.png";
+import providerFlowComic from "../assets/stepsmatch-provider-flow-comic.png";
 
 const TESTER_ACCESS_KEY = String(import.meta.env.VITE_TESTER_ACCESS_KEY || "PREALPHA-DEMO").trim().toUpperCase();
 const APK_ACCESS_STORAGE_KEY = "stepsmatchTesterAccessAccepted";
@@ -428,6 +429,20 @@ export default function LandingPage() {
             <p className="sm-section-copy">
               Anbieter können ein Angebot mit Details, Bildern, Kategorie oder Interesse anlegen und bestimmen, wann und für welchen Radius es relevant ist.
             </p>
+            <figure className="mt-7">
+              <img
+                src={providerFlowComic}
+                alt="Vier Schritte für Anbieter mit StepsMatch: Angebot anlegen, Radius festlegen, Laufzeit bestimmen und passende Nutzer im gültigen Radius erreichen."
+                width="1774"
+                height="887"
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full rounded-lg border border-slate-200 shadow-sm"
+              />
+              <figcaption className="mt-2 text-xs leading-relaxed text-slate-500">
+                Produktvisualisierung, kein reales Angebot.
+              </figcaption>
+            </figure>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {providerSteps.map((step, index) => (
