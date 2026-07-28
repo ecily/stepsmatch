@@ -19,10 +19,11 @@ const siteTextDe = {
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
     heroTitle: "Nicht suchen. Finden!",
     heroLead:
-      "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – wenn Angebot, Interesse, Ort und Zeit zusammenpassen.",
+      "StepsMatch bringt Nutzer und Anbieter zusammen. Dann, wenn Angebot, Nähe und Zeit stimmen. Marketing und Nutzen ohne Streuverlust.",
     heroQuickLine:
       "Der technische Kern: Angebot, Interesse, Ort und Zeit werden abgeglichen. Bei einem passenden Match kann Push auch im Hintergrund informieren.",
-    quickTrustLine: "Angebot + Interesse + Ort + Zeit = relevanter Match.",
+    quickTrustLine:
+      "StepsMatch bringt Nutzer und Anbieter zusammen. Dann, wenn Angebot, Nähe und Zeit stimmen. Marketing und Nutzen ohne Streuverlust.",
 
     founderMessage:
       "StepsMatch wird aufgebaut, damit lokale Angebote nicht in Listen warten, sondern im passenden Moment relevant werden.",
@@ -104,7 +105,7 @@ const siteTextDe = {
     ],
 
     quote:
-      "Angebot + Interesse + Ort + Zeit = relevanter Match.",
+      "StepsMatch bringt Nutzer und Anbieter zusammen. Dann, wenn Angebot, Nähe und Zeit stimmen. Marketing und Nutzen ohne Streuverlust.",
   },
   way: {
     title: "Warum StepsMatch diesen Weg testet",

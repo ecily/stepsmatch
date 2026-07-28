@@ -22,6 +22,7 @@ import SiteFooter from "../components/SiteFooter";
 import TesterKeyRequestForm from "../components/TesterKeyRequestForm";
 import { getPreferredSiteText } from "../content/siteContent";
 import heroCity from "../assets/hero-city-daylight.jpg";
+import heroRelevantMatch from "../assets/stepsmatch-hero-relevant-match.png";
 import userFlowComic from "../assets/stepsmatch-user-flow-comic.png";
 import providerFlowComic from "../assets/stepsmatch-provider-flow-comic.png";
 
@@ -267,14 +268,14 @@ export default function LandingPage() {
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,13,25,0.92)_0%,rgba(10,23,39,0.78)_48%,rgba(10,23,39,0.34)_100%)]" />
           <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-slate-950/70 to-transparent" />
 
-          <section className="sm-shell relative z-10 grid min-h-[82vh] items-center gap-8 py-12 lg:grid-cols-[minmax(0,1fr)_390px] lg:py-16">
+          <section className="sm-shell relative z-10 grid min-h-[82vh] items-center gap-8 py-12 lg:grid-cols-[minmax(0,0.88fr)_minmax(420px,1.12fr)] lg:py-16">
             <div className="max-w-4xl text-white sm-rise">
               <p className="sm-badge !border-white/30 !bg-white/10 !text-white">PRE ALPHA · Raum Graz im Aufbau</p>
               <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[0.92] sm:text-6xl lg:text-8xl">
                 {text.landing.heroTitle}
               </h1>
               <p className="mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-white/92 sm:text-2xl">
-                StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – basierend auf Interesse, Radius und gültigem Zeitfenster.
+                {text.landing.heroLead}
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -289,19 +290,18 @@ export default function LandingPage() {
                 </Link>
               </div>
 
-              <p className="mt-6 max-w-2xl text-sm font-semibold uppercase tracking-[0.08em] text-[var(--sm-accent)]">
-                Angebot + Interesse + Ort + Zeit = relevanter Match.
-              </p>
             </div>
 
-            <aside className="sm-hero-comic-panel sm-rise sm-delay-1" aria-label="StepsMatch Nutzerablauf">
+            <aside className="sm-hero-media-slot sm-rise sm-delay-1" aria-label="StepsMatch-Nutzer erhält einen Hinweis auf ein aktuell passendes Angebot in unmittelbarer Nähe">
               <img
-                src={userFlowComic}
-                alt="StepsMatch zeigt in vier Schritten: Interesse wählen, App im Hintergrund laufen lassen, passenden Hinweis erhalten und zum Angebot navigieren."
+                src={heroRelevantMatch}
+                alt="Ein StepsMatch-Nutzer erhält beim Vorbeigehen einen Hinweis auf ein aktuell passendes Angebot in unmittelbarer Nähe."
                 width="1536"
                 height="1024"
+                loading="eager"
                 decoding="async"
-                className="block h-auto w-full rounded-lg border border-white/20 bg-white"
+                fetchPriority="high"
+                className="sm-hero-media-image"
               />
             </aside>
           </section>
