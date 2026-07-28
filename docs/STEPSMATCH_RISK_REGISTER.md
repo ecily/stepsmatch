@@ -1,6 +1,6 @@
 # StepsMatch – Risk Register
 
-Stand: 2026-07-26
+Stand: 2026-07-28
 
 | Risiko | Schweregrad | Wahrscheinlichkeit | Gegenmaßnahme | Status |
 | --- | --- | --- | --- | --- |
@@ -20,6 +20,12 @@ Stand: 2026-07-26
 | Debug-/Diagnoseflächen gelangen in öffentlichen Release | mittel | mittel | Release-Checklist und visueller APK-Smoke | offen |
 | Keine echte Release-Signatur/Package-Härtung | hoch | mittel | eigenes Release-Keystore-/Play-Setup vor Beta | offen |
 | Rohstandort-/Token-Logs überschreiten Zweck/Retention | hoch | niedrig/mittel | Pseudonymisierung, TTL, keine Volltokens in Admin/Logs | gelb |
+| Erstbesuchsmodal bei kleinen Viewporthöhen | mittel | mittel | Strukturell getrennte Header-/Scroll-Flexstruktur ist umgesetzt; manueller Browser-Smoke bleibt offen | gelb |
+| Großes Hero-PNG (~2,7 MB) belastet Erstlast | mittel | mittel | vorhandene verlustarme Optimierung prüfen, ohne neue Abhängigkeit einzuführen | offen |
+| Browser-/OEM-Matrix und kleine Viewports nicht vollständig manuell geprüft | mittel | mittel | Desktop-/Mobile-Smoke und OEM-Matrix vor breiterem Rollout durchführen | offen |
+| Lighthouse-/Performance-/Accessibility-Baseline fehlt | mittel | hoch | Lighthouse oder vergleichbare Messung in verfügbarer Browserumgebung ausführen | offen |
+| Dependabot-/Security-Befunde im Repository | mittel | mittel | Befunde separat triagieren und Dependency-Upgrade nur kontrolliert durchführen | offen |
+| Lifetime-Pass-Leistungen und Bedingungen noch nicht formal finalisiert | hoch | mittel | Leistungen und Bedingungen vor Vergabe transparent bestätigen und rechtlich prüfen | offen |
 
 ## Korrektur des Core-Risikos
 

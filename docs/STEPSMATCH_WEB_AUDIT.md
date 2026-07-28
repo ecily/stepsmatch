@@ -3,6 +3,18 @@
 Stand: 2026-07-27
 Scope: StepsMatch-Weblösung in `C:\coding\stepsmatch`; read-only Live-/API-Prüfungen, keine DB-Mutation.
 
+## Abschlussaudit 2026-07-28
+
+**Ampel: GELB-GRÜN.** Der produktive Webstand ist auf `main` bei `d5e0326` und mit `origin/main` synchron. Lint/Build/Diff-Checks sind grün. Offen bleiben ausschließlich nicht ausgeführte manuelle Browser-/Viewport-Smokes, Lighthouse sowie bestehende Plattform-, Security- und Rollout-Risiken.
+
+- Hero live: `Nicht suchen. Finden!`, aktuelle StepsMatch-Beschreibung, lokales großes Hero-USP-Motiv, organische Fade-/Maskierungsintegration, kein alter Formeltext und kein Hero-CTA `So funktioniert es`; verbleiben `App testen` und `Anbieter werden`.
+- Nutzer-/Anbieter-Flow live im Landing-Bundle: jeweils vier semantische Textschritte vor dem zugehörigen Comic; der frühere Landingpage-Beispielblock bleibt entfernt.
+- Navigation live vereinfacht: redundante Header-/Footer-Punkte sind entfernt. Redirect-/Anchor-Ziele bleiben `/app` → `/tester`, `/so-funktionierts` → `/#so-funktionierts`, `/pre-alpha` → `/#pre-alpha`, `/anbieter` → `/#anbieter`.
+- Erstbesuchsmodal live: nur Landingpage, 700-ms-Verzögerung, lokaler Key `stepsmatchTesterModalDismissedV1`, temporäres `Später`, dauerhaftes X/Escape/CTA-Dismiss. Die Modalstruktur hat einen nicht scrollenden Header und den separaten Flex-Scrollbereich `sm-support-modal-scroll` mit `overflow-y: auto`, `min-height: 0`, `100vh`/`100dvh` und ohne horizontales Overflow.
+- Tester-Key-Flow live im Bundle: vorhandener Request-Endpunkt, sichtbarer Erfolgszustand nach bestätigter Antwort, Fehler-/Validierungslogik erhalten. Keine echte Tester-Anfrage im Audit.
+- Live: `/`, `/tester`, `/app`, `/so-funktionierts`, `/pre-alpha` und `/anbieter` HTTP 200 SPA-Shell. API `https://api.stepsmatch.com/api/health`, `/_healthz` und `/_readyz` HTTP 200 JSON; `/api/ready` HTTP 404, kein dokumentierter Endpunkt.
+- Live-Shell-Assets antworteten ohne offensichtliche 404; relevante Landing-, Tester-Key- und CSS-Bundles wurden read-only geprüft.
+
 ## 1. Kurzfazit / Ampel
 
 **Gelb-grün für Pitch und interne Pre-Alpha-Tests.** Die zentrale Webbotschaft, der Anbieter-/Nutzerfluss, die Tester-Key-Anfrage, die SPA-Routen und die getrennte Production-API sind nachvollziehbar und live erreichbar. Der technische Core-Proof bleibt wie dokumentiert ein lokaler Mobile-/Testgerätebefund und wird durch dieses Web-Audit nicht erweitert.

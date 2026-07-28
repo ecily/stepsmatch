@@ -1,6 +1,6 @@
 # StepsMatch.com - Projektkontext
 
-Stand: 2026-07-26, Audit in `C:\coding\stepsmatch`.
+Stand: 2026-07-28, Abschlussaudit in `C:\coding\stepsmatch`.
 
 ## Aktueller Audit-Stand
 
@@ -11,7 +11,7 @@ StepsMatch steht und fällt mit Nähe + Interesse + Zeit + Push. Push funktionie
 Korrektur zur älteren Audit-Kurzfassung: Der kontrollierte Pitch-Seed wurde laut vorherigem Stand importiert; der aktuelle Live-Bestand ist nicht verifiziert und der zuvor dokumentierte aktuelle Standort lag außerhalb der Seed-Radien.
 
 - Der technische MVP-Kern ist lokal **grün validiert**: Backend-Policy/Matching und automatisierte Checks sind grün. Live/API-Synchronität, vollständige Observability und Mobile-/Release-Härtung bleiben gelb.
-- `main` steht aktuell bei `65fb403` (`docs: audit current stepsmatch state`), laut Git 24 Commits vor `origin/main`. Der Arbeitsbaum war vor diesem Korrekturlauf sauber.
+- `main` steht aktuell bei `d5e0326` (`fix: separate modal header from scroll content`) und ist mit `origin/main` synchron. Der Arbeitsbaum ist nach dem Audit sauber.
 - Der lokale Pitch-Seed enthält 50 Locations und 25 matchbare Inhalte mit stabilem `demoSeedTag=pitch_demo_graz_north_v1` und wurde laut vorherigem Stand kontrolliert importiert. Der aktuelle Live-Bestand ist nicht verifiziert.
 - `stepsmatch.com` liefert die SPA. Die direkte Domain liefert unter `/api/*` derzeit SPA-HTML statt Backend-JSON; der direkte DigitalOcean-Backend-Host antwortet auf Health/Ready und `/api/offers`. Lokaler API-Fallback und öffentliche Domain müssen vor Pitch abgeglichen werden.
 - Backend-Tests (25/25), Frontend Lint/Build, Mobile Lint/TypeScript und Diff-Checks waren am 2026-07-26 grün.
@@ -47,6 +47,8 @@ Tester-Key-Anfrage-Erfolg am 2026-07-28: Nach bestätigter erfolgreicher Antwort
 P0-Erstbesuchsmodal am 2026-07-28: Der Modalbereich ist bei kleinen Viewporthöhen mit `100vh`-Fallback und `100dvh`, internem `overflow-y: auto`, `min-height: 0` und `overscroll-behavior: contain` zuverlässig scrollbar. „Später“ schließt nur temporär ohne Local-Storage-Eintrag; X, Escape und CTA bleiben dauerhaft dismissend. Build/Lint grün. Keine Backend-/Mobile-/DB-Änderung.
 
 P0-Modalstruktur nachgebessert am 2026-07-28: Der Erstbesuchsmodal besteht nun aus einem nicht scrollenden Header und einem separaten Flex-Scrollbereich für vollständigen Text und Aktionen. Dadurch kann der Header den ersten Absatz nicht mehr überlagern. Keine Text-/CTA-/Backend-/Mobile-/DB-Änderung.
+
+Abschluss-Webaudit am 2026-07-28: Der produktive Frontend-Stand ist auf `main` bei `d5e0326` synchronisiert. Live liefern `/`, `/tester`, `/app`, `/so-funktionierts`, `/pre-alpha` und `/anbieter` HTTP 200 als SPA-Shell; `https://api.stepsmatch.com/api/health`, `/_healthz` und `/_readyz` liefern HTTP 200 JSON, während `/api/ready` nicht vorhanden ist. Hero, Navigation, Nutzer-/Anbieter-Comics, Tester-Key-Erfolgszustand sowie die getrennte Erstbesuchsmodal-Struktur sind im Live-Bundle nachvollziehbar. Keine Tester-Anfrage, Backend-/Mobile-/APK-/DB-Änderung. Gelb-grün: manueller Browser-/Viewport-Smoke, Lighthouse und weitere Release-/Security-Prüfungen bleiben offen.
 
 Tester-Access-Repair am 2026-07-27: Das App-Test-Popup wurde mit viewport-begrenztem Modal, internem Scrollbereich, stabilem Header/Footer und kompakterem Anfrageformular responsive gemacht. Der Graph-Konfigurationsfehler wird im Backend nun als `503` mit klarer Konfigurationsmeldung statt als generischer Versandfehler behandelt; Graph-Requests haben zusätzlich ein 10-Sekunden-Timeout und liefern bei Upstream-Hänger `504`. API-Base, CORS und Endpoint bleiben unverändert; keine Mobile-/APK-/DB-Änderung.
 
