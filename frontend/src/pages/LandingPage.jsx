@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { Helmet } from "@dr.pogodin/react-helmet";
 import { QRCodeCanvas } from "qrcode.react";
 import {
@@ -15,6 +16,7 @@ import {
   Route,
   ShieldCheck,
   Store,
+  X,
 } from "lucide-react";
 
 import Navbar from "../components/Navbar";
@@ -28,6 +30,7 @@ import providerFlowComic from "../assets/stepsmatch-provider-flow-comic.png";
 
 const TESTER_ACCESS_KEY = String(import.meta.env.VITE_TESTER_ACCESS_KEY || "PREALPHA-DEMO").trim().toUpperCase();
 const APK_ACCESS_STORAGE_KEY = "stepsmatchTesterAccessAccepted";
+const SUPPORT_MODAL_STORAGE_KEY = "stepsmatchTesterModalDismissedV1";
 
 function hasAcceptedTesterAccess() {
   try {
@@ -123,6 +126,129 @@ const contentTypes = [
     text: "Ein klar markierter Testinhalt, der nie wie ein echtes Angebot wirken darf.",
   },
 ];
+
+function SupportRecruitmentModal({ open, onDismiss }) {
+  const dialogRef = React.useRef(null);
+  const previouslyFocusedRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+
+    previouslyFocusedRef.current = document.activeElement;
+    const root = document.getElementById("root");
+    const previousOverflow = document.body.style.overflow;
+    const previousInert = root?.inert;
+    const previousAriaHidden = root?.getAttribute("aria-hidden");
+
+    if (root) {
+      root.inert = true;
+      root.setAttribute("aria-hidden", "true");
+    }
+    document.body.style.overflow = "hidden";
+
+    const focusTimer = window.setTimeout(() => {
+      dialogRef.current?.querySelector("button")?.focus();
+    }, 0);
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onDismiss();
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll(
+        'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (root) {
+        root.inert = previousInert;
+        if (previousAriaHidden === null) root.removeAttribute("aria-hidden");
+        else root.setAttribute("aria-hidden", previousAriaHidden);
+      }
+      previouslyFocusedRef.current?.focus?.();
+    };
+  }, [onDismiss, open]);
+
+  if (!open) return null;
+
+  const dismissFromAction = () => {
+    onDismiss();
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onDismiss();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="support-modal-title"
+        aria-describedby="support-modal-description"
+        className="sm-card flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-y-auto p-5 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:p-8"
+      >
+        <div className="sticky top-0 z-10 -mx-5 -mt-5 flex items-start justify-between gap-4 bg-white/95 px-5 pb-3 pt-5 backdrop-blur sm:-mx-8 sm:-mt-8 sm:px-8 sm:pb-4 sm:pt-8">
+          <div>
+            <p className="sm-badge">PRE ALPHA</p>
+            <h2 id="support-modal-title" className="mt-3 text-2xl font-extrabold leading-tight sm:text-3xl">
+              StepsMatch sucht Tester und Anbieter
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="shrink-0 rounded-md border border-slate-300 bg-white p-2 text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]"
+            aria-label="Dialog schließen"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div id="support-modal-description" className="mt-4 space-y-4 text-base leading-relaxed text-slate-700">
+          <p>Hilf uns, die StepsMatch-App zu testen – als Nutzer oder als Anbieter.</p>
+          <p>ecily.com hat eine starke technische Basis geschaffen. Jetzt brauchen wir Menschen, die StepsMatch im echten Alltag ausprobieren, Rückmeldungen geben und erste Angebote testen.</p>
+          <p>Die ersten 100 aktiven Unterstützer erhalten einen persönlichen StepsMatch Lifetime Pass. Die genauen Leistungen und Bedingungen werden vor der Vergabe transparent bestätigt.</p>
+          <p>Danke für deine Unterstützung.</p>
+        </div>
+
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+          <Link to="/tester" onClick={dismissFromAction} className="sm-btn-primary justify-center">
+            App testen
+          </Link>
+          <Link to="/#anbieter" onClick={dismissFromAction} className="sm-btn-secondary justify-center">
+            Als Anbieter helfen
+          </Link>
+        </div>
+        <button type="button" onClick={onDismiss} className="mt-4 self-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]">
+          Später
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function ApkModal({ open, onClose, apkUrl, text, onDontShowAgain }) {
   const [key, setKey] = React.useState("");
@@ -230,6 +356,33 @@ export default function LandingPage() {
   const text = React.useMemo(() => getPreferredSiteText(), []);
   const location = useLocation();
   const [apkOpen, setApkOpen] = React.useState(false);
+  const [supportModalOpen, setSupportModalOpen] = React.useState(false);
+
+  const dismissSupportModal = React.useCallback(() => {
+    try {
+      localStorage.setItem(SUPPORT_MODAL_STORAGE_KEY, "1");
+    } catch {
+      // The modal can still be dismissed for the current session.
+    }
+    setSupportModalOpen(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (location.pathname !== "/") return undefined;
+    const query = new URLSearchParams(location.search);
+    if (query.get("apk") === "1" || query.get("openApk") === "1") return undefined;
+
+    let dismissed = false;
+    try {
+      dismissed = localStorage.getItem(SUPPORT_MODAL_STORAGE_KEY) === "1";
+    } catch {
+      // Continue without persistence when browser storage is unavailable.
+    }
+    if (dismissed) return undefined;
+
+    const timer = window.setTimeout(() => setSupportModalOpen(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, location.search]);
 
   React.useEffect(() => {
     try {
@@ -500,6 +653,7 @@ export default function LandingPage() {
         text={text}
         apkUrl={text.brand.appDownloadUrl}
       />
+      <SupportRecruitmentModal open={supportModalOpen} onDismiss={dismissSupportModal} />
     </div>
   );
 }

@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { CheckCircle2 } from "lucide-react";
 
 import axiosInstance from "../api/axios";
 
@@ -18,6 +20,12 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
   const [form, setForm] = useState(initialForm);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
+  const successHeadingRef = useRef(null);
+
+  useEffect(() => {
+    if (requestSent) successHeadingRef.current?.focus();
+  }, [requestSent]);
 
   const updateField = (event) => {
     const { name, value, checked, type } = event.target;
@@ -31,10 +39,7 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
     try {
       await axiosInstance.post("/testers/request-key", { ...form, source });
       setForm(initialForm);
-      setStatus({
-        type: "success",
-        message: "Danke. Deine Anfrage wurde gesendet. Andreas prüft sie und meldet sich mit einem Tester-Key.",
-      });
+      setRequestSent(true);
     } catch (error) {
       setStatus({
         type: "error",
@@ -47,14 +52,28 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
 
   return (
     <div className="mt-5 border-t border-slate-200 pt-5">
-      <h3 className="text-xl font-extrabold text-slate-950">Tester-Key anfordern</h3>
-      <p className="mt-2 text-sm leading-relaxed text-slate-600">
-        StepsMatch befindet sich in der Pre-Alpha. Der App-Test ist derzeit nur für freigegebene Tester vorgesehen. Sende eine kurze Anfrage, wenn du Zugang erhalten möchtest.
-      </p>
+      {requestSent ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 sm:p-6" role="status" aria-live="polite">
+          <CheckCircle2 className="h-10 w-10 text-emerald-700" aria-hidden="true" />
+          <h3 ref={successHeadingRef} tabIndex={-1} className="mt-4 text-2xl font-extrabold text-emerald-950 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-2">
+            Danke für deine Hilfe!
+          </h3>
+          <p className="mt-3 text-base leading-relaxed text-emerald-950">
+            Du bekommst bald Nachricht von uns mit deinem persönlichen Tester-Key.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-emerald-900">Andreas prüft deine Anfrage persönlich.</p>
+          <Link to="/" className="sm-btn-secondary mt-5 inline-flex">Zur Startseite</Link>
+        </div>
+      ) : (
+        <>
+          <h3 className="text-xl font-extrabold text-slate-950">Tester-Key anfordern</h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            StepsMatch befindet sich in der Pre-Alpha. Der App-Test ist derzeit nur für freigegebene Tester vorgesehen. Sende eine kurze Anfrage, wenn du Zugang erhalten möchtest.
+          </p>
 
-      {status.message ? <div className={status.type === "success" ? "sm-success mt-4" : "sm-error mt-4"} role="status">{status.message}</div> : null}
+          {status.message ? <div className="sm-error mt-4" role="alert">{status.message}</div> : null}
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div className="absolute -left-[10000px] h-px w-px overflow-hidden" aria-hidden="true">
           <label htmlFor="tester-request-website">Website</label>
           <input id="tester-request-website" name="website" value={form.website} onChange={updateField} tabIndex={-1} autoComplete="off" />
@@ -93,10 +112,12 @@ export default function TesterKeyRequestForm({ source = "tester-page" }) {
           <input id="tester-request-contact" name="contactConsentAccepted" type="checkbox" checked={form.contactConsentAccepted} onChange={updateField} required className="mt-1 h-4 w-4 rounded border-slate-300" />
           <span>Ich bin damit einverstanden, dass meine Angaben zur Bearbeitung der Tester-Anfrage verwendet und Andreas Franz per E-Mail Kontakt mit mir aufnehmen darf. *</span>
         </label>
-        <button type="submit" disabled={isSubmitting} className="sm-btn-primary !w-full">
-          {isSubmitting ? "Anfrage wird gesendet..." : "Tester-Key anfordern"}
-        </button>
-      </form>
+            <button type="submit" disabled={isSubmitting} className="sm-btn-primary !w-full">
+              {isSubmitting ? "Anfrage wird gesendet..." : "Tester-Key anfordern"}
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
