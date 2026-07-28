@@ -126,7 +126,7 @@ const contentTypes = [
   },
 ];
 
-function SupportRecruitmentModal({ open, onDismiss }) {
+function SupportRecruitmentModal({ open, onDismissPermanently, onCloseTemporarily }) {
   const dialogRef = React.useRef(null);
   const previouslyFocusedRef = React.useRef(null);
 
@@ -152,7 +152,7 @@ function SupportRecruitmentModal({ open, onDismiss }) {
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onDismiss();
+        onDismissPermanently();
         return;
       }
 
@@ -185,19 +185,19 @@ function SupportRecruitmentModal({ open, onDismiss }) {
       }
       previouslyFocusedRef.current?.focus?.();
     };
-  }, [onDismiss, open]);
+  }, [onDismissPermanently, open]);
 
   if (!open) return null;
 
   const dismissFromAction = () => {
-    onDismiss();
+    onDismissPermanently();
   };
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6"
+      className="sm-support-modal-overlay"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onDismiss();
+        if (event.target === event.currentTarget) onDismissPermanently();
       }}
     >
       <div
@@ -206,7 +206,7 @@ function SupportRecruitmentModal({ open, onDismiss }) {
         aria-modal="true"
         aria-labelledby="support-modal-title"
         aria-describedby="support-modal-description"
-        className="sm-card flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-y-auto p-5 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:p-8"
+        className="sm-card sm-support-modal"
       >
         <div className="sticky top-0 z-10 -mx-5 -mt-5 flex items-start justify-between gap-4 bg-white/95 px-5 pb-3 pt-5 backdrop-blur sm:-mx-8 sm:-mt-8 sm:px-8 sm:pb-4 sm:pt-8">
           <div>
@@ -217,7 +217,7 @@ function SupportRecruitmentModal({ open, onDismiss }) {
           </div>
           <button
             type="button"
-            onClick={onDismiss}
+            onClick={onDismissPermanently}
             className="shrink-0 rounded-md border border-slate-300 bg-white p-2 text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]"
             aria-label="Dialog schließen"
           >
@@ -240,7 +240,7 @@ function SupportRecruitmentModal({ open, onDismiss }) {
             Als Anbieter helfen
           </Link>
         </div>
-        <button type="button" onClick={onDismiss} className="mt-4 self-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]">
+        <button type="button" onClick={onCloseTemporarily} className="mt-4 self-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]">
           Später
         </button>
       </div>
@@ -357,12 +357,16 @@ export default function LandingPage() {
   const [apkOpen, setApkOpen] = React.useState(false);
   const [supportModalOpen, setSupportModalOpen] = React.useState(false);
 
-  const dismissSupportModal = React.useCallback(() => {
+  const dismissSupportModalPermanently = React.useCallback(() => {
     try {
       localStorage.setItem(SUPPORT_MODAL_STORAGE_KEY, "1");
     } catch {
       // The modal can still be dismissed for the current session.
     }
+    setSupportModalOpen(false);
+  }, []);
+
+  const closeSupportModalTemporarily = React.useCallback(() => {
     setSupportModalOpen(false);
   }, []);
 
@@ -649,7 +653,11 @@ export default function LandingPage() {
         text={text}
         apkUrl={text.brand.appDownloadUrl}
       />
-      <SupportRecruitmentModal open={supportModalOpen} onDismiss={dismissSupportModal} />
+      <SupportRecruitmentModal
+        open={supportModalOpen}
+        onDismissPermanently={dismissSupportModalPermanently}
+        onCloseTemporarily={closeSupportModalTemporarily}
+      />
     </div>
   );
 }
