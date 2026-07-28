@@ -8,7 +8,6 @@ import {
   BellRing,
   CheckCircle2,
   Clock3,
-  Compass,
   EyeOff,
   Map,
   MapPin,
@@ -437,9 +436,6 @@ export default function LandingPage() {
                 </Link>
                 <Link to="/#anbieter" className="sm-btn-secondary gap-2">
                   Anbieter werden <Store size={16} />
-                </Link>
-                <Link to="/#so-funktionierts" className="sm-btn-ghost gap-2">
-                  So funktioniert es <Compass size={16} />
                 </Link>
               </div>
 
