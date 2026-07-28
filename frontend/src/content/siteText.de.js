@@ -10,14 +10,14 @@ const siteTextDe = {
     appDownloadUrl: "https://www.stepsmatch.com/apk",
   },
   landing: {
-    title: "StepsMatch | Angebote erreichen Menschen, wenn sie passen.",
+    title: "StepsMatch | Nicht suchen. Finden!",
     description:
       "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – basierend auf Interesse, Radius und gültigem Zeitfenster.",
     badge: "PRE ALPHA · Raum Graz im Aufbau",
     preAlphaLabel: "PRE ALPHA",
     preAlphaLine:
       "StepsMatch ist noch im Aufbau. Wir testen gerade, ob lokale Angebote zuverlässig im richtigen Moment sichtbar werden.",
-    heroTitle: "Angebote erreichen Menschen genau dann, wenn sie wirklich passen.",
+    heroTitle: "Nicht suchen. Finden!",
     heroLead:
       "StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – wenn Angebot, Interesse, Ort und Zeit zusammenpassen.",
     heroQuickLine:

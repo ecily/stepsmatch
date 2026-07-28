@@ -9,7 +9,6 @@ import {
   Clock3,
   Compass,
   EyeOff,
-  Footprints,
   Map,
   MapPin,
   Radio,
@@ -272,7 +271,7 @@ export default function LandingPage() {
             <div className="max-w-4xl text-white sm-rise">
               <p className="sm-badge !border-white/30 !bg-white/10 !text-white">PRE ALPHA · Raum Graz im Aufbau</p>
               <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[0.92] sm:text-6xl lg:text-8xl">
-                Angebote erreichen Menschen genau dann, wenn sie wirklich passen.
+                {text.landing.heroTitle}
               </h1>
               <p className="mt-5 max-w-2xl text-lg font-semibold leading-relaxed text-white/92 sm:text-2xl">
                 StepsMatch verbindet lokale Anbieter mit Menschen in der Nähe – basierend auf Interesse, Radius und gültigem Zeitfenster.
@@ -295,32 +294,15 @@ export default function LandingPage() {
               </p>
             </div>
 
-            <aside className="sm-match-panel sm-rise sm-delay-1" aria-label="StepsMatch Signal">
-              <div className="sm-match-radar">
-                <div className="sm-match-ring sm-match-ring-1" />
-                <div className="sm-match-ring sm-match-ring-2" />
-                <div className="sm-match-ring sm-match-ring-3" />
-                <div className="sm-match-center">
-                  <MapPin size={22} />
-                  <span>Hier</span>
-                </div>
-                <div className="sm-match-node sm-match-node-interest">
-                  <Footprints size={16} />
-                  <span>Interesse</span>
-                </div>
-                <div className="sm-match-node sm-match-node-offer">
-                  <Clock3 size={16} />
-                  <span>Hinweis aktiv</span>
-                </div>
-              </div>
-              <div className="mt-5 grid gap-2">
-                {["Ort passt", "Radius passt", "Zeit passt", "Interesse passt"].map((item) => (
-                  <div key={item} className="flex items-center gap-3 rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-white/90">
-                    <span className="h-2 w-2 rounded-full bg-[var(--sm-accent)]" />
-                    {item}
-                  </div>
-                ))}
-              </div>
+            <aside className="sm-hero-comic-panel sm-rise sm-delay-1" aria-label="StepsMatch Nutzerablauf">
+              <img
+                src={userFlowComic}
+                alt="StepsMatch zeigt in vier Schritten: Interesse wählen, App im Hintergrund laufen lassen, passenden Hinweis erhalten und zum Angebot navigieren."
+                width="1536"
+                height="1024"
+                decoding="async"
+                className="block h-auto w-full rounded-lg border border-white/20 bg-white"
+              />
             </aside>
           </section>
         </header>
@@ -355,20 +337,6 @@ export default function LandingPage() {
           <div className="sm-card p-7 sm:p-9 sm-rise">
             <p className="sm-badge">So funktioniert StepsMatch</p>
             <h2 className="sm-section-title mt-4">So funktioniert StepsMatch für Nutzer</h2>
-            <figure className="mt-7">
-              <img
-                src={userFlowComic}
-                alt="Vier Schritte mit StepsMatch: Interesse wählen, App im Hintergrund laufen lassen, passenden Hinweis in der Nähe erhalten und zum Angebot navigieren."
-                width="1536"
-                height="1024"
-                loading="lazy"
-                decoding="async"
-                className="block h-auto w-full rounded-lg border border-slate-200 shadow-sm"
-              />
-              <figcaption className="mt-2 text-xs leading-relaxed text-slate-500">
-                Produktvisualisierung des Nutzerablaufs – kein reales Angebot, kein Partner- oder Rabattversprechen.
-              </figcaption>
-            </figure>
             <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {userSteps.map((step, index) => {
                 const Icon = step.icon;
@@ -384,6 +352,20 @@ export default function LandingPage() {
                 );
               })}
             </div>
+            <figure className="mt-7">
+              <img
+                src={userFlowComic}
+                alt="Vier Schritte mit StepsMatch: Interesse wählen, App im Hintergrund laufen lassen, passenden Hinweis in der Nähe erhalten und zum Angebot navigieren."
+                width="1536"
+                height="1024"
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full rounded-lg border border-slate-200 shadow-sm"
+              />
+              <figcaption className="mt-2 text-xs leading-relaxed text-slate-500">
+                Produktvisualisierung des Nutzerablaufs – kein reales Angebot, kein Partner- oder Rabattversprechen.
+              </figcaption>
+            </figure>
           </div>
         </section>
 
@@ -429,6 +411,15 @@ export default function LandingPage() {
             <p className="sm-section-copy">
               Anbieter können ein Angebot mit Details, Bildern, Kategorie oder Interesse anlegen und bestimmen, wann und für welchen Radius es relevant ist.
             </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {providerSteps.map((step, index) => (
+                <div key={step.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{String(index + 1).padStart(2, "0")}</p>
+                  <p className="mt-2 text-lg font-extrabold text-slate-900">{step.title}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-700">{step.text}</p>
+                </div>
+              ))}
+            </div>
             <figure className="mt-7">
               <img
                 src={providerFlowComic}
@@ -443,26 +434,6 @@ export default function LandingPage() {
                 Produktvisualisierung, kein reales Angebot.
               </figcaption>
             </figure>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {providerSteps.map((step, index) => (
-                <div key={step.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{String(index + 1).padStart(2, "0")}</p>
-                  <p className="mt-2 text-lg font-extrabold text-slate-900">{step.title}</p>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-700">{step.text}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-5">
-              <p className="text-sm font-bold uppercase tracking-[0.08em] text-blue-700">Beispiel</p>
-              <p className="mt-2 text-lg font-extrabold text-slate-950">Ein Gasthaus könnte ein Mittagsmenü um 9,90 EUR anlegen – Montag bis Freitag, 11:00 bis 15:00, in 200 m Radius rund um das Gasthaus.</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-700">Das ist ein erklärendes Beispiel, kein echtes Angebot und kein echter Partnerclaim.</p>
-            </div>
-
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-              StepsMatch ist kein offizielles Partnernetzwerk und verspricht keine Verkäufe oder garantierten Besuche. Im Pilot zählen lokale Relevanz, klare Grenzen und nachvollziehbare Ausspielung.
-            </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/register" className="sm-btn-primary gap-2">
