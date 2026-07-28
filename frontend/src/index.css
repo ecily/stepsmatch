@@ -130,15 +130,15 @@
   }
 
   .sm-hero-media-slot {
-    @apply relative aspect-square overflow-hidden rounded-lg border;
-    border-color: rgba(255, 255, 255, 0.18);
-    background: #0c2438;
-    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3);
+    @apply relative aspect-[4/5] overflow-hidden lg:aspect-square;
+    background: #0a1727;
   }
 
   .sm-hero-media-image {
     @apply h-full w-full object-cover;
     object-position: 92% center;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 9%, #000 93%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 9%, #000 93%, transparent 100%);
   }
 
   .sm-hero-media-slot::after {
@@ -146,7 +146,9 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(90deg, rgba(5, 13, 25, 0.28), transparent 28%);
+    background:
+      linear-gradient(90deg, rgba(10, 23, 39, 0.96) 0%, rgba(10, 23, 39, 0.72) 12%, transparent 27%, transparent 84%, rgba(10, 23, 39, 0.2) 100%),
+      linear-gradient(180deg, rgba(10, 23, 39, 0.48) 0%, transparent 14%, transparent 84%, rgba(5, 13, 25, 0.8) 100%);
   }
 
   @media (min-width: 1024px) {
