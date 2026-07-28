@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { HelmetProvider } from '@dr.pogodin/react-helmet';
 
 import CookieNotice from './components/CookieNotice';
@@ -143,6 +143,11 @@ const AppRoutes = () => {
           <Route path="/" element={<LandingPage />} />
           <Route path="/tester" element={<TesterGate />} />
           <Route path="/nda" element={<NDA />} />
+
+          <Route path="/app" element={<Navigate to="/tester" replace />} />
+          <Route path="/so-funktionierts" element={<Navigate to="/#so-funktionierts" replace />} />
+          <Route path="/pre-alpha" element={<Navigate to="/#pre-alpha" replace />} />
+          <Route path="/anbieter" element={<Navigate to="/#anbieter" replace />} />
 
           <Route path="/home" element={<LandingPage />} />
           <Route path="/why" element={<WhyStepsMatch />} />

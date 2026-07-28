@@ -279,13 +279,13 @@ export default function LandingPage() {
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
-                <button onClick={() => setApkOpen(true)} className="sm-btn-primary gap-2">
+                <Link to="/tester" className="sm-btn-primary gap-2">
                   App testen <ArrowRight size={16} />
-                </button>
-                <Link to="/register" className="sm-btn-secondary gap-2">
+                </Link>
+                <Link to="/#anbieter" className="sm-btn-secondary gap-2">
                   Anbieter werden <Store size={16} />
                 </Link>
-                <Link to="/so-funktionierts" className="sm-btn-ghost gap-2">
+                <Link to="/#so-funktionierts" className="sm-btn-ghost gap-2">
                   So funktioniert es <Compass size={16} />
                 </Link>
               </div>
@@ -474,10 +474,10 @@ export default function LandingPage() {
               Der technische Kern ist lokal validiert. Die Website erklärt jetzt klar, was StepsMatch kann – und was im Pre-Alpha-/Pilotstatus noch offen bleibt.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <button onClick={() => setApkOpen(true)} className="sm-btn-secondary gap-2">
-                App testen <Route size={16} />
-              </button>
-              <Link to="/pre-alpha" className="sm-btn-ghost">PRE ALPHA lesen</Link>
+                <Link to="/tester" className="sm-btn-secondary gap-2">
+                  App testen <Route size={16} />
+                </Link>
+              <Link to="/#pre-alpha" className="sm-btn-ghost">PRE ALPHA lesen</Link>
               <Link to="/datenschutz-standort" className="sm-btn-ghost">Standort & Datenschutz</Link>
             </div>
           </div>

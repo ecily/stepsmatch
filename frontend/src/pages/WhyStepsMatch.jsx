@@ -55,7 +55,7 @@ export default function WhyStepsMatch() {
                 und ein Hinweis, wenn der Kontext passt.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link to="/home?apk=1" className="sm-btn-secondary gap-2">
+                <Link to="/tester" className="sm-btn-secondary gap-2">
                   Mobile-App testen <ArrowRight size={16} />
                 </Link>
                 <Link to="/home" className="sm-btn-ghost">

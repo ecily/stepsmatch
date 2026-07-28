@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { getPreferredSiteText } from "../content/siteContent";
 import logoIcon from "../assets/stepsmatch-icon.svg";
@@ -17,18 +17,11 @@ export default function Navbar() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 lg:flex">
-          <NavLink to="/app" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>App</NavLink>
-          <NavLink to="/so-funktionierts" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>So funktioniert es</NavLink>
-          <NavLink to="/pre-alpha" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>PRE ALPHA</NavLink>
-          <NavLink to="/anbieter" className={({ isActive }) => `sm-nav-link ${isActive ? "sm-nav-link-active" : ""}`}>Anbieter</NavLink>
-        </nav>
-
         <div className="flex items-center gap-2">
           <Link to="/register" className="sm-btn-secondary !hidden !px-4 !py-2 text-xs sm:!inline-flex sm:text-sm">
             Anbieter werden
           </Link>
-          <Link to="/?apk=1" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">
+          <Link to="/tester" className="sm-btn-primary !px-4 !py-2 text-xs sm:text-sm">
             App testen
           </Link>
         </div>

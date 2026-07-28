@@ -198,10 +198,7 @@ const siteTextDe = {
     legalLabel: "Rechtliches",
     links: [
       { to: "/", label: "Start" },
-      { to: "/app", label: "App" },
-      { to: "/so-funktionierts", label: "So funktioniert es" },
-      { to: "/pre-alpha", label: "PRE ALPHA" },
-      { to: "/anbieter", label: "Anbieter" },
+      { to: "/tester", label: "Tester-Zugang" },
       { to: "/datenschutz-standort", label: "Standort & Datenschutz" },
       { to: "/privacy", label: "Datenschutz" },
       { to: "/impressum", label: "Impressum" },
