@@ -200,7 +200,7 @@ function SupportRecruitmentModal({ open, onDismissPermanently, onCloseTemporaril
         if (event.target === event.currentTarget) onDismissPermanently();
       }}
     >
-      <div
+      <section
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
@@ -208,7 +208,7 @@ function SupportRecruitmentModal({ open, onDismissPermanently, onCloseTemporaril
         aria-describedby="support-modal-description"
         className="sm-card sm-support-modal"
       >
-        <div className="sticky top-0 z-10 -mx-5 -mt-5 flex items-start justify-between gap-4 bg-white/95 px-5 pb-3 pt-5 backdrop-blur sm:-mx-8 sm:-mt-8 sm:px-8 sm:pb-4 sm:pt-8">
+        <header className="sm-support-modal-header">
           <div>
             <p className="sm-badge">PRE ALPHA</p>
             <h2 id="support-modal-title" className="mt-3 text-2xl font-extrabold leading-tight sm:text-3xl">
@@ -223,27 +223,29 @@ function SupportRecruitmentModal({ open, onDismissPermanently, onCloseTemporaril
           >
             <X size={20} aria-hidden="true" />
           </button>
-        </div>
+        </header>
 
-        <div id="support-modal-description" className="mt-4 space-y-4 text-base leading-relaxed text-slate-700">
+        <div id="support-modal-description" className="sm-support-modal-scroll">
+          <div className="space-y-4 text-base leading-relaxed text-slate-700">
           <p>Hilf uns, die StepsMatch-App zu testen – als Nutzer oder als Anbieter.</p>
           <p>ecily.com hat eine starke technische Basis geschaffen. Jetzt brauchen wir Menschen, die StepsMatch im echten Alltag ausprobieren, Rückmeldungen geben und erste Angebote testen.</p>
           <p>Die ersten 100 aktiven Unterstützer erhalten einen persönlichen StepsMatch Lifetime Pass. Die genauen Leistungen und Bedingungen werden vor der Vergabe transparent bestätigt.</p>
           <p>Danke für deine Unterstützung.</p>
-        </div>
+          </div>
 
-        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
           <Link to="/tester" onClick={dismissFromAction} className="sm-btn-primary justify-center">
             App testen
           </Link>
           <Link to="/#anbieter" onClick={dismissFromAction} className="sm-btn-secondary justify-center">
             Als Anbieter helfen
           </Link>
-        </div>
-        <button type="button" onClick={onCloseTemporarily} className="mt-4 self-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]">
+          </div>
+          <button type="button" onClick={onCloseTemporarily} className="mt-4 self-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sm-accent-strong)]">
           Später
-        </button>
-      </div>
+          </button>
+        </div>
+      </section>
     </div>,
     document.body
   );
