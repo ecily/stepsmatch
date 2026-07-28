@@ -23,6 +23,7 @@ import SiteFooter from "../components/SiteFooter";
 import TesterKeyRequestForm from "../components/TesterKeyRequestForm";
 import { getPreferredSiteText } from "../content/siteContent";
 import heroCity from "../assets/hero-city-daylight.jpg";
+import userFlowComic from "../assets/stepsmatch-user-flow-comic.png";
 
 const TESTER_ACCESS_KEY = String(import.meta.env.VITE_TESTER_ACCESS_KEY || "PREALPHA-DEMO").trim().toUpperCase();
 const APK_ACCESS_STORAGE_KEY = "stepsmatchTesterAccessAccepted";
@@ -353,6 +354,20 @@ export default function LandingPage() {
           <div className="sm-card p-7 sm:p-9 sm-rise">
             <p className="sm-badge">So funktioniert StepsMatch</p>
             <h2 className="sm-section-title mt-4">So funktioniert StepsMatch für Nutzer</h2>
+            <figure className="mt-7">
+              <img
+                src={userFlowComic}
+                alt="Vier Schritte mit StepsMatch: Interesse wählen, App im Hintergrund laufen lassen, passenden Hinweis in der Nähe erhalten und zum Angebot navigieren."
+                width="1536"
+                height="1024"
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full rounded-lg border border-slate-200 shadow-sm"
+              />
+              <figcaption className="mt-2 text-xs leading-relaxed text-slate-500">
+                Produktvisualisierung des Nutzerablaufs – kein reales Angebot, kein Partner- oder Rabattversprechen.
+              </figcaption>
+            </figure>
             <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {userSteps.map((step, index) => {
                 const Icon = step.icon;
