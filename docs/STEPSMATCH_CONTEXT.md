@@ -367,3 +367,28 @@ Nach Code- und Dateianalyse funktioniert wahrscheinlich:
   - Tests/Checks
   - Git-Status
   - offene Punkte
+
+## Ultreia-Fundament-Referenzaudit (2026-08-16)
+
+Der für Ultreia relevante StepsMatch-Core wurde anhand von
+`backend/server.js`, Location-/Push-Routen, GeoPush/Receipt-Handling, PushToken-
+und OfferVisibility-Modellen, Expo-/Android-Konfiguration, Background-Tasks,
+Geofence und nativer Heartbeat-Service-Konfiguration geprüft.
+
+- Referenzstand: `e358fcd` auf `main`, Working Tree sauber, `origin/main`
+  synchron.
+- Automatisierte Nachprüfung: Backend 25/25 Tests, Backend-Syntaxchecks,
+  Mobile-Lint, Mobile-TypeScript, Frontend-Produktionsbuild und Android-
+  Release-Build grün.
+- Relevante technische Stärken: stabile Device-ID-/Push-Token-Lifecycle-
+  Muster, Token-Self-Heal und DeviceNotRegistered-Behandlung, Heartbeat,
+  Background Location, Geofence, lokale/serverseitige Notifications,
+  OfferVisibility-Dedupe, Expo-Receipts und 2dsphere-Indizes.
+- Im geprüften Core wurde kein neuer technischer Showstopper gefunden; daher
+  war kein StepsMatch-Codefix erforderlich. Es wurden keine DB-Mutationen,
+  Deploys oder Pushes ausgeführt.
+- Restrisiken: OEM-/Doze-/Multi-Device-Verhalten, echte Release-Signatur,
+  FCM-/Expo-Credential-Lifecycle, Google-Key-Restriktionen, Live-API-/Domain-
+  Routing und sensible historische Konfigurationsartefakte.
+
+Dieser Stand ist technische Referenz für Ultreia, nicht fachliche Vorlage.
